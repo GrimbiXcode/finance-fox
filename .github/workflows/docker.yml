@@ -3,7 +3,15 @@ name: Docker-Image bauen
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
   build:
@@ -15,11 +23,25 @@ jobs:
       - name: Docker Buildx einrichten
         uses: docker/setup-buildx-action@v3
 
-      - name: Image bauen (ohne Push)
+      # ghcr.io verlangt Kleinbuchstaben im Image-Namen
+      - name: Image-Name in Kleinbuchstaben umwandeln
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Bei ghcr.io anmelden (nur bei Tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image bauen (Push nur bei Tags)
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: false
-          tags: finance-fox:latest
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -35,6 +35,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Bei Pull Requests ist github.ref_name z. B. "1/merge" — enthält einen
+      # Schrägstrich und ist damit als Docker-Tag ungültig.
+      - name: Ref-Tag bestimmen
+        id: ref_tag
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Image bauen (Push nur bei Tags)
         uses: docker/build-push-action@v6
         with:
@@ -42,6 +53,6 @@ jobs:
           push: ${{ startsWith(github.ref, 'refs/tags/') }}
           tags: |
             ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            ${{ env.IMAGE_NAME }}:${{ steps.ref_tag.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

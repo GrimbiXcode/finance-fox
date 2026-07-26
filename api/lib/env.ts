@@ -7,4 +7,12 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET || "finance-fox-dev-secret-change-me",
   /** Basis-URL für Einladungs-/Reset-Links in den Server-Logs */
   publicUrl: process.env.PUBLIC_URL || "http://localhost:3000",
+  /**
+   * Secure-Flag für das Session-Cookie. Default: abhängig von PUBLIC_URL
+   * (https:// → Secure, sonst ohne — damit funktioniert der Login auch über
+   * HTTP im Heimnetz). Explizit überschreibbar mit COOKIE_SECURE=true|false.
+   */
+  cookieSecure: process.env.COOKIE_SECURE
+    ? process.env.COOKIE_SECURE === "true"
+    : (process.env.PUBLIC_URL || "http://localhost:3000").startsWith("https://"),
 };

@@ -68,7 +68,7 @@ export const authRouter = createRouter({
       });
       const admin = await db.query.users.findFirst({ where: eq(users.email, input.email.toLowerCase().trim()) });
       if (!admin) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      ctx.resHeaders.set("set-cookie", buildSessionCookie(admin.id, env.isProduction));
+      ctx.resHeaders.set("set-cookie", buildSessionCookie(admin.id, env.cookieSecure));
       return { ok: true };
     }),
 
@@ -85,7 +85,7 @@ export const authRouter = createRouter({
       if (!user.active) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Konto ist deaktiviert." });
       }
-      ctx.resHeaders.set("set-cookie", buildSessionCookie(user.id, env.isProduction));
+      ctx.resHeaders.set("set-cookie", buildSessionCookie(user.id, env.cookieSecure));
       return { ok: true };
     }),
 
@@ -129,7 +129,7 @@ export const authRouter = createRouter({
         passwordHash: bcrypt.hashSync(input.password, 10),
         active: true,
       }).where(eq(users.id, row.userId));
-      ctx.resHeaders.set("set-cookie", buildSessionCookie(row.userId, env.isProduction));
+      ctx.resHeaders.set("set-cookie", buildSessionCookie(row.userId, env.cookieSecure));
       return { ok: true };
     }),
 

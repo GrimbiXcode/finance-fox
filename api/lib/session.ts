@@ -44,7 +44,7 @@ export function parseSessionCookie(req: Request): string | null {
   return null;
 }
 
-export function buildSessionCookie(userId: number, isProduction: boolean): string {
+export function buildSessionCookie(userId: number, secure: boolean): string {
   const token = createSessionToken(userId);
   const parts = [
     `${COOKIE_NAME}=${token}`,
@@ -53,7 +53,7 @@ export function buildSessionCookie(userId: number, isProduction: boolean): strin
     "SameSite=Lax",
     `Max-Age=${SESSION_DAYS * 24 * 60 * 60}`,
   ];
-  if (isProduction) parts.push("Secure");
+  if (secure) parts.push("Secure");
   return parts.join("; ");
 }
 

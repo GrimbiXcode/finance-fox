@@ -151,7 +151,9 @@ Wichtige Konventionen:
   `NODE_ENV`. Achtung: `.env.example` ist veraltet (stammt aus einem Template,
   nennt MySQL/APP_ID) — die tatsächlich verwendeten Variablen stehen in
   `api/lib/env.ts` und `docker-compose.yml`.
-- Session-Cookie: HttpOnly, SameSite=Lax, `Secure` nur in Produktion.
+- Session-Cookie: HttpOnly, SameSite=Lax. Das `Secure`-Flag richtet sich nach
+  `PUBLIC_URL` (https:// → Secure), überschreibbar per `COOKIE_SECURE=true|false`
+  — so funktioniert der Login auch über HTTP im Heimnetz.
   Passwörter mit bcryptjs gehasht.
 - Keine externen Dienste: Einladungslinks nur im Server-Log, kein
   E-Mail-Versand, keine Telemetrie.

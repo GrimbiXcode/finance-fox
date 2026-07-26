@@ -30,9 +30,9 @@ ensureSchema();
 // Tägliche Verbuchung wiederkehrender Transaktionen (03:00 Uhr Serverzeit)
 // + einmalig beim Start, damit nichts liegen bleibt.
 cron.schedule("0 3 * * *", () => {
-  runRecurringJob().catch((err) => console.error("[Haushaltsfinanzen] Cron-Fehler:", err));
+  runRecurringJob().catch((err) => console.error("[Finance Fox] Cron-Fehler:", err));
 });
-runRecurringJob().catch((err) => console.error("[Haushaltsfinanzen] Cron-Startlauf-Fehler:", err));
+runRecurringJob().catch((err) => console.error("[Finance Fox] Cron-Startlauf-Fehler:", err));
 
 export default app;
 

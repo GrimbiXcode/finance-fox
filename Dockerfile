@@ -1,4 +1,4 @@
-# Haushaltsfinanzen — Self-Hosting (Full-Stack: Frontend + API + SQLite via WASM)
+# Finance Fox — Self-Hosting (Full-Stack: Frontend + API + SQLite via WASM)
 # Start:  docker compose up -d --build
 # Danach: http://<heimserver>:8080
 #

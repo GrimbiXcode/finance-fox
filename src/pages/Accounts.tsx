@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
-import { formatCents, parseEuro } from '@/lib/finance';
+import { currencySymbol, formatCents, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -82,7 +82,7 @@ export default function Accounts() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Anfangsbestand (€)</Label>
+                  <Label>Anfangsbestand ({currencySymbol()})</Label>
                   <Input inputMode="decimal" placeholder="0,00" value={balance} onChange={(e) => setBalance(e.target.value)} />
                 </div>
               </div>

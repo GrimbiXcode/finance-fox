@@ -6,7 +6,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFinanceData } from '@/lib/data';
 import {
-  currentMonthKey, expensesByCategory, formatCents, formatDate, formatMonth,
+  currencySymbol, currentMonthKey, expensesByCategory, formatCents, formatDate, formatMonth,
   memberBalances, monthTotals, totalBalance,
 } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
@@ -34,15 +34,12 @@ export default function Dashboard() {
     });
   }, [transactions]);
 
-  const categoryData = useMemo(() => {
-    const map = expensesByCategory(transactions, month);
-    return [...map.entries()]
-      .map(([catId, amount]) => {
-        const cat = categories.find((c) => c.id === catId);
-        return { name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? '#94a3b8' };
-      })
-      .sort((a, b) => b.value - a.value);
-  }, [transactions, categories, month]);
+  const categoryData = [...expensesByCategory(transactions, month).entries()]
+    .map(([catId, amount]) => {
+      const cat = categories.find((c) => c.id === catId);
+      return { name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? '#94a3b8' };
+    })
+    .sort((a, b) => b.value - a.value);
 
   const balances = memberBalances(transactions, users.map((u) => u.id));
   const recent = transactions.slice(0, 8);
@@ -128,8 +125,8 @@ export default function Dashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v} €`} width={70} />
-                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €`} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v} ${currencySymbol()}`} width={70} />
+                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
                 <Area type="monotone" dataKey="Einnahmen" stroke="#10b981" fill="url(#gIn)" strokeWidth={2} />
                 <Area type="monotone" dataKey="Ausgaben" stroke="#f43f5e" fill="url(#gOut)" strokeWidth={2} />
               </AreaChart>
@@ -153,7 +150,7 @@ export default function Dashboard() {
                       <Cell key={entry.name} fill={entry.color || PIE_COLORS[idx % PIE_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €`} />
+                  <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
                 </PieChart>
               </ResponsiveContainer>
             )}

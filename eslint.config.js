@@ -20,4 +20,22 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // shadcn/ui-Komponenten sind generiert (nicht von Hand umschreiben) und
+  // exportieren neben Komponenten auch Varianten/Hooks; das Skeleton nutzt
+  // bewusst Math.random für Zufallsbreiten.
+  {
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/purity': 'off',
+    },
+  },
+  // Provider exportieren neben der Komponente auch Hooks (useAuth) bzw.
+  // den trpc-Client — Fast Refresh ist hier unkritisch.
+  {
+    files: ['src/providers/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

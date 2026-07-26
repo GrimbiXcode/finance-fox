@@ -1,7 +1,7 @@
 services:
-  haushaltsfinanzen:
+  finance-fox:
     build: .
-    container_name: haushaltsfinanzen
+    container_name: finance-fox
     ports:
       - "8080:3000"   # links: gewünschter Port auf dem Heimserver
     environment:
@@ -9,10 +9,10 @@ services:
       - JWT_SECRET=${JWT_SECRET:-please-change-me-to-a-long-random-string}
       # Basis-URL für Einladungs-/Reset-Links (so wie ihr die App aufruft)
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
-      - DATABASE_URL=file:/app/data/haushaltsfinanzen.db
+      - DATABASE_URL=file:/app/data/finance-fox.db
     volumes:
-      - haushaltsfinanzen-data:/app/data
+      - finance-fox-data:/app/data
     restart: unless-stopped
 
 volumes:
-  haushaltsfinanzen-data:
+  finance-fox-data:

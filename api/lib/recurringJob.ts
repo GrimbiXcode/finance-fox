@@ -60,7 +60,7 @@ export async function runRecurringJob(): Promise<number> {
     created += due.length;
   }
   if (created > 0) {
-    console.log(`[Haushaltsfinanzen] Cron: ${created} wiederkehrende Buchung(en) verbucht.`);
+    console.log(`[Finance Fox] Cron: ${created} wiederkehrende Buchung(en) verbucht.`);
   }
   return created;
 }

@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { desc, eq, ne } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, authedQuery } from "./middleware";
+import { createRouter, authedQuery, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
-  accounts, budgets, categories, recurring, savingsGoals, transactions, transactionSplits,
+  accounts, appSettings, budgets, categories, recurring, savingsGoals, transactions, transactionSplits,
 } from "@db/schema";
+import { CURRENCY_CODES, DEFAULT_CURRENCY } from "@contracts/types";
 import { runRecurringJob } from "./lib/recurringJob";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
@@ -378,4 +379,34 @@ export const financeRouter = createRouter({
     });
     return { ok: true };
   }),
+
+  /* ---------------------------- App-Einstellungen --------------------------- */
+
+  /** Haushaltsweite Einstellungen lesen (aktuell: Währung) */
+  getAppSettings: authedQuery.query(async () => {
+    const db = getDb();
+    const rows = await db.select().from(appSettings);
+    const map = new Map(rows.map((r) => [r.key, r.value]));
+    const currency = map.get("currency");
+    return {
+      currency: (CURRENCY_CODES as readonly string[]).includes(currency ?? "")
+        ? (currency as (typeof CURRENCY_CODES)[number])
+        : DEFAULT_CURRENCY,
+    };
+  }),
+
+  /** Admin: Währung für den gesamten Haushalt festlegen */
+  setCurrency: adminQuery
+    .input(z.object({ currency: z.enum(CURRENCY_CODES) }))
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      await db
+        .insert(appSettings)
+        .values({ key: "currency", value: input.currency })
+        .onConflictDoUpdate({
+          target: appSettings.key,
+          set: { value: input.currency },
+        });
+      return { ok: true };
+    }),
 });

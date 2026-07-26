@@ -3,7 +3,7 @@ import { defineConfig } from "drizzle-kit";
 
 import path from "node:path";
 
-const rawUrl = (process.env.DATABASE_URL || "file:./data/haushaltsfinanzen.db").replace(/^file:/, "");
+const rawUrl = (process.env.DATABASE_URL || "file:./data/finance-fox.db").replace(/^file:/, "");
 const url = rawUrl === ":memory:" ? rawUrl : path.resolve(rawUrl);
 
 export default defineConfig({

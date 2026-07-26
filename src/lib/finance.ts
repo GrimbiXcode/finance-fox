@@ -4,8 +4,27 @@ export const localISO = (d: Date): string =>
 
 export const todayISO = (): string => localISO(new Date());
 
-export const formatCents = (cents: number): string =>
-  new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(cents / 100);
+/**
+ * Haushaltsweit konfigurierte Währung (ISO 4217). Wird vom Admin in den
+ * Einstellungen festgelegt und vom Layout nach dem Laden gesetzt
+ * (setAppCurrency) — formatCents/currencySymbol nutzen sie als Default.
+ */
+let appCurrency = 'EUR';
+
+export const setAppCurrency = (code: string): void => {
+  appCurrency = code;
+};
+
+export const getAppCurrency = (): string => appCurrency;
+
+export const formatCents = (cents: number, currency: string = appCurrency): string =>
+  new Intl.NumberFormat('de-DE', { style: 'currency', currency }).format(cents / 100);
+
+/** Währungssymbol der App-Währung (z. B. "€", "CHF", "$") für Labels/Charts */
+export const currencySymbol = (currency: string = appCurrency): string =>
+  new Intl.NumberFormat('de-DE', { style: 'currency', currency })
+    .formatToParts(0)
+    .find((p) => p.type === 'currency')?.value ?? currency;
 
 export const parseEuro = (input: string): number => {
   const normalized = input.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');

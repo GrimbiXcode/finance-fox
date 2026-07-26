@@ -96,3 +96,11 @@ export const savingsGoals = sqliteTable("savings_goals", {
   color: text("color").notNull(),
   deadline: text("deadline"), // YYYY-MM-DD
 });
+
+/* ------------------------------ App-Einstellungen ------------------------- */
+
+/** Key-Value-Store für haushaltsweite Einstellungen (z. B. Währung) */
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
@@ -5,7 +6,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
-import { formatCents, totalBalance } from '@/lib/finance';
+import { formatCents, setAppCurrency, totalBalance } from '@/lib/finance';
+import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -27,6 +29,14 @@ export default function Layout() {
   const { accounts, transactions, users } = useFinanceData();
   const total = totalBalance(accounts, transactions);
 
+  // Haushaltsweite Währung laden und für formatCents/currencySymbol setzen.
+  // Ändert der Admin die Währung, wird die Query invalidiert und das Layout
+  // rendert mitsamt aller Seiten mit der neuen Währung neu.
+  const appSettings = trpc.finance.getAppSettings.useQuery();
+  useEffect(() => {
+    if (appSettings.data?.currency) setAppCurrency(appSettings.data.currency);
+  }, [appSettings.data?.currency]);
+
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="hidden w-64 flex-col border-r bg-card md:flex">
@@ -35,7 +45,7 @@ export default function Layout() {
             <PiggyBank className="h-5 w-5" />
           </div>
           <div>
-            <div className="text-sm font-semibold leading-tight">Haushaltsfinanzen</div>
+            <div className="text-sm font-semibold leading-tight">Finance Fox</div>
             <div className="text-xs text-muted-foreground">Self-hosted &amp; privat</div>
           </div>
         </div>
@@ -71,7 +81,7 @@ export default function Layout() {
         <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           <div className="flex items-center gap-2 md:hidden">
             <PiggyBank className="h-5 w-5 text-emerald-600" />
-            <span className="font-semibold">Haushaltsfinanzen</span>
+            <span className="font-semibold">Finance Fox</span>
           </div>
           <div className="hidden text-sm text-muted-foreground md:block">
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}

@@ -41,7 +41,7 @@ export default function Login() {
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
             <PiggyBank className="h-6 w-6" />
           </div>
-          <CardTitle>Haushaltsfinanzen</CardTitle>
+          <CardTitle>Finance Fox</CardTitle>
           <CardDescription>
             {resetMode ? 'Reset-Link anfordern (erscheint im Server-Log)' : 'Am gemeinsamen Haushalt anmelden'}
           </CardDescription>

@@ -1,4 +1,4 @@
-# AGENTS.md — Haushaltsfinanzen
+# AGENTS.md — Finance Fox
 
 Hinweise für KI-Coding-Agenten. Projekt-README: `README.md` (Deutsch).
 
@@ -79,6 +79,13 @@ Wichtige Konventionen:
 - **Geldbeträge immer in Cent als Integer** speichern und rechnen. Frontend:
   `formatCents` / `parseEuro` in `src/lib/finance.ts`. Datumsformat in der DB:
   Text `YYYY-MM-DD`.
+- **Währung**: haushaltsweite Einstellung, gespeichert in der Tabelle
+  `app_settings` (Key `currency`, ISO-4217-Code, Default `EUR`); Änderung nur
+  durch Admins (Einstellungen-Seite, `finance.setCurrency`). Die 20
+  unterstützten Währungen stehen in `contracts/types.ts` (`CURRENCIES`).
+  Frontend: `formatCents` / `currencySymbol` in `src/lib/finance.ts` nutzen
+  die App-Währung als Default; das Layout lädt sie via
+  `finance.getAppSettings` und setzt sie mit `setAppCurrency`.
 - Path-Aliase: `@/*` → `src/*`, `@contracts/*` → `contracts/*`,
   `@db/*` → `db/*` (in tsconfig und `vite.config.ts` konsistent halten).
 - Der Frontend-Client importiert den Typ `AppRouter` direkt aus
@@ -93,7 +100,7 @@ Wichtige Konventionen:
 
 - Die DB läuft als sql.js-In-Memory-Datenbank; nach Schreiboperationen wird
   sie als Datei exportiert (`DATABASE_URL`, Default
-  `file:./data/haushaltsfinanzen.db`; `:memory:` für Tests möglich).
+  `file:./data/finance-fox.db`; `:memory:` für Tests möglich).
   Flush via `scheduleFlush()` in `api/queries/connection.ts` (setImmediate +
   2-s-Debounce + SIGINT/SIGTERM-Handler).
 - `initDb()` muss einmalig vor DB-Zugriffen awaited werden (in `api/boot.ts`
@@ -129,7 +136,7 @@ Wichtige Konventionen:
 - **Docker (empfohlen)**: `docker compose up -d --build` → App auf Port 8080
   (Container-intern 3000). Multi-Stage-Build: `npm ci` + `npm run build`,
   Runtime kopiert nur `node_modules`, `dist/`, `package.json`.
-  Datenbank im Volume `haushaltsfinanzen-data` (`/app/data`).
+  Datenbank im Volume `finance-fox-data` (`/app/data`).
   Hinweis: Im Container sind npm-Install-Skripte blockiert — das funktioniert,
   weil sql.js keine nativen Module braucht.
 - **Ohne Docker**: `npm ci && npm run build && JWT_SECRET=... PUBLIC_URL=... npm start`.

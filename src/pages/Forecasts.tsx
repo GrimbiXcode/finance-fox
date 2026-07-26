@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { trpc } from '@/providers/trpc';
-import { formatCents, formatMonth } from '@/lib/finance';
+import { currencySymbol, formatCents, formatMonth } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
 export default function Forecasts() {
@@ -91,8 +91,8 @@ export default function Forecasts() {
               <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(1)}k €`} width={70} />
-                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €`} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(1)}k ${currencySymbol()}`} width={70} />
+                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
                 <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 4" />
                 <Line type="monotone" dataKey="Ist" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} connectNulls={false} />
                 <Line type="monotone" dataKey="Prognose" stroke="#6366f1" strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} />

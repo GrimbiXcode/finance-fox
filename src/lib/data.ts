@@ -35,6 +35,7 @@ export function useInvalidateFinance() {
     utils.finance.listRecurring.invalidate();
     utils.finance.listGoals.invalidate();
     utils.finance.listCategories.invalidate();
+    utils.finance.getAppSettings.invalidate();
     utils.forecast.balance.invalidate();
     utils.forecast.budgetForecast.invalidate();
     utils.forecast.goalForecast.invalidate();

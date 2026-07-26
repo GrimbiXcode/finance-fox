@@ -1,4 +1,4 @@
-# Haushaltsfinanzen
+# Finance Fox
 
 Self-gehostete Full-Stack-Webapp zur Organisation der Finanzen eines Haushalts
 mit einer oder mehreren Personen. Alle Daten liegen in einer **SQLite-Datenbank
@@ -39,13 +39,13 @@ docker compose up -d --build
 ```
 
 Die App läuft danach unter `http://<heimserver>:8080`.
-Die Datenbank liegt im Docker-Volume `haushaltsfinanzen-data` —
+Die Datenbank liegt im Docker-Volume `finance-fox-data` —
 für Backups genügt es, dieses Volume (bzw. die `.db`-Datei) zu sichern.
 
 **Einladungs- und Passwort-Reset-Links** werden im Container-Log ausgegeben:
 
 ```bash
-docker logs haushaltsfinanzen
+docker logs finance-fox
 ```
 
 ### Ohne Docker

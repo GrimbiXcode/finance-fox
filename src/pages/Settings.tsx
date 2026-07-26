@@ -12,8 +12,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { CURRENCIES, type CurrencyCode } from '@contracts/types';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { setAppCurrency } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -30,6 +32,10 @@ export default function Settings() {
   const [profileColor, setProfileColor] = useState(user?.color ?? '#10b981');
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
+  const appSettings = trpc.finance.getAppSettings.useQuery();
+  // null = noch keine eigene Auswahl → Server-Wert verwenden (kein Effekt nötig)
+  const [currencyChoice, setCurrencyChoice] = useState<CurrencyCode | null>(null);
+  const currency = currencyChoice ?? appSettings.data?.currency ?? 'EUR';
 
   const createCategory = trpc.finance.createCategory.useMutation({
     onSuccess: () => { toast.success('Kategorie hinzugefügt.'); invalidate(); setCatName(''); },
@@ -48,6 +54,14 @@ export default function Settings() {
   });
   const resetData = trpc.finance.resetFinanceData.useMutation({
     onSuccess: () => { toast.success('Alle Finanzdaten wurden gelöscht.'); invalidate(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const saveCurrency = trpc.finance.setCurrency.useMutation({
+    onSuccess: (_data, vars) => {
+      toast.success('Währung gespeichert.');
+      setAppCurrency(vars.currency);
+      invalidate();
+    },
     onError: (err) => toast.error(err.message),
   });
 
@@ -128,6 +142,42 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Währung</CardTitle>
+          <CardDescription>
+            Gilt für den gesamten Haushalt — alle Beträge in der App werden in dieser Währung angezeigt.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Select
+            value={currency}
+            onValueChange={(v) => setCurrencyChoice(v as CurrencyCode)}
+            disabled={user?.role !== 'admin'}
+          >
+            <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CURRENCIES.map((c) => (
+                <SelectItem key={c.code} value={c.code}>{c.code} — {c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {user?.role === 'admin' ? (
+            <Button
+              variant="outline"
+              disabled={saveCurrency.isPending || currency === appSettings.data?.currency}
+              onClick={() => saveCurrency.mutate({ currency })}
+            >
+              Währung speichern
+            </Button>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nur Administratoren können die Währung ändern.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

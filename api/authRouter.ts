@@ -107,7 +107,7 @@ export const authRouter = createRouter({
       // Kein Hinweis, ob die E-Mail existiert (Sicherheit)
       if (user) {
         const token = await createToken(user.id, "reset");
-        console.log(`[Haushaltsfinanzen] Passwort-Reset-Link für ${user.email}: ${env.publicUrl}/#/reset/${token}`);
+        console.log(`[Finance Fox] Passwort-Reset-Link für ${user.email}: ${env.publicUrl}/#/reset/${token}`);
       }
       return { ok: true };
     }),
@@ -184,7 +184,7 @@ export const authRouter = createRouter({
       if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const token = await createToken(user.id, "invite");
       const link = `${env.publicUrl}/#/einladung/${token}`;
-      console.log(`[Haushaltsfinanzen] Einladungslink für ${email}: ${link}`);
+      console.log(`[Finance Fox] Einladungslink für ${email}: ${link}`);
       return { id: user.id, inviteLink: link };
     }),
 
@@ -214,7 +214,7 @@ export const authRouter = createRouter({
       if (!user) throw new TRPCError({ code: "NOT_FOUND" });
       const token = await createToken(user.id, "invite");
       const link = `${env.publicUrl}/#/einladung/${token}`;
-      console.log(`[Haushaltsfinanzen] Neuer Einladungslink für ${user.email}: ${link}`);
+      console.log(`[Finance Fox] Neuer Einladungslink für ${user.email}: ${link}`);
       return { inviteLink: link };
     }),
 

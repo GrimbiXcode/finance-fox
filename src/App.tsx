@@ -23,7 +23,7 @@ function Loading() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40">
       <div className="flex flex-col items-center gap-3 text-muted-foreground">
         <PiggyBank className="h-10 w-10 animate-pulse text-emerald-600" />
-        <span className="text-sm">Haushaltsfinanzen wird geladen…</span>
+        <span className="text-sm">Finance Fox wird geladen…</span>
       </div>
     </div>
   )

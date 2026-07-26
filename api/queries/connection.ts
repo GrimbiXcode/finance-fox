@@ -10,7 +10,7 @@ import * as schema from "@db/schema";
  *
  * Drizzle wird über einen better-sqlite3-API-kompatiblen Proxy angebunden.
  * Persistenz: nach Schreiboperationen wird die DB als Datei exportiert
- * (DATABASE_URL, Default ./data/haushaltsfinanzen.db).
+ * (DATABASE_URL, Default ./data/finance-fox.db).
  */
 
 export type Db = ReturnType<typeof createProxyDb>;
@@ -30,7 +30,7 @@ function doFlush() {
     fs.writeFileSync(tmp, Buffer.from(data));
     fs.renameSync(tmp, dbFilePath);
   } catch (err) {
-    console.error("[Haushaltsfinanzen] Fehler beim Speichern der Datenbank:", err);
+    console.error("[Finance Fox] Fehler beim Speichern der Datenbank:", err);
   } finally {
     flushing = false;
   }
@@ -136,7 +136,7 @@ function createProxyDb(db: Database) {
 }
 
 async function init(): Promise<Db> {
-  const url = process.env.DATABASE_URL || "file:./data/haushaltsfinanzen.db";
+  const url = process.env.DATABASE_URL || "file:./data/finance-fox.db";
   const rawPath = url.replace(/^file:/, "");
   dbFilePath = rawPath === ":memory:" ? undefined : path.resolve(rawPath);
 

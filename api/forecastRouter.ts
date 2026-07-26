@@ -44,7 +44,7 @@ export const forecastRouter = createRouter({
       ]);
 
       // Startvermögen (Anfangsbestände)
-      let base = accs.reduce((s, a) => s + a.initialBalance, 0);
+      const base = accs.reduce((s, a) => s + a.initialBalance, 0);
 
       // Monatliche Historie aufbauen
       const today = localISO(new Date());

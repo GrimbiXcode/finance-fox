@@ -9,7 +9,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
-import { formatCents, formatDate, parseEuro } from '@/lib/finance';
+import { currencySymbol, formatCents, formatDate, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -77,11 +77,11 @@ export default function Goals() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Zielbetrag (€)</Label>
+                  <Label>Zielbetrag ({currencySymbol()})</Label>
                   <Input inputMode="decimal" placeholder="0,00" value={target} onChange={(e) => setTarget(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Bereits gespart (€)</Label>
+                  <Label>Bereits gespart ({currencySymbol()})</Label>
                   <Input inputMode="decimal" placeholder="0,00" value={saved} onChange={(e) => setSaved(e.target.value)} />
                 </div>
               </div>
@@ -144,7 +144,7 @@ export default function Goals() {
         <DialogContent>
           <DialogHeader><DialogTitle>Auf Sparziel einzahlen</DialogTitle></DialogHeader>
           <div className="space-y-2 py-2">
-            <Label>Betrag (€)</Label>
+            <Label>Betrag ({currencySymbol()})</Label>
             <Input inputMode="decimal" placeholder="0,00" value={deposit} onChange={(e) => setDeposit(e.target.value)} />
           </div>
           <DialogFooter>

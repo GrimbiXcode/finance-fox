@@ -12,7 +12,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
-import { parseEuro, todayISO } from '@/lib/finance';
+import { currencySymbol, formatCents, parseEuro, todayISO } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -68,7 +68,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
       const parsed = users.map((u) => ({ userId: u.id, amount: parseEuro(shares[u.id] ?? '') }));
       const sum = parsed.reduce((s, p) => s + p.amount, 0);
       if (sum !== cents) {
-        toast.error(`Die Anteile (${(sum / 100).toFixed(2)} €) müssen in Summe dem Betrag entsprechen.`);
+        toast.error(`Die Anteile (${formatCents(sum)}) müssen in Summe dem Betrag entsprechen.`);
         return;
       }
       splits = parsed.filter((p) => p.amount > 0);
@@ -122,7 +122,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="amount">Betrag (€)</Label>
+              <Label htmlFor="amount">Betrag ({currencySymbol()})</Label>
               <Input id="amount" inputMode="decimal" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
             <div className="space-y-2">
@@ -199,7 +199,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                 <div className="grid grid-cols-2 gap-3">
                   {users.map((u) => (
                     <div key={u.id} className="space-y-1">
-                      <Label className="text-xs" style={{ color: u.color }}>{u.name} (€)</Label>
+                      <Label className="text-xs" style={{ color: u.color }}>{u.name} ({currencySymbol()})</Label>
                       <Input
                         inputMode="decimal"
                         placeholder="0,00"

@@ -88,6 +88,10 @@ export function ensureSchema() {
       color TEXT NOT NULL,
       deadline TEXT
     )`,
+    `CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`,
   ];
   for (const sql of stmts) {
     db.run(sql as never);

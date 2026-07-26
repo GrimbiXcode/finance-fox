@@ -35,6 +35,11 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 export JWT_SECRET="$(openssl rand -hex 32)"
 export PUBLIC_URL="http://192.168.1.10:8080"   # so erreichst du die App im Heimnetz
 
+# Variante A: fertiges Image von ghcr.io verwenden (empfohlen)
+docker compose pull
+docker compose up -d
+
+# Variante B: Image lokal bauen
 docker compose up -d --build
 ```
 

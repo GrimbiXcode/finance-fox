@@ -1,5 +1,10 @@
 services:
   finance-fox:
+    # Fertiges Image von ghcr.io (wird bei Tags v* per GitHub Action gebaut):
+    #   docker compose pull && docker compose up -d
+    # Lokal bauen (z. B. Entwicklung oder eigene Änderungen):
+    #   docker compose up -d --build
+    image: ghcr.io/grimbixcode/finance-fox:latest
     build: .
     container_name: finance-fox
     ports:

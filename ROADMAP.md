@@ -25,7 +25,7 @@ Jede Erweiterung muss zu diesen Grundsätzen passen:
 |---|---|
 | **Dashboard** | Gesamtvermögen, Einnahmen/Ausgaben, Sparrate, Cashflow- & Kategorien-Charts |
 | **Transaktionen** | Einnahmen/Ausgaben/Umbuchungen, Suche & Filter, eine Kategorie pro Buchung |
-| **Konten** | Giro/Bargeld/Sparkonto, Saldo wird aus Buchungen berechnet (kein manueller Kontoabgleich) |
+| **Konten** | Giro/Bargeld/Sparkonto, Saldo wird aus Buchungen berechnet (kein manueller Kontoabgleich), keine Bearbeiten-Funktion, Löschen per einzelnem Klick ohne Bestätigung, kein Besitzer-/Sichtbarkeitskonzept — jedes Konto ist für alle Haushaltsmitglieder gleichermaßen sichtbar und bearbeitbar |
 | **Kategorien** | Flache Liste (keine Über-/Unterkategorien), fixe Farbe |
 | **Budgets** | Ein monatliches Limit pro Kategorie, Fortschrittsanzeige, kein Rollover, keine Jahresbudgets |
 | **Kostenaufteilung** | Splits pro Transaktion, Salden zwischen Personen, Ausgleichsvorschläge (nur 1 Haushalt, kein Gruppen-/Projektkonzept) |
@@ -52,6 +52,44 @@ Alltag auf dem Handy (PWA).
 - Split-Transaktionen nach Kategorie (eine Buchung, mehrere Kategorien/Beträge)
 
 ### B. Konten
+- **Konten bearbeiten.** Bisher lassen sich Konten nur anlegen, nicht mehr
+  ändern. Neuer Bearbeiten-Dialog für Name, Typ, Anfangsbestand und (siehe
+  unten) Besitzer/Freigaben — analog zum bestehenden Anlege-Dialog.
+- **Konto-Löschung entschärfen.** Der Papierkorb-Button direkt auf der
+  Konto-Kachel entfällt. Löschen ist nur noch über den Bearbeiten-Dialog
+  erreichbar, dort erst hinter einer eigenen "Gefahrenzone"-Sektion sichtbar,
+  und erfordert als Bestätigung die erneute Eingabe des exakten Kontonamens
+  (Muster wie bei GitHub-Repo-Löschung) — verhindert versehentliches Löschen
+  samt aller zugehörigen Buchungen.
+- **Konten-Besitz & Sichtbarkeit ("Privat" vs. "Gemeinschaftskonto").**
+  Jedes Konto bekommt eine Einordnung:
+  - *Gemeinschaftskonto*: wie heute — automatisch für **alle** Haushalts-
+    mitglieder sicht- und editierbar, keine weitere Konfiguration nötig.
+  - *Privates Konto*: gehört einer bestimmten Person (Besitzer/in). Nur der/die
+    Besitzer/in kann im Bearbeiten-Dialog pro anderem Haushaltsmitglied
+    einzeln festlegen:
+    - kein Zugriff (Konto erscheint für diese Person nirgends — weder in der
+      Kontenliste noch in Dashboard/Transaktionen/Prognosen),
+    - **Ansehen** (nur lesend sichtbar),
+    - **Ansehen & Bearbeiten** (darf auch Buchungen auf diesem Konto anlegen/
+      ändern und die Kontodaten selbst bearbeiten).
+    Admins behalten unabhängig davon die Übersicht über alle Konten (rein zur
+    Haushaltsverwaltung), damit z. B. Backup/Export vollständig bleiben —
+    Details dazu unten unter "Datenmodell".
+  - Bestehende Konten (vor diesem Feature) werden beim Update automatisch als
+    Gemeinschaftskonto eingestuft, damit sich am heutigen Verhalten nichts
+    ändert, bis jemand aktiv ein Konto auf "privat" umstellt.
+  - **Querschnittsauswirkung:** Da Transaktionen an ein Konto gebunden sind,
+    wirkt sich die Sichtbarkeit eines Kontos auch auf Dashboard-Summen,
+    Transaktionsliste, Budgets (soweit kontobezogen ausgewertet) und
+    Prognosen aus — diese Ansichten müssen pro anfragendem Nutzer gefiltert
+    werden, nicht nur die Kontenliste selbst.
+  - **Datenmodell-Skizze:** `accounts.ownerId` (nullable Fremdschlüssel auf
+    `users`; `NULL` = Gemeinschaftskonto) plus neue Tabelle
+    `account_permissions` (`accountId`, `userId`, `canEdit`-Flag) für die
+    individuellen Freigaben bei privaten Konten. Prüfung serverseitig in
+    `financeRouter` (analog zu `authedQuery`/`adminQuery`), nicht nur im
+    Frontend verstecken.
 - Manueller Kontoabgleich (Ist-Saldo erfassen, Differenz als Korrekturbuchung)
 - Kreditkarten-/Darlehenskonto-Typ mit Zinsen/Sollzins-Feld
 - Saldo-Verlaufschart pro Konto (Historie, nicht nur aktueller Stand)
@@ -116,12 +154,19 @@ Alltag auf dem Handy (PWA).
 Fokus: Dinge, die *jeder* Haushalt sofort spürt, geringes Risiko, baut auf
 bestehendem Schema auf.
 
-1. Backup-/Restore-Funktion in den Einstellungen (Datensicherheit ohne Docker-CLI)
-2. CSV-Export aller Transaktionen (+ einfacher CSV-Import)
-3. Beleg-/Foto-Anhänge an Transaktionen
-4. Ausgleichszahlung aus der Kostenaufteilung mit einem Klick verbuchen
-5. Dark-Mode-Toggle im UI (next-themes ist schon vorhanden)
-6. PWA-Grundgerüst (installierbar, Manifest, Icons)
+1. **Konten bearbeiten + entschärftes Löschen** (Bearbeiten-Dialog,
+   Löschen nur dort mit Namens-Bestätigung)
+2. **Konten-Besitz & Sichtbarkeit** (privat vs. Gemeinschaftskonto, individuelle
+   Ansehen-/Bearbeiten-Freigaben) — größter Einzelposten dieser Phase, da er
+   Datenmodell und mehrere bestehende Abfragen (Dashboard, Transaktionen,
+   Prognosen) berührt; sollte vor den übrigen Phase-1-Punkten oder zumindest
+   gemeinsam mit Punkt 1 (gleicher Dialog) umgesetzt werden
+3. Backup-/Restore-Funktion in den Einstellungen (Datensicherheit ohne Docker-CLI)
+4. CSV-Export aller Transaktionen (+ einfacher CSV-Import)
+5. Beleg-/Foto-Anhänge an Transaktionen
+6. Ausgleichszahlung aus der Kostenaufteilung mit einem Klick verbuchen
+7. Dark-Mode-Toggle im UI (next-themes ist schon vorhanden)
+8. PWA-Grundgerüst (installierbar, Manifest, Icons)
 
 ### Phase 2 — Struktur & Auswertung (mittelfristig)
 Fokus: Tiefere Funktionalität für Budgetierung und Reporting.

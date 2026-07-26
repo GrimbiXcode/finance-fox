@@ -7,7 +7,7 @@
 # Funktioniert dadurch zuverlässig in jeder Build-Umgebung.
 
 # ---------- Build ----------
-FROM node:20-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Install-Skripte sind blockiert (Sicherheit) — sql.js braucht keine,
@@ -19,7 +19,7 @@ COPY . .
 RUN npm run build
 
 # ---------- Runtime ----------
-FROM node:20-bookworm-slim
+FROM node:26-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules

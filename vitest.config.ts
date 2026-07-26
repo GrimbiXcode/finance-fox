@@ -16,5 +16,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["api/**/*.test.ts", "api/**/*.spec.ts"],
+    // Tests laufen gegen eine In-Memory-DB, nicht gegen die Dev-Datenbank.
+    env: {
+      DATABASE_URL: "file::memory:",
+    },
   },
 });

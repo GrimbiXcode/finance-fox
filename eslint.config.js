@@ -22,12 +22,14 @@ export default defineConfig([
   },
   // shadcn/ui-Komponenten sind generiert (nicht von Hand umschreiben) und
   // exportieren neben Komponenten auch Varianten/Hooks; das Skeleton nutzt
-  // bewusst Math.random für Zufallsbreiten.
+  // bewusst Math.random für Zufallsbreiten. Carousel und use-mobile setzen
+  // im Effekt synchron State (generiertes shadcn-Idiom).
   {
-    files: ['src/components/ui/**/*.{ts,tsx}'],
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/hooks/use-mobile.ts'],
     rules: {
       'react-refresh/only-export-components': 'off',
       'react-hooks/purity': 'off',
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
   // Provider exportieren neben der Komponente auch Hooks (useAuth) bzw.

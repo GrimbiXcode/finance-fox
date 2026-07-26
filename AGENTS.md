@@ -17,7 +17,7 @@ Fehlermeldungen und UI-Strings ebenfalls auf Deutsch verfassen.
 ## Technologie-Stack
 
 - **Frontend**: React 19 + TypeScript + Vite 7 + Tailwind CSS 3 + shadcn/ui
-  (Radix-Primitives in `src/components/ui/`) + Recharts, React Router 7,
+  (Radix-Primitives in `src/components/ui/`) + Recharts, React Router 8,
   TanStack Query
 - **Backend**: Hono 4 + tRPC 11 (End-to-end typisiert über `AppRouter`),
   Superjson als Transformer, Zod 4 für Input-Validierung
@@ -29,7 +29,8 @@ Fehlermeldungen und UI-Strings ebenfalls auf Deutsch verfassen.
   HttpOnly-Cookie `hh_session` (30 Tage, `api/lib/session.ts`) — kein JWT-Paket.
 - **Hintergrundjobs**: node-cron (täglich 03:00 Uhr + einmalig beim Start:
   Verbuchung fälliger wiederkehrender Transaktionen, `api/lib/recurringJob.ts`)
-- **Node.js 20** (Docker-Basisimage `node:20-bookworm-slim`)
+- **Node.js 26** (Docker-Basisimage `node:26-bookworm-slim`; lokal via `.nvmrc` —
+  bei nvm/FNM/volta o.ä. automatisch, sonst `nvm use` ausführen)
 
 ## Befehle
 

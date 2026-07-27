@@ -1,23 +1,28 @@
 import { z } from "zod";
-import { desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
-  accounts, appSettings, budgets, categories, recurring, savingsGoals, transactions, transactionSplits,
+  accountPermissions, accounts, appSettings, budgets, categories, recurring,
+  savingsGoals, transactions, transactionSplits, users,
 } from "@db/schema";
 import { CURRENCY_CODES, DEFAULT_CURRENCY } from "@contracts/types";
 import { runRecurringJob } from "./lib/recurringJob";
+import {
+  listVisibleAccounts, requireAccountAccess, touchesVisibleAccount,
+  visibleAccountIds,
+} from "./lib/accountAccess";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
 
 export const financeRouter = createRouter({
   /* --------------------------------- Konten --------------------------------- */
 
-  listAccounts: authedQuery.query(async () => {
+  listAccounts: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const [accs, txs] = await Promise.all([
-      db.select().from(accounts),
+      listVisibleAccounts(db, ctx.user),
       db.select({
         type: transactions.type,
         accountId: transactions.accountId,
@@ -44,17 +49,70 @@ export const financeRouter = createRouter({
       name: z.string().min(1),
       type: z.enum(["checking", "cash", "savings"]),
       initialBalance: z.number().int(),
+      // true = privates Konto, der anlegende Nutzer wird Besitzer
+      private: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      await db.insert(accounts).values({ ...input, createdAt: new Date() });
+      await db.insert(accounts).values({
+        name: input.name,
+        type: input.type,
+        initialBalance: input.initialBalance,
+        ownerId: input.private ? ctx.user.id : null,
+        createdAt: new Date(),
+      });
       return { ok: true };
     }),
 
-  deleteAccount: authedQuery
-    .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+  /** Konto bearbeiten (Name, Typ, Anfangsbestand) — erfordert "edit" */
+  updateAccount: authedQuery
+    .input(z.object({
+      id: z.number().int().positive(),
+      name: z.string().min(1),
+      type: z.enum(["checking", "cash", "savings"]),
+      initialBalance: z.number().int(),
+    }))
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      await requireAccountAccess(db, ctx.user, input.id, "edit");
+      await db.update(accounts)
+        .set({
+          name: input.name,
+          type: input.type,
+          initialBalance: input.initialBalance,
+        })
+        .where(eq(accounts.id, input.id));
+      return { ok: true };
+    }),
+
+  /**
+   * Konto löschen (entschärft): erfordert die Eingabe des exakten Kontonamens.
+   * Gemeinschaftskonto: jedes Mitglied; privates Konto: nur Besitzer/Admin.
+   */
+  deleteAccount: authedQuery
+    .input(z.object({
+      id: z.number().int().positive(),
+      name: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const account = await db.query.accounts
+        .findFirst({ where: eq(accounts.id, input.id) });
+      const mayDelete = account && (
+        account.ownerId === null ||
+        account.ownerId === ctx.user.id ||
+        ctx.user.role === "admin"
+      );
+      // NOT_FOUND statt FORBIDDEN: Existenz privater Konten soll nicht leaken
+      if (!account || !mayDelete) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Konto nicht gefunden." });
+      }
+      if (input.name !== account.name) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Der eingegebene Kontoname stimmt nicht überein.",
+        });
+      }
       const txIds = (await db.select({ id: transactions.id }).from(transactions)
         .where(eq(transactions.accountId, input.id))).map((t) => t.id);
       db.transaction((tx) => {
@@ -63,9 +121,119 @@ export const financeRouter = createRouter({
         }
         tx.delete(transactions).where(eq(transactions.accountId, input.id)).run();
         tx.delete(recurring).where(eq(recurring.accountId, input.id)).run();
+        tx.delete(accountPermissions).where(eq(accountPermissions.accountId, input.id)).run();
         tx.delete(accounts).where(eq(accounts.id, input.id)).run();
       });
       return { ok: true };
+    }),
+
+  /**
+   * Konto privat stellen / wieder freigeben.
+   * Privat stellen: bei Gemeinschaftskonto jedes Mitglied (wird Besitzer),
+   * sonst nur Besitzer/Admin (No-op bei bereits privatem Konto).
+   * Freigeben (privat → gemeinsam): nur Besitzer oder Admin; individuelle
+   * Freigaben werden dabei entfernt.
+   */
+  setAccountPrivacy: authedQuery
+    .input(z.object({
+      id: z.number().int().positive(),
+      private: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const account = await db.query.accounts
+        .findFirst({ where: eq(accounts.id, input.id) });
+      if (!account) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Konto nicht gefunden." });
+      }
+      const isOwnerOrAdmin =
+        account.ownerId === ctx.user.id || ctx.user.role === "admin";
+      if (input.private) {
+        if (account.ownerId === null) {
+          await db.update(accounts)
+            .set({ ownerId: ctx.user.id })
+            .where(eq(accounts.id, input.id));
+        } else if (!isOwnerOrAdmin) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Konto nicht gefunden." });
+        }
+      } else if (account.ownerId !== null) {
+        if (!isOwnerOrAdmin) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Konto nicht gefunden." });
+        }
+        db.transaction((tx) => {
+          tx.update(accounts).set({ ownerId: null })
+            .where(eq(accounts.id, input.id)).run();
+          tx.delete(accountPermissions)
+            .where(eq(accountPermissions.accountId, input.id)).run();
+        });
+      }
+      return { ok: true };
+    }),
+
+  /** Besitzer: individuelle Freigabe für ein privates Konto setzen/entziehen */
+  setAccountPermission: authedQuery
+    .input(z.object({
+      accountId: z.number().int().positive(),
+      userId: z.number().int().positive(),
+      level: z.enum(["none", "view", "edit"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const account = await db.query.accounts
+        .findFirst({ where: eq(accounts.id, input.accountId) });
+      if (!account || account.ownerId !== ctx.user.id) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Konto nicht gefunden." });
+      }
+      const target = await db.query.users
+        .findFirst({ where: eq(users.id, input.userId) });
+      if (!target) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Benutzer nicht gefunden.",
+        });
+      }
+      if (target.id === account.ownerId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Für den Besitzer kann keine Freigabe gesetzt werden.",
+        });
+      }
+      if (input.level === "none") {
+        await db.delete(accountPermissions).where(and(
+          eq(accountPermissions.accountId, input.accountId),
+          eq(accountPermissions.userId, input.userId),
+        ));
+      } else {
+        const canEdit = input.level === "edit";
+        await db.insert(accountPermissions)
+          .values({
+            accountId: input.accountId,
+            userId: input.userId,
+            canEdit,
+          })
+          .onConflictDoUpdate({
+            target: [accountPermissions.accountId, accountPermissions.userId],
+            set: { canEdit },
+          });
+      }
+      return { ok: true };
+    }),
+
+  /** Besitzer oder Admin: Freigaben eines Kontos auflisten */
+  listAccountPermissions: authedQuery
+    .input(z.object({ accountId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const account = await db.query.accounts
+        .findFirst({ where: eq(accounts.id, input.accountId) });
+      const allowed = account && (
+        account.ownerId === ctx.user.id || ctx.user.role === "admin"
+      );
+      if (!account || !allowed) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Konto nicht gefunden." });
+      }
+      return db.select().from(accountPermissions)
+        .where(eq(accountPermissions.accountId, input.accountId));
     }),
 
   /* -------------------------------- Kategorien ------------------------------- */
@@ -97,12 +265,15 @@ export const financeRouter = createRouter({
 
   /* ------------------------------- Transaktionen ------------------------------ */
 
-  listTransactions: authedQuery.query(async () => {
+  listTransactions: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
-    const [txs, splits] = await Promise.all([
+    const visible = await visibleAccountIds(db, ctx.user);
+    const [allTxs, splits] = await Promise.all([
       db.select().from(transactions).orderBy(desc(transactions.date), desc(transactions.id)),
       db.select().from(transactionSplits),
     ]);
+    // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
+    const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
     const byTx = new Map<number, { userId: number; amount: number }[]>();
     for (const s of splits) {
       const list = byTx.get(s.transactionId) ?? [];
@@ -127,9 +298,14 @@ export const financeRouter = createRouter({
         amount: z.number().int().positive(),
       })).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
       const { splits, ...txData } = input;
+      await requireAccountAccess(db, ctx.user, input.accountId, "edit");
+      // Bei Umbuchungen muss zumindest das Zielkonto sichtbar sein
+      if (input.type === "transfer" && input.toAccountId) {
+        await requireAccountAccess(db, ctx.user, input.toAccountId, "view");
+      }
       if (splits && splits.length > 0) {
         const sum = splits.reduce((s, x) => s + x.amount, 0);
         if (sum !== input.amount) {
@@ -151,8 +327,17 @@ export const financeRouter = createRouter({
 
   deleteTransaction: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      const txRow = await db.query.transactions
+        .findFirst({ where: eq(transactions.id, input.id) });
+      if (!txRow) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Buchung nicht gefunden.",
+        });
+      }
+      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
       db.transaction((tx) => {
         tx.delete(transactionSplits).where(eq(transactionSplits.transactionId, input.id)).run();
         tx.delete(transactions).where(eq(transactions.id, input.id)).run();
@@ -189,7 +374,12 @@ export const financeRouter = createRouter({
 
   /* ------------------------------- Wiederkehrend ------------------------------ */
 
-  listRecurring: authedQuery.query(() => getDb().select().from(recurring)),
+  listRecurring: authedQuery.query(async ({ ctx }) => {
+    const db = getDb();
+    const visible = await visibleAccountIds(db, ctx.user);
+    const rows = await db.select().from(recurring);
+    return rows.filter((r) => visible.has(r.accountId));
+  }),
 
   createRecurring: authedQuery
     .input(z.object({
@@ -202,25 +392,32 @@ export const financeRouter = createRouter({
       interval: z.enum(["weekly", "monthly", "yearly"]),
       nextDate: isoDate,
     }))
-    .mutation(async ({ input }) => {
-      await getDb().insert(recurring).values({ ...input, active: true, createdAt: new Date() });
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      await requireAccountAccess(db, ctx.user, input.accountId, "edit");
+      await db.insert(recurring).values({ ...input, active: true, createdAt: new Date() });
       return { ok: true };
     }),
 
   toggleRecurring: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
       const row = await db.query.recurring.findFirst({ where: eq(recurring.id, input.id) });
       if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+      await requireAccountAccess(db, ctx.user, row.accountId, "edit");
       await db.update(recurring).set({ active: !row.active }).where(eq(recurring.id, input.id));
       return { ok: true };
     }),
 
   deleteRecurring: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
-      await getDb().delete(recurring).where(eq(recurring.id, input.id));
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.recurring.findFirst({ where: eq(recurring.id, input.id) });
+      if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+      await requireAccountAccess(db, ctx.user, row.accountId, "edit");
+      await db.delete(recurring).where(eq(recurring.id, input.id));
       return { ok: true };
     }),
 
@@ -375,6 +572,7 @@ export const financeRouter = createRouter({
       tx.delete(budgets).where(ne(budgets.id, -1)).run();
       tx.delete(savingsGoals).where(ne(savingsGoals.id, -1)).run();
       tx.delete(categories).where(ne(categories.id, -1)).run();
+      tx.delete(accountPermissions).where(ne(accountPermissions.id, -1)).run();
       tx.delete(accounts).where(ne(accounts.id, -1)).run();
     });
     return { ok: true };

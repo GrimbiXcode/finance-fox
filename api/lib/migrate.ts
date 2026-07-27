@@ -1,5 +1,10 @@
 import { getDb, markDirty } from "../queries/connection";
 
+/** Minimal-Typ für den better-sqlite3-kompatiblen Proxy hinter db.$client */
+type RawClient = {
+  prepare(sql: string): { raw(): { all(...params: unknown[]): unknown[][] } };
+};
+
 /**
  * Stellt sicher, dass alle Tabellen existieren.
  * Führt beim Serverstart einmalig CREATE TABLE IF NOT EXISTS aus —
@@ -32,8 +37,17 @@ export function ensureSchema() {
       name TEXT NOT NULL,
       type TEXT NOT NULL,
       initial_balance INTEGER NOT NULL DEFAULT 0,
+      owner_id INTEGER,
       created_at INTEGER NOT NULL
     )`,
+    `CREATE TABLE IF NOT EXISTS account_permissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      can_edit INTEGER NOT NULL DEFAULT 0
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS account_perm_unique_idx
+      ON account_permissions (account_id, user_id)`,
     `CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -96,5 +110,16 @@ export function ensureSchema() {
   for (const sql of stmts) {
     db.run(sql as never);
   }
+
+  // Bestands-DBs nachträglich um neue Spalten ergänzen (ensureSchema ist
+  // idempotent, aber nicht-migrierend — CREATE TABLE ändert bestehende
+  // Tabellen nicht). Bestehende Konten bleiben so Gemeinschaftskonten
+  // (owner_id NULL), das heutige Verhalten ändert sich nicht.
+  const raw = (db as unknown as { $client: RawClient }).$client;
+  const accountCols = raw.prepare("PRAGMA table_info(accounts)").raw().all();
+  if (!accountCols.some((col) => col[1] === "owner_id")) {
+    db.run("ALTER TABLE accounts ADD COLUMN owner_id INTEGER" as never);
+  }
+
   markDirty();
 }

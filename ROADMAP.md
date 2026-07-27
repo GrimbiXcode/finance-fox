@@ -155,12 +155,13 @@ Fokus: Dinge, die *jeder* Haushalt sofort spürt, geringes Risiko, baut auf
 bestehendem Schema auf.
 
 1. **Konten bearbeiten + entschärftes Löschen** (Bearbeiten-Dialog,
-   Löschen nur dort mit Namens-Bestätigung)
+   Löschen nur dort mit Namens-Bestätigung) ✅ *umgesetzt*
 2. **Konten-Besitz & Sichtbarkeit** (privat vs. Gemeinschaftskonto, individuelle
    Ansehen-/Bearbeiten-Freigaben) — größter Einzelposten dieser Phase, da er
    Datenmodell und mehrere bestehende Abfragen (Dashboard, Transaktionen,
    Prognosen) berührt; sollte vor den übrigen Phase-1-Punkten oder zumindest
-   gemeinsam mit Punkt 1 (gleicher Dialog) umgesetzt werden
+   gemeinsam mit Punkt 1 (gleicher Dialog) umgesetzt werden ✅ *umgesetzt
+   (gemeinsam mit Punkt 1)*
 3. Backup-/Restore-Funktion in den Einstellungen (Datensicherheit ohne Docker-CLI)
 4. CSV-Export aller Transaktionen (+ einfacher CSV-Import)
 5. Beleg-/Foto-Anhänge an Transaktionen

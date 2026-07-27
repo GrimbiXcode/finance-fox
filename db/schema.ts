@@ -1,5 +1,5 @@
 import {
-  sqliteTable, text, integer, index,
+  sqliteTable, text, integer, index, uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 /* ---------------------------------- Auth ---------------------------------- */
@@ -32,8 +32,20 @@ export const accounts = sqliteTable("accounts", {
   name: text("name").notNull(),
   type: text("type", { enum: ["checking", "cash", "savings"] }).notNull(),
   initialBalance: integer("initial_balance").notNull().default(0), // Cent
+  // NULL = Gemeinschaftskonto (für alle sicht-/editierbar), sonst Besitzer-User
+  ownerId: integer("owner_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+/** Individuelle Freigaben privater Konten für andere Haushaltsmitglieder */
+export const accountPermissions = sqliteTable("account_permissions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull(),
+  userId: integer("user_id").notNull(),
+  canEdit: integer("can_edit", { mode: "boolean" }).notNull().default(false),
+}, (t) => [
+  uniqueIndex("account_perm_unique_idx").on(t.accountId, t.userId),
+]);
 
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),

@@ -4,6 +4,9 @@ import { getDb } from "./queries/connection";
 import {
   accounts, budgets, categories, recurring, savingsGoals, transactions,
 } from "@db/schema";
+import {
+  touchesVisibleAccount, visibleAccountIds,
+} from "./lib/accountAccess";
 
 function localISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -35,13 +38,18 @@ export const forecastRouter = createRouter({
    */
   balance: authedQuery
     .input(z.object({ months: z.number().int().min(1).max(36).default(12) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = getDb();
-      const [accs, txs, recs] = await Promise.all([
+      const visible = await visibleAccountIds(db, ctx.user);
+      const [allAccs, allTxs, allRecs] = await Promise.all([
         db.select().from(accounts),
         db.select().from(transactions),
         db.select().from(recurring),
       ]);
+      // Nur sichtbare Konten/Buchungen in die Prognose einbeziehen
+      const accs = allAccs.filter((a) => visible.has(a.id));
+      const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
+      const recs = allRecs.filter((r) => visible.has(r.accountId));
 
       // Startvermögen (Anfangsbestände)
       const base = accs.reduce((s, a) => s + a.initialBalance, 0);
@@ -149,13 +157,15 @@ export const forecastRouter = createRouter({
     }),
 
   /** Budget-Hochrechnung für den laufenden Monat */
-  budgetForecast: authedQuery.query(async () => {
+  budgetForecast: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
-    const [allBudgets, txs, cats] = await Promise.all([
+    const visible = await visibleAccountIds(db, ctx.user);
+    const [allBudgets, allTxs, cats] = await Promise.all([
       db.select().from(budgets),
       db.select().from(transactions),
       db.select().from(categories),
     ]);
+    const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
     const today = new Date();
     const currentKey = localISO(today).slice(0, 7);
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
@@ -180,12 +190,14 @@ export const forecastRouter = createRouter({
   }),
 
   /** Sparziel-Prognose: wann ist das Ziel bei aktueller Sparrate erreicht? */
-  goalForecast: authedQuery.query(async () => {
+  goalForecast: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
-    const [goals, txs] = await Promise.all([
+    const visible = await visibleAccountIds(db, ctx.user);
+    const [goals, allTxs] = await Promise.all([
       db.select().from(savingsGoals),
       db.select().from(transactions),
     ]);
+    const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
     const currentKey = localISO(new Date()).slice(0, 7);
 
     // Durchschnittliche monatliche Sparrate (Einnahmen - Ausgaben, letzte 3 Monate)

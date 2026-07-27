@@ -57,9 +57,12 @@ api/            Backend (Hono + tRPC), Einstieg: api/boot.ts
   middleware.ts   tRPC-Setup: publicQuery / authedQuery / adminQuery
   context.ts      TrpcContext, Session-User aus Cookie
   authRouter.ts   Setup-Wizard, Login, Einladungen, Passwort-Reset
-  financeRouter.ts  Konten, Transaktionen, Kategorien, Budgets, Splits, Sparziele
+  financeRouter.ts  Konten (inkl. Besitz/Sichtbarkeit), Transaktionen, Kategorien,
+                  Budgets, Splits, Sparziele
   forecastRouter.ts Prognosen
   lib/            env.ts, session.ts, migrate.ts (ensureSchema), recurringJob.ts,
+                  accountAccess.ts (Sichtbarkeits-/Bearbeitungsrechte für Konten:
+                  Gemeinschaftskonto vs. privat, serverseitige Prüfung),
                   http.ts, vite.ts (statische Auslieferung in Produktion)
   queries/connection.ts  sql.js-DB mit better-sqlite3-kompatiblem Proxy,
                   initDb() / getDb() / markDirty()
@@ -69,7 +72,9 @@ db/             schema.ts (Drizzle-Tabellen), relations.ts, seed.ts,
 src/            Frontend (React)
   App.tsx         Routing (deutsche Pfade: /transaktionen, /konten, ...)
   pages/          Eine Komponente pro Seite (Dashboard, Transactions, ...)
-  components/     Layout.tsx, TransactionDialog.tsx, ui/ (shadcn/ui, nicht von
+  components/     Layout.tsx, TransactionDialog.tsx, AccountDialog.tsx
+                  (Anlegen/Bearbeiten/Löschen von Konten inkl. Sichtbarkeits-
+                  Freigaben und Gefahrenzone), ui/ (shadcn/ui, nicht von
                   Hand umschreiben — via shadcn generiert)
   providers/      trpc.tsx (tRPC + QueryClient), auth.tsx
   lib/            finance.ts (Berechnungen, Cent-Helfer), data.ts, utils.ts (cn)
@@ -94,6 +99,13 @@ Wichtige Konventionen:
   sich sofort auf den Client aus.
 - Alle fachlichen Endpunkte nutzen `authedQuery` (Login erforderlich);
   Admin-only über `adminQuery`. Deutsche `TRPCError`-Meldungen.
+- **Konten-Sichtbarkeit**: `accounts.ownerId` NULL = Gemeinschaftskonto (alle
+  dürfen lesen/bearbeiten), sonst privat (Besitzer + Freigaben aus
+  `account_permissions`, Admins nur lesend). Zugriffsprüfung immer
+  serverseitig über die Helper in `api/lib/accountAccess.ts`
+  (`requireAccountAccess`, `visibleAccountIds`) — nicht nur im Frontend
+  ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen) sind
+  pro anfragendem Nutzer gefiltert.
 - Einladungs-/Reset-Links sind Hash-Routen (`#/einladung/<token>`,
   `#/reset/<token>`) und werden im Server-Log ausgegeben (kein E-Mail-Versand).
 
@@ -109,16 +121,16 @@ Wichtige Konventionen:
 - Schema-Quelle der Wahrheit ist `db/schema.ts`. `api/lib/migrate.ts`
   (`ensureSchema`) enthält dasselbe Schema als `CREATE TABLE IF NOT EXISTS`
   und läuft bei jedem Serverstart — bei Schemaänderungen **beide Stellen**
-  aktualisieren. Für bestehende Installationen gilt: `ensureSchema` ist
-  idempotent, aber nicht-migrierend; Änderungen an bestehenden Tabellen
-  brauchen eine eigene Migration (drizzle-kit, `npm run db:generate`).
+  aktualisieren. `ensureSchema` ist idempotent; neue Spalten an bestehenden
+  Tabellen werden dort guardiert nachgerüstet (PRAGMA table_info +
+  ALTER TABLE, siehe `owner_id` bei `accounts`).
 
 ## Testing
 
 - Vitest (`npm run test`), Umgebung `node`, Include-Pattern
   `api/**/*.test.ts` / `api/**/*.spec.ts` (siehe `vitest.config.ts`).
-  Aktuell existieren keine Tests — neue Tests nach diesem Muster im
-  `api/`-Verzeichnis ablegen. Aliase `@/`, `@contracts/`, `@assets/` sind
+  Bestehende Tests (z. B. `api/appSettings.test.ts`, `api/accountAccess.test.ts`)
+  dienen als Muster für neue Tests im `api/`-Verzeichnis. Aliase `@/`, `@contracts/`, `@assets/` sind
   konfiguriert; `DATABASE_URL=file::memory:` für isolierte DB-Tests nutzen.
 - ESLint: typescript-eslint recommended + react-hooks + react-refresh
   (`eslint.config.js`, flat config).

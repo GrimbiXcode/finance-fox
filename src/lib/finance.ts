@@ -17,33 +17,87 @@ export const setAppCurrency = (code: string): void => {
 
 export const getAppCurrency = (): string => appCurrency;
 
+/**
+ * Region des Browsers (z. B. "de-DE", "de-CH", "en-US") — steuert alle
+ * Zahlen- und Datumsformate in der Anzeige und Eingabe. Fallback: de-DE.
+ */
+const userLocale =
+  typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'de-DE';
+
+export const getUserLocale = (): string => userLocale;
+
+/** Locale-konformer Placeholder für Betragsfelder (z. B. "0,00" bzw. "0.00") */
+export const amountPlaceholder = new Intl.NumberFormat(userLocale, {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+}).format(0);
+
 export const formatCents = (cents: number, currency: string = appCurrency): string =>
-  new Intl.NumberFormat('de-DE', { style: 'currency', currency }).format(cents / 100);
+  new Intl.NumberFormat(userLocale, { style: 'currency', currency }).format(cents / 100);
 
 /** Währungssymbol der App-Währung (z. B. "€", "CHF", "$") für Labels/Charts */
 export const currencySymbol = (currency: string = appCurrency): string =>
-  new Intl.NumberFormat('de-DE', { style: 'currency', currency })
+  new Intl.NumberFormat(userLocale, { style: 'currency', currency })
     .formatToParts(0)
     .find((p) => p.type === 'currency')?.value ?? currency;
 
-export const parseEuro = (input: string): number => {
-  const normalized = input.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+/**
+ * Locale-bewusstes Betrags-Parsing → Cent (positive ganze Zahl, 0 bei
+ * ungültiger Eingabe). Regelwerk:
+ * - Währungssymbole, Leerzeichen und Apostrophe (') werden ignoriert.
+ * - Kommen '.' UND ',' vor, gilt das weiter rechts stehende Zeichen als
+ *   Dezimalzeichen, das andere als Tausendertrenner.
+ * - Kommt nur das Dezimalzeichen der Locale vor, ist es das Dezimalzeichen
+ *   (bei Mehrfachvorkommen: Tausendertrenner).
+ * - Kommt nur das jeweils andere Zeichen genau einmal mit 1–2
+ *   Nachkommastellen vor, wird es als Dezimalzeichen interpretiert
+ *   (Fallback für eingefügte Werte), sonst als Tausendertrenner entfernt.
+ */
+export const parseAmountCents = (input: string, locale: string): number => {
+  const decimal =
+    new Intl.NumberFormat(locale)
+      .formatToParts(1.1)
+      .find((p) => p.type === 'decimal')?.value ?? ',';
+  const other = decimal === ',' ? '.' : ',';
+  const s = input.trim().replace(/[\s'’`€$£¥₹]/g, '');
+  if (s === '') return 0;
+  let normalized: string;
+  if (s.includes('.') && s.includes(',')) {
+    // Beide Zeichen vorhanden: das letzte ist das Dezimalzeichen
+    const decimalChar = s.lastIndexOf(',') > s.lastIndexOf('.') ? ',' : '.';
+    const groupChar = decimalChar === ',' ? '.' : ',';
+    normalized = s.split(groupChar).join('').replace(decimalChar, '.');
+  } else if (s.includes(decimal)) {
+    normalized =
+      s.split(decimal).length === 2 ? s.replace(decimal, '.') : s.split(decimal).join('');
+  } else if (s.includes(other)) {
+    const occurrences = s.split(other).length - 1;
+    const fraction = s.slice(s.lastIndexOf(other) + 1);
+    normalized =
+      occurrences === 1 && /^\d{1,2}$/.test(fraction)
+        ? s.replace(other, '.')
+        : s.split(other).join('');
+  } else {
+    normalized = s;
+  }
   const value = parseFloat(normalized);
   if (Number.isNaN(value)) return 0;
   return Math.round(Math.abs(value) * 100);
 };
+
+export const parseEuro = (input: string): number => parseAmountCents(input, userLocale);
 
 export const monthKey = (dateISO: string): string => dateISO.slice(0, 7);
 
 export const currentMonthKey = (): string => monthKey(todayISO());
 
 export const formatDate = (dateISO: string): string =>
-  new Date(`${dateISO}T12:00:00`).toLocaleDateString('de-DE', {
+  new Date(`${dateISO}T12:00:00`).toLocaleDateString(userLocale, {
     day: '2-digit', month: '2-digit', year: 'numeric',
   });
 
 export const formatMonth = (key: string): string =>
-  new Date(`${key}-15T12:00:00`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  new Date(`${key}-15T12:00:00`).toLocaleDateString(userLocale, { month: 'long', year: 'numeric' });
 
 /** Generische Typen für Berechnungen (kompatibel mit den tRPC-Antworten) */
 export interface TxLike {

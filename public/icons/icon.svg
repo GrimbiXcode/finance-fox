@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#059669"/>
+  <!-- Stilisierter Fuchskopf -->
+  <g fill="#ffffff">
+    <!-- Ohren -->
+    <path d="M156 108 L216 196 L128 208 Z"/>
+    <path d="M356 108 L296 196 L384 208 Z"/>
+    <!-- Kopf / Schnauze -->
+    <path d="M256 176
+             C 196 176 148 224 148 284
+             C 148 340 196 392 256 424
+             C 316 392 364 340 364 284
+             C 364 224 316 176 256 176 Z"/>
+  </g>
+  <!-- Gesicht in Primärfarbe (negativ) -->
+  <g fill="#059669">
+    <!-- Augen -->
+    <circle cx="214" cy="272" r="16"/>
+    <circle cx="298" cy="272" r="16"/>
+    <!-- Schnauzenpartie -->
+    <path d="M256 320 C 236 320 220 336 220 356 C 220 380 238 400 256 412 C 274 400 292 380 292 356 C 292 336 276 320 256 320 Z" fill="#ffffff"/>
+    <circle cx="256" cy="352" r="12"/>
+  </g>
+</svg>

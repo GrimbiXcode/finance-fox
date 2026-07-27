@@ -6,12 +6,15 @@ import { getDb } from "./queries/connection";
 import {
   accountPermissions,
   accounts,
+  accountTypes,
   appSettings,
+  banks,
   budgets,
   categories,
   recurring,
   savingsGoals,
   transactions,
+  transactionAttachments,
   transactionSplits,
   users,
 } from "@db/schema";
@@ -21,6 +24,7 @@ import {
   CSV_HEADER,
   TYPE_LABELS,
   csvEscape,
+  csvFieldSeparator,
   formatEuroCsv,
   isValidIsoDate,
   parseCsv,
@@ -33,6 +37,15 @@ import {
   touchesVisibleAccount,
   visibleAccountIds,
 } from "./lib/accountAccess";
+import { deleteAttachmentsForTransactions } from "./lib/attachments";
+import {
+  ensureAccountTypeExists,
+  ensureBankExists,
+  normalizeIban,
+} from "./lib/accountTypes";
+
+/** Einzahl/Mehrzahl für deutsche Fehlermeldungen */
+const kontoAnzahl = (n: number) => (n === 1 ? "1 Konto" : `${n} Konten`);
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
 
@@ -70,43 +83,56 @@ export const financeRouter = createRouter({
     .input(
       z.object({
         name: z.string().min(1),
-        type: z.enum(["checking", "cash", "savings"]),
+        // Key aus account_types (Builtin oder Custom-Typ)
+        type: z.string().min(1),
         initialBalance: z.number().int(),
+        bankId: z.number().int().positive().nullish(),
+        iban: z.string().max(60).nullish(),
         // true = privates Konto, der anlegende Nutzer wird Besitzer
         private: z.boolean().default(false),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      await ensureAccountTypeExists(db, input.type);
+      await ensureBankExists(db, input.bankId);
       await db.insert(accounts).values({
         name: input.name,
         type: input.type,
         initialBalance: input.initialBalance,
+        bankId: input.bankId ?? null,
+        iban: normalizeIban(input.iban),
         ownerId: input.private ? ctx.user.id : null,
         createdAt: new Date(),
       });
       return { ok: true };
     }),
 
-  /** Konto bearbeiten (Name, Typ, Anfangsbestand) — erfordert "edit" */
+  /** Konto bearbeiten (Name, Typ, Bank, IBAN, Anfangsbestand) — erfordert "edit" */
   updateAccount: authedQuery
     .input(
       z.object({
         id: z.number().int().positive(),
         name: z.string().min(1),
-        type: z.enum(["checking", "cash", "savings"]),
+        type: z.string().min(1),
         initialBalance: z.number().int(),
+        bankId: z.number().int().positive().nullish(),
+        iban: z.string().max(60).nullish(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
       await requireAccountAccess(db, ctx.user, input.id, "edit");
+      await ensureAccountTypeExists(db, input.type);
+      await ensureBankExists(db, input.bankId);
       await db
         .update(accounts)
         .set({
           name: input.name,
           type: input.type,
           initialBalance: input.initialBalance,
+          bankId: input.bankId ?? null,
+          iban: normalizeIban(input.iban),
         })
         .where(eq(accounts.id, input.id));
       return { ok: true };
@@ -152,6 +178,8 @@ export const financeRouter = createRouter({
           .from(transactions)
           .where(eq(transactions.accountId, input.id))
       ).map(t => t.id);
+      // Beleg-Zeilen + Dateien der Kontobuchungen entfernen
+      await deleteAttachmentsForTransactions(db, txIds);
       db.transaction(tx => {
         for (const id of txIds) {
           tx.delete(transactionSplits)
@@ -313,6 +341,122 @@ export const financeRouter = createRouter({
         .where(eq(accountPermissions.accountId, input.accountId));
     }),
 
+  /* ---------------------------- Kontotypen & Banken -------------------------- */
+
+  /** Alle Kontotypen: Builtin zuerst, dann alphabetisch nach Name */
+  listAccountTypes: authedQuery.query(() =>
+    getDb()
+      .select()
+      .from(accountTypes)
+      .orderBy(desc(accountTypes.builtin), accountTypes.name)
+  ),
+
+  createAccountType: authedQuery
+    .input(z.object({ name: z.string().trim().min(1).max(50) }))
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      const existing = await db.select().from(accountTypes);
+      if (
+        existing.some(
+          t => t.name.toLowerCase() === input.name.toLowerCase()
+        )
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Ein Kontotyp mit diesem Namen existiert bereits.",
+        });
+      }
+      const key = `custom_${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
+      const rows = await db
+        .insert(accountTypes)
+        .values({ key, name: input.name, builtin: false })
+        .returning();
+      return rows[0];
+    }),
+
+  /** Löschen nur für eigene Typen, die nicht mehr verwendet werden */
+  deleteAccountType: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      const row = await db.query.accountTypes.findFirst({
+        where: eq(accountTypes.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Kontotyp nicht gefunden.",
+        });
+      }
+      if (row.builtin) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Standard-Kontotypen können nicht gelöscht werden.",
+        });
+      }
+      const used = await db
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(eq(accounts.type, row.key));
+      if (used.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Der Kontotyp wird noch von ${kontoAnzahl(used.length)} verwendet.`,
+        });
+      }
+      await db.delete(accountTypes).where(eq(accountTypes.id, input.id));
+      return { ok: true };
+    }),
+
+  listBanks: authedQuery.query(() =>
+    getDb().select().from(banks).orderBy(banks.name)
+  ),
+
+  createBank: authedQuery
+    .input(z.object({ name: z.string().trim().min(1).max(80) }))
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      const existing = await db.select().from(banks);
+      if (
+        existing.some(b => b.name.toLowerCase() === input.name.toLowerCase())
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Eine Bank mit diesem Namen existiert bereits.",
+        });
+      }
+      const rows = await db.insert(banks).values(input).returning();
+      return rows[0];
+    }),
+
+  /** Löschen nur, wenn die Bank keinem Konto mehr zugeordnet ist */
+  deleteBank: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      const row = await db.query.banks.findFirst({
+        where: eq(banks.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Bank nicht gefunden.",
+        });
+      }
+      const used = await db
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(eq(accounts.bankId, input.id));
+      if (used.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Die Bank wird noch von ${kontoAnzahl(used.length)} verwendet.`,
+        });
+      }
+      await db.delete(banks).where(eq(banks.id, input.id));
+      return { ok: true };
+    }),
+
   /* -------------------------------- Kategorien ------------------------------- */
 
   listCategories: authedQuery.query(() => getDb().select().from(categories)),
@@ -350,12 +494,21 @@ export const financeRouter = createRouter({
   listTransactions: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
-    const [allTxs, splits] = await Promise.all([
+    const [allTxs, splits, attachments] = await Promise.all([
       db
         .select()
         .from(transactions)
         .orderBy(desc(transactions.date), desc(transactions.id)),
       db.select().from(transactionSplits),
+      db
+        .select({
+          id: transactionAttachments.id,
+          transactionId: transactionAttachments.transactionId,
+          originalName: transactionAttachments.originalName,
+          mimeType: transactionAttachments.mimeType,
+          sizeBytes: transactionAttachments.sizeBytes,
+        })
+        .from(transactionAttachments),
     ]);
     // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
     const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
@@ -365,7 +518,25 @@ export const financeRouter = createRouter({
       list.push({ userId: s.userId, amount: s.amount });
       byTx.set(s.transactionId, list);
     }
-    return txs.map(t => ({ ...t, splits: byTx.get(t.id) ?? [] }));
+    const attsByTx = new Map<
+      number,
+      { id: number; originalName: string; mimeType: string; sizeBytes: number }[]
+    >();
+    for (const a of attachments) {
+      const list = attsByTx.get(a.transactionId) ?? [];
+      list.push({
+        id: a.id,
+        originalName: a.originalName,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+      });
+      attsByTx.set(a.transactionId, list);
+    }
+    return txs.map(t => ({
+      ...t,
+      splits: byTx.get(t.id) ?? [],
+      attachments: attsByTx.get(t.id) ?? [],
+    }));
   }),
 
   createTransaction: authedQuery
@@ -438,6 +609,8 @@ export const financeRouter = createRouter({
         });
       }
       await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      // Beleg-Zeilen + Dateien entfernen, bevor die Buchung gelöscht wird
+      await deleteAttachmentsForTransactions(db, [input.id]);
       db.transaction(tx => {
         tx.delete(transactionSplits)
           .where(eq(transactionSplits.transactionId, input.id))
@@ -790,6 +963,11 @@ export const financeRouter = createRouter({
   /** Admin: alle Finanzdaten löschen (Neustart) */
   resetFinanceData: authedQuery.mutation(async () => {
     const db = getDb();
+    const txIds = (
+      await db.select({ id: transactions.id }).from(transactions)
+    ).map(t => t.id);
+    // Beleg-Zeilen + Dateien aller Buchungen entfernen
+    await deleteAttachmentsForTransactions(db, txIds);
     db.transaction(tx => {
       tx.delete(transactionSplits).where(ne(transactionSplits.id, -1)).run();
       tx.delete(transactions).where(ne(transactions.id, -1)).run();
@@ -806,10 +984,14 @@ export const financeRouter = createRouter({
   /* ---------------------------- CSV-Export/-Import --------------------------- */
 
   /**
-   * Alle für den Nutzer sichtbaren Transaktionen als CSV
-   * (Semikolon, Dezimalkomma, Kopfzeile — Format siehe api/lib/csv.ts).
+   * Alle für den Nutzer sichtbaren Transaktionen als CSV. Trenn- und
+   * Dezimalzeichen richten sich nach der optionalen Locale des Clients
+   * (de-* → Semikolon/Dezimalkomma, sonst Komma/Dezimalpunkt — Format
+   * siehe api/lib/csv.ts). Default ohne Locale: deutsches Format.
    */
-  exportTransactionsCsv: authedQuery.query(async ({ ctx }) => {
+  exportTransactionsCsv: authedQuery
+    .input(z.object({ locale: z.string().max(35).optional() }).optional())
+    .query(async ({ ctx, input }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
     const [allTxs, accs, cats] = await Promise.all([
@@ -822,20 +1004,23 @@ export const financeRouter = createRouter({
     const txs = allTxs
       .filter(t => touchesVisibleAccount(visible, t))
       .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
-    const lines = [CSV_HEADER.map(csvEscape).join(";")];
+    const separator = csvFieldSeparator(input?.locale);
+    const lines = [
+      CSV_HEADER.map(h => csvEscape(h, separator)).join(separator),
+    ];
     for (const t of txs) {
       lines.push(
         [
           t.date,
           TYPE_LABELS[t.type],
-          formatEuroCsv(t.amount),
+          formatEuroCsv(t.amount, input?.locale),
           t.categoryId ? (categoryName.get(t.categoryId) ?? "") : "",
           accountName.get(t.accountId) ?? "",
           t.toAccountId ? (accountName.get(t.toAccountId) ?? "") : "",
           t.note,
         ]
-          .map(csvEscape)
-          .join(";")
+          .map(v => csvEscape(v, separator))
+          .join(separator)
       );
     }
     return lines.join("\r\n");

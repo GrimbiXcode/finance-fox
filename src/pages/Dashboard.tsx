@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFinanceData } from '@/lib/data';
 import {
   currencySymbol, currentMonthKey, expensesByCategory, formatCents, formatDate, formatMonth,
-  memberBalances, monthTotals, totalBalance,
+  getUserLocale, memberBalances, monthTotals, totalBalance,
 } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import { cn } from '@/lib/utils';
@@ -126,7 +126,7 @@ export default function Dashboard() {
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} />
                 <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v} ${currencySymbol()}`} width={70} />
-                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
+                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
                 <Area type="monotone" dataKey="Einnahmen" stroke="#10b981" fill="url(#gIn)" strokeWidth={2} />
                 <Area type="monotone" dataKey="Ausgaben" stroke="#f43f5e" fill="url(#gOut)" strokeWidth={2} />
               </AreaChart>
@@ -150,7 +150,7 @@ export default function Dashboard() {
                       <Cell key={entry.name} fill={entry.color || PIE_COLORS[idx % PIE_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString('de-DE', { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
+                  <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
                 </PieChart>
               </ResponsiveContainer>
             )}

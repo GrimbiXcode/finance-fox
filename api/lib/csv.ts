@@ -1,8 +1,25 @@
 /**
  * CSV-Helfer für Export/Import von Transaktionen.
- * Format (deutsch/Excel-tauglich): Semikolon-getrennt, Betrag in Euro mit
- * Dezimalkomma, Datum YYYY-MM-DD, Zeilenenden CRLF, Quoting nach RFC 4180.
+ * Format abhängig von der Locale: deutsch (de-*) → Semikolon-getrennt mit
+ * Dezimalkomma (Excel-DE), sonst → Komma-getrennt mit Dezimalpunkt
+ * (Excel-US). Datum YYYY-MM-DD, Zeilenenden CRLF, Quoting nach RFC 4180.
+ * Der Import erkennt das Feldtrennzeichen an der Kopfzeile automatisch.
  */
+
+/** Deutsche Locale (de-*) bzw. kein Locale-Parameter → deutsches CSV-Format */
+export function isGermanLocale(locale?: string): boolean {
+  return !locale || locale.toLowerCase().startsWith("de");
+}
+
+/** Feldtrennzeichen je nach Locale: de → ";" (Excel-DE), sonst "," (Excel-US) */
+export function csvFieldSeparator(locale?: string): string {
+  return isGermanLocale(locale) ? ";" : ",";
+}
+
+/** Dezimalzeichen für Beträge je nach Locale: de → ",", sonst "." */
+export function csvDecimalSeparator(locale?: string): string {
+  return isGermanLocale(locale) ? "," : ".";
+}
 
 export const CSV_HEADER = [
   "Datum",
@@ -22,15 +39,16 @@ export const TYPE_LABELS = {
 
 export type TxType = keyof typeof TYPE_LABELS;
 
-/** RFC 4180: Felder mit ; " oder Zeilenumbruch quoten, " darin verdoppeln */
-export function csvEscape(value: string): string {
-  if (/[;"\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+/** RFC 4180: Felder mit Trennzeichen, " oder Zeilenumbruch quoten, " darin verdoppeln */
+export function csvEscape(value: string, separator: string = ";"): string {
+  if (value.includes(separator) || /["\r\n]/.test(value))
+    return `"${value.replace(/"/g, '""')}"`;
   return value;
 }
 
-/** Cent → Euro-String mit Dezimalkomma (z. B. 1234 → "12,34") */
-export function formatEuroCsv(cents: number): string {
-  return (cents / 100).toFixed(2).replace(".", ",");
+/** Cent → Euro-String mit Dezimalzeichen der Locale (1234 → "12,34" bzw. "12.34") */
+export function formatEuroCsv(cents: number, locale?: string): string {
+  return (cents / 100).toFixed(2).replace(".", csvDecimalSeparator(locale));
 }
 
 /**
@@ -67,8 +85,15 @@ export type CsvRecord = {
   line: number;
 };
 
-/** Parser für Semikolon-CSV mit RFC-4180-Quoting (CRLF/LF, eingebettete Umbrüche) */
+/**
+ * Parser für CSV mit RFC-4180-Quoting (CRLF/LF, eingebettete Umbrüche).
+ * Das Feldtrennzeichen wird an der Kopfzeile erkannt: enthält sie ein
+ * Semikolon, gilt ";", sonst ",".
+ */
 export function parseCsv(text: string): CsvRecord[] {
+  const input = text.startsWith("\uFEFF") ? text.slice(1) : text;
+  const headerLine = input.split(/\r?\n/, 1)[0] ?? "";
+  const separator = headerLine.includes(";") ? ";" : ",";
   const records: CsvRecord[] = [];
   let fields: string[] = [];
   let field = "";
@@ -86,7 +111,6 @@ export function parseCsv(text: string): CsvRecord[] {
     hasContent = false;
   };
 
-  const input = text.startsWith("\uFEFF") ? text.slice(1) : text;
   for (let i = 0; i < input.length; i++) {
     const ch = input[i];
     if (inQuotes) {
@@ -104,7 +128,7 @@ export function parseCsv(text: string): CsvRecord[] {
     } else if (ch === '"') {
       inQuotes = true;
       hasContent = true;
-    } else if (ch === ";") {
+    } else if (ch === separator) {
       fields.push(field);
       field = "";
       hasContent = true;

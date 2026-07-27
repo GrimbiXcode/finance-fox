@@ -10,6 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { getUserLocale } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -50,6 +51,13 @@ function CsvImportForm({ close }: { close: () => void }) {
 
   // Nur Konten, auf die der Nutzer Schreibzugriff hat
   const editableAccounts = accounts.filter((a) => a.access === 'edit');
+
+  // Formathinweis passend zur Browser-Region (de: Semikolon/Dezimalkomma,
+  // sonst Komma/Dezimalpunkt — der Import erkennt das Trennzeichen selbst)
+  const isGermanCsv = getUserLocale().toLowerCase().startsWith('de');
+  const csvSeparator = isGermanCsv ? ';' : ',';
+  const csvHeaderExample = ['Datum', 'Typ', 'Betrag', 'Kategorie', 'Konto', 'Zielkonto', 'Notiz'].join(csvSeparator);
+  const csvAmountExample = isGermanCsv ? '12,34' : '12.34';
 
   const submit = async () => {
     if (!file) { toast.error('Bitte eine CSV-Datei auswählen.'); return; }
@@ -114,9 +122,10 @@ function CsvImportForm({ close }: { close: () => void }) {
           <div className="rounded-lg border p-3 text-xs text-muted-foreground">
             <p className="mb-1 font-medium text-foreground">Erwartetes Format</p>
             <p>
-              Semikolon-getrennt mit Kopfzeile{' '}
-              <code className="rounded bg-muted px-1">Datum;Typ;Betrag;Kategorie;Konto;Zielkonto;Notiz</code>,
-              Betrag mit Dezimalkomma (z.&nbsp;B. <code className="rounded bg-muted px-1">12,34</code>),
+              {isGermanCsv ? 'Semikolon-getrennt' : 'Komma-getrennt'} mit Kopfzeile{' '}
+              <code className="rounded bg-muted px-1">{csvHeaderExample}</code>,
+              Betrag mit {isGermanCsv ? 'Dezimalkomma' : 'Dezimalpunkt'} (z.&nbsp;B.{' '}
+              <code className="rounded bg-muted px-1">{csvAmountExample}</code>),
               Datum als <code className="rounded bg-muted px-1">JJJJ-MM-TT</code>.
               Es werden nur Einnahmen und Ausgaben importiert — Umbuchungen werden übersprungen.
               Kategorien werden per Name zugeordnet, das Konto der Zeilen wird ignoriert.

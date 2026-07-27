@@ -1,4 +1,4 @@
-import { Banknote, CreditCard, Pencil, PiggyBank, Plus } from 'lucide-react';
+import { Banknote, CreditCard, Pencil, PiggyBank, Plus, Wallet } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,16 +7,20 @@ import { useFinanceData } from '@/lib/data';
 import { formatCents } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
-type AccountType = 'checking' | 'cash' | 'savings';
-
-const typeMeta: Record<AccountType, { label: string; icon: typeof CreditCard }> = {
-  checking: { label: 'Girokonto', icon: CreditCard },
-  cash: { label: 'Bargeld', icon: Banknote },
-  savings: { label: 'Sparkonto', icon: PiggyBank },
+/** Icons für die Builtin-Typen; eigene Typen bekommen das Fallback-Icon */
+const typeIcons: Record<string, typeof CreditCard> = {
+  checking: CreditCard,
+  cash: Banknote,
+  savings: PiggyBank,
 };
 
+/** IBAN zur Anzeige in 4er-Gruppen formatieren */
+const formatIban = (iban: string) => iban.replace(/(.{4})/g, '$1 ').trim();
+
 export default function Accounts() {
-  const { accounts, transactions } = useFinanceData();
+  const { accounts, accountTypes, banks, transactions } = useFinanceData();
+  const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
+  const bankName = new Map(banks.map((b) => [b.id, b.name]));
 
   return (
     <div className="space-y-6">
@@ -41,18 +45,18 @@ export default function Accounts() {
       )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {accounts.map((a) => {
-          const meta = typeMeta[a.type];
+          const Icon = typeIcons[a.type] ?? Wallet;
           const txCount = transactions.filter((t) => t.accountId === a.id || t.toAccountId === a.id).length;
           return (
             <Card key={a.id}>
               <CardHeader className="flex flex-row items-start justify-between pb-2">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
-                    <meta.icon className="h-5 w-5" />
+                    <Icon className="h-5 w-5" />
                   </div>
                   <div>
                     <CardTitle className="text-base">{a.name}</CardTitle>
-                    <CardDescription>{meta.label}</CardDescription>
+                    <CardDescription>{typeName.get(a.type) ?? a.type}</CardDescription>
                   </div>
                 </div>
                 {a.access === 'edit' && (
@@ -74,6 +78,12 @@ export default function Accounts() {
                   {a.access === 'view' && <Badge variant="outline">nur lesend</Badge>}
                   <span>Anfangsbestand: {formatCents(a.initialBalance)}</span>
                 </div>
+                {(a.bankId !== null || a.iban) && (
+                  <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                    {a.bankId !== null && <div>{bankName.get(a.bankId) ?? 'Unbekannte Bank'}</div>}
+                    {a.iban && <div className="font-mono">{formatIban(a.iban)}</div>}
+                  </div>
+                )}
               </CardContent>
             </Card>
           );

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { ChevronRight, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -10,19 +10,34 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
-import { currencySymbol, formatCents, parseEuro, todayISO } from '@/lib/finance';
+import {
+  amountPlaceholder, currencySymbol, formatCents, getUserLocale, parseEuro, todayISO,
+} from '@/lib/finance';
+import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
 type TxType = 'income' | 'expense' | 'transfer';
+
+// Farbpalette wie in der Kategorien-Verwaltung (Einstellungen)
+const CAT_COLORS = ['#f43f5e', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#94a3b8', '#10b981'];
+
+/** Locale-konforme Betragsanzeige ohne Währungssymbol/Tausendertrenner (für Eingabefelder) */
+const shareFormatter = new Intl.NumberFormat(getUserLocale(), {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
 
 /** Dialog zum Erfassen einer neuen Buchung (Einnahme, Ausgabe, Umbuchung) */
 export default function TransactionDialog({ defaultType = 'expense' }: { defaultType?: TxType }) {
   const { user } = useAuth();
   const { accounts, categories, users } = useFinanceData();
   const invalidate = useInvalidateFinance();
+  const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<TxType>(defaultType);
   const [amount, setAmount] = useState('');
@@ -34,6 +49,10 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   const [note, setNote] = useState('');
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [shares, setShares] = useState<Record<number, string>>({});
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // Inline-Bereich für "+ Neue Kategorie" (Muster wie "+ Neuer Typ" im Konto-Dialog)
+  const [newCatOpen, setNewCatOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
 
   const createTx = trpc.finance.createTransaction.useMutation({
     onSuccess: () => {
@@ -46,6 +65,21 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
     onError: (err) => toast.error(err.message),
   });
 
+  const createCategory = trpc.finance.createCategory.useMutation({
+    onSuccess: async (_data, vars) => {
+      toast.success('Kategorie angelegt.');
+      await utils.finance.listCategories.invalidate();
+      // createCategory liefert keine ID zurück — neue Kategorie über Namen finden
+      const created = utils.finance.listCategories
+        .getData()
+        ?.find((c) => c.name === vars.name && c.type === vars.type);
+      if (created) setCategoryId(String(created.id)); // direkt auswählen
+      setNewCatName('');
+      setNewCatOpen(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const effectiveUserId = userId ? Number(userId) : (user?.id ?? 0);
   const effectiveAccountId = accountId ? Number(accountId) : (accounts[0]?.id ?? 0);
   const effectiveToAccountId = toAccountId ? Number(toAccountId) : (accounts.find((a) => a.id !== effectiveAccountId)?.id ?? 0);
@@ -54,6 +88,25 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
     () => categories.filter((c) => (type === 'income' ? c.type === 'income' : c.type === 'expense')),
     [categories, type],
   );
+
+  /** Palettenfarbe mit der geringsten bisherigen Verwendung wählen */
+  const nextCategoryColor = (): string => {
+    const counts = new Map<string, number>(CAT_COLORS.map((c) => [c, 0]));
+    for (const c of categories) counts.set(c.color, (counts.get(c.color) ?? 0) + 1);
+    return CAT_COLORS.reduce((best, c) => ((counts.get(c) ?? 0) < (counts.get(best) ?? 0) ? c : best));
+  };
+
+  /** Buchungsart wechseln — Kategorie zurücksetzen, wenn sie nicht zum neuen Typ passt */
+  const changeType = (value: TxType) => {
+    setType(value);
+    if (value === 'transfer') {
+      setCategoryId('');
+      setNewCatOpen(false);
+      return;
+    }
+    const selected = categories.find((c) => String(c.id) === categoryId);
+    if (selected && selected.type !== value) setCategoryId('');
+  };
 
   const submit = () => {
     const cents = parseEuro(amount);
@@ -89,10 +142,12 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
     const next: Record<number, string> = {};
     users.forEach((u, idx) => {
       const share = idx === 0 ? cents - base * (users.length - 1) : base;
-      next[u.id] = (share / 100).toFixed(2).replace('.', ',');
+      next[u.id] = shareFormatter.format(share / 100);
     });
     setShares(next);
   };
+
+  const isTransfer = type === 'transfer';
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -107,40 +162,46 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
           <DialogDescription>Einnahme, Ausgabe oder Umbuchung zwischen Konten erfassen.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1">
             {([['expense', 'Ausgabe'], ['income', 'Einnahme'], ['transfer', 'Umbuchung']] as const).map(([value, label]) => (
-              <Button
+              <button
                 key={value}
                 type="button"
-                variant={type === value ? 'default' : 'outline'}
-                className={type === value ? (value === 'expense' ? 'bg-rose-600 hover:bg-rose-700' : value === 'income' ? 'bg-emerald-600 hover:bg-emerald-700' : '') : ''}
-                onClick={() => setType(value)}
+                className={cn(
+                  'rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
+                  type === value && 'bg-background text-foreground shadow-sm',
+                  type === value && value === 'expense' && 'text-rose-600 dark:text-rose-400',
+                  type === value && value === 'income' && 'text-emerald-600 dark:text-emerald-400',
+                )}
+                onClick={() => changeType(value)}
               >
                 {label}
-              </Button>
+              </button>
             ))}
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="amount">Betrag ({currencySymbol()})</Label>
-              <Input id="amount" inputMode="decimal" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input id="amount" inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="date">Datum</Label>
               <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{type === 'transfer' ? 'Von Konto' : 'Konto'}</Label>
-              <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
-                <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            {type === 'transfer' ? (
+
+          {isTransfer ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Von Konto</Label>
+                <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
+                  <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label>Nach Konto</Label>
                 <Select value={String(effectiveToAccountId || '')} onValueChange={setToAccountId}>
@@ -150,7 +211,18 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                   </SelectContent>
                 </Select>
               </div>
-            ) : (
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Konto</Label>
+                <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
+                  <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label>Kategorie</Label>
                 <Select value={categoryId} onValueChange={setCategoryId}>
@@ -159,24 +231,41 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                     {filteredCategories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {newCatOpen ? (
+                  <div className="flex gap-2">
+                    <Input
+                      autoFocus
+                      placeholder="Name der Kategorie"
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!newCatName.trim() || createCategory.isPending}
+                      onClick={() =>
+                        createCategory.mutate({
+                          name: newCatName.trim(),
+                          type: type === 'income' ? 'income' : 'expense',
+                          color: nextCategoryColor(),
+                        })}
+                    >
+                      Anlegen
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                    onClick={() => setNewCatOpen(true)}
+                  >
+                    <Plus className="h-3 w-3" /> Neue Kategorie
+                  </button>
+                )}
               </div>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{type === 'expense' ? 'Bezahlt von' : 'Person'}</Label>
-              <Select value={String(effectiveUserId || '')} onValueChange={setUserId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="note">Notiz</Label>
-              <Input id="note" placeholder="z. B. Wocheneinkauf" value={note} onChange={(e) => setNote(e.target.value)} />
-            </div>
-          </div>
+          )}
+
           {type === 'expense' && users.length > 1 && (
             <div className="space-y-3 rounded-lg border p-3">
               <div className="flex items-center justify-between">
@@ -202,7 +291,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                       <Label className="text-xs" style={{ color: u.color }}>{u.name} ({currencySymbol()})</Label>
                       <Input
                         inputMode="decimal"
-                        placeholder="0,00"
+                        placeholder={amountPlaceholder}
                         value={shares[u.id] ?? ''}
                         onChange={(e) => setShares((s) => ({ ...s, [u.id]: e.target.value }))}
                       />
@@ -212,7 +301,39 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
               )}
             </div>
           )}
+
+          <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', detailsOpen && 'rotate-90')} />
+                Details (Person, Notiz)
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{type === 'expense' ? 'Bezahlt von' : 'Person'}</Label>
+                  <Select value={String(effectiveUserId || '')} onValueChange={setUserId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="note">Notiz</Label>
+                  <Input id="note" placeholder="z. B. Wocheneinkauf" value={note} onChange={(e) => setNote(e.target.value)} />
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Belege fügst du nach dem Speichern in der Transaktionsliste hinzu.
+        </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
           <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={createTx.isPending}>Speichern</Button>

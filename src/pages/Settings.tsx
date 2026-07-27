@@ -24,7 +24,7 @@ const PROFILE_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#f43f5e', '#0ea5e9', '
 
 export default function Settings() {
   const { user, refresh } = useAuth();
-  const { categories } = useFinanceData();
+  const { categories, accountTypes, banks } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [catName, setCatName] = useState('');
   const [catType, setCatType] = useState<'income' | 'expense'>('expense');
@@ -43,6 +43,14 @@ export default function Settings() {
   });
   const deleteCategory = trpc.finance.deleteCategory.useMutation({
     onSuccess: () => { toast.success('Kategorie gelöscht.'); invalidate(); },
+  });
+  const deleteAccountType = trpc.finance.deleteAccountType.useMutation({
+    onSuccess: () => { toast.success('Kontotyp gelöscht.'); invalidate(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const deleteBank = trpc.finance.deleteBank.useMutation({
+    onSuccess: () => { toast.success('Bank gelöscht.'); invalidate(); },
+    onError: (err) => toast.error(err.message),
   });
   const updateProfile = trpc.auth.updateProfile.useMutation({
     onSuccess: () => { toast.success('Profil gespeichert.'); refresh(); },
@@ -276,6 +284,59 @@ export default function Settings() {
             >
               <Plus className="h-4 w-4" />
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Kontotypen &amp; Banken</CardTitle>
+          <CardDescription>
+            Neue Typen und Banken legst du direkt im Konto-Dialog an (über „+ Neuer Typ“ bzw. „+ Neue Bank“).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Kontotypen</p>
+            <div className="flex flex-wrap gap-2">
+              {accountTypes.map((t) => (
+                <Badge key={t.id} variant="secondary" className="gap-1.5 py-1 pl-2 pr-1">
+                  {t.name}
+                  {t.builtin && <Badge variant="outline" className="ml-1 text-[10px]">Standard</Badge>}
+                  {!t.builtin && (
+                    <button
+                      type="button"
+                      className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                      onClick={() => deleteAccountType.mutate({ id: t.id })}
+                      title="Löschen"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Banken</p>
+            {banks.length === 0 && (
+              <p className="text-sm text-muted-foreground">Noch keine Banken angelegt.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {banks.map((b) => (
+                <Badge key={b.id} variant="secondary" className="gap-1.5 py-1 pl-2 pr-1">
+                  {b.name}
+                  <button
+                    type="button"
+                    className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                    onClick={() => deleteBank.mutate({ id: b.id })}
+                    title="Löschen"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>

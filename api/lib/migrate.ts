@@ -32,12 +32,24 @@ export function ensureSchema() {
       used_at INTEGER,
       created_at INTEGER NOT NULL
     )`,
+    `CREATE TABLE IF NOT EXISTS account_types (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL UNIQUE,
+      builtin INTEGER NOT NULL DEFAULT 0
+    )`,
+    `CREATE TABLE IF NOT EXISTS banks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE
+    )`,
     `CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       type TEXT NOT NULL,
       initial_balance INTEGER NOT NULL DEFAULT 0,
       owner_id INTEGER,
+      bank_id INTEGER,
+      iban TEXT,
       created_at INTEGER NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS account_permissions (
@@ -76,6 +88,16 @@ export function ensureSchema() {
       amount INTEGER NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS split_tx_idx ON transaction_splits (transaction_id)`,
+    `CREATE TABLE IF NOT EXISTS transaction_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transaction_id INTEGER NOT NULL,
+      stored_name TEXT NOT NULL UNIQUE,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS attachment_tx_idx ON transaction_attachments (transaction_id)`,
     `CREATE TABLE IF NOT EXISTS budgets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category_id INTEGER NOT NULL UNIQUE,
@@ -119,6 +141,25 @@ export function ensureSchema() {
   const accountCols = raw.prepare("PRAGMA table_info(accounts)").raw().all();
   if (!accountCols.some((col) => col[1] === "owner_id")) {
     db.run("ALTER TABLE accounts ADD COLUMN owner_id INTEGER" as never);
+  }
+  if (!accountCols.some((col) => col[1] === "bank_id")) {
+    db.run("ALTER TABLE accounts ADD COLUMN bank_id INTEGER" as never);
+  }
+  if (!accountCols.some((col) => col[1] === "iban")) {
+    db.run("ALTER TABLE accounts ADD COLUMN iban TEXT" as never);
+  }
+
+  // Builtin-Kontotypen seeden — nur fehlende Keys ergänzen, bestehende
+  // Einträge (z. B. umbenannte) niemals überschreiben.
+  for (const [key, name] of [
+    ["checking", "Girokonto"],
+    ["cash", "Bargeld"],
+    ["savings", "Sparkonto"],
+  ] as const) {
+    db.run(
+      `INSERT OR IGNORE INTO account_types (key, name, builtin)
+       VALUES ('${key}', '${name}', 1)` as never,
+    );
   }
 
   markDirty();

@@ -1,15 +1,48 @@
-import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, HandCoins } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useFinanceData } from '@/lib/data';
-import { computeSettlements, formatCents, formatDate, memberBalances } from '@/lib/finance';
+import { Button } from '@/components/ui/button';
+import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { trpc } from '@/providers/trpc';
+import { computeSettlements, formatCents, formatDate, memberBalances, todayISO } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
 export default function Splitting() {
-  const { transactions, users } = useFinanceData();
+  const { accounts, transactions, users } = useFinanceData();
+  const invalidate = useInvalidateFinance();
   const userIds = users.map((u) => u.id);
   const balances = memberBalances(transactions, userIds);
   const settlements = computeSettlements(transactions, userIds);
+
+  // Erstes Konto mit Bearbeitungsrecht — dahin wird der Ausgleich gebucht.
+  const editAccount = accounts.find((a) => a.access === 'edit');
+
+  const settle = trpc.finance.createTransaction.useMutation({
+    onSuccess: () => {
+      toast.success('Ausgleich verbucht.');
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Buchungsrichtung: Der Schuldner zahlt (userId), der Gläubiger trägt den
+  // Anteil zu 100 % (splits). In memberBalances hebt das den Saldo des
+  // Schuldners (+Betrag) und senkt den des Gläubigers (−Betrag) — beide
+  // landen dadurch bei 0 statt doppelt daneben.
+  const bookSettlement = (fromId: number, toId: number, amount: number) => {
+    if (!editAccount) return;
+    const to = userById(toId);
+    settle.mutate({
+      type: 'expense',
+      accountId: editAccount.id,
+      amount,
+      userId: fromId,
+      date: todayISO(),
+      note: `Ausgleich an ${to?.name ?? 'Unbekannt'}`,
+      splits: [{ userId: toId, amount }],
+    });
+  };
 
   const sharedExpenses = transactions.filter((t) => t.type === 'expense' && t.splits.length > 0);
   const userById = (id: number) => users.find((u) => u.id === id);
@@ -77,13 +110,27 @@ export default function Splitting() {
                       </span>
                       {to?.name}
                     </div>
-                    <span className="text-lg font-bold">{formatCents(s.amount)}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-bold">{formatCents(s.amount)}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!editAccount || settle.isPending}
+                        title={editAccount
+                          ? `Ausgleich als Ausgabe auf „${editAccount.name}“ verbuchen`
+                          : 'Kein Konto mit Bearbeitungsrecht vorhanden'}
+                        onClick={() => bookSettlement(s.fromId, s.toId, s.amount)}
+                      >
+                        <HandCoins className="h-4 w-4" />
+                        Verbuchen
+                      </Button>
+                    </div>
                   </div>
                 );
               })
             )}
             <p className="text-xs text-muted-foreground">
-              Tipp: Nach einem echten Ausgleich die Rückzahlung als Ausgabe ohne Aufteilung bzw. Umbuchung erfassen — oder die Salden durch zukünftige Zahlungen ausgleichen.
+              Tipp: Mit „Verbuchen“ wird die Rückzahlung direkt als geteilte Ausgabe erfasst — die Salden gleichen sich sofort aus.
             </p>
           </CardContent>
         </Card>

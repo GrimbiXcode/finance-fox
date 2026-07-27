@@ -164,10 +164,10 @@ bestehendem Schema auf.
    (gemeinsam mit Punkt 1)*
 3. Backup-/Restore-Funktion in den Einstellungen (Datensicherheit ohne Docker-CLI) ✅ *umgesetzt*
 4. CSV-Export aller Transaktionen (+ einfacher CSV-Import) ✅ *umgesetzt*
-5. Beleg-/Foto-Anhänge an Transaktionen
-6. Ausgleichszahlung aus der Kostenaufteilung mit einem Klick verbuchen
-7. Dark-Mode-Toggle im UI (next-themes ist schon vorhanden)
-8. PWA-Grundgerüst (installierbar, Manifest, Icons)
+5. Beleg-/Foto-Anhänge an Transaktionen ✅ *umgesetzt*
+6. Ausgleichszahlung aus der Kostenaufteilung mit einem Klick verbuchen ✅ *umgesetzt*
+7. Dark-Mode-Toggle im UI (next-themes ist schon vorhanden) ✅ *umgesetzt*
+8. PWA-Grundgerüst (installierbar, Manifest, Icons) ✅ *umgesetzt*
 
 ### Phase 2 — Struktur & Auswertung (mittelfristig)
 Fokus: Tiefere Funktionalität für Budgetierung und Reporting.

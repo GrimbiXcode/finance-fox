@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
-import { currentMonthKey, currencySymbol, expensesByCategory, formatCents, formatMonth, parseEuro } from '@/lib/finance';
+import { amountPlaceholder, currentMonthKey, currencySymbol, expensesByCategory, formatCents, formatMonth, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -76,7 +76,7 @@ export default function Budgets() {
               </div>
               <div className="space-y-2">
                 <Label>Limit pro Monat ({currencySymbol()})</Label>
-                <Input inputMode="decimal" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <Input inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
             </div>
             <DialogFooter>

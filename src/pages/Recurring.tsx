@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
-import { currencySymbol, formatCents, formatDate, parseEuro, todayISO } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, formatCents, formatDate, parseEuro, todayISO } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -93,7 +93,7 @@ export default function Recurring() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Betrag ({currencySymbol()})</Label>
-                    <Input inputMode="decimal" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                    <Input inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Intervall</Label>

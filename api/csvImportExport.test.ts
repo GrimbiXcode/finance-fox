@@ -159,6 +159,27 @@ describe("CSV-Export", () => {
     expect(csv).not.toContain("Geheim");
     expect(csv).toContain("Umbuchung");
   });
+
+  it("exportiert mit Locale en-US komma-getrennt mit Dezimalpunkt", async () => {
+    const csv = await callerFor(admin).finance.exportTransactionsCsv({
+      locale: "en-US",
+    });
+    const lines = csv.split("\r\n");
+    expect(lines[0]).toBe("Datum,Typ,Betrag,Kategorie,Konto,Zielkonto,Notiz");
+    expect(lines[1]).toBe(
+      "2026-01-01,Einnahme,2500.00,Gehalt,Gemeinschaftskonto,,"
+    );
+    expect(lines[2]).toBe("2026-01-10,Ausgabe,9.99,,Privatkonto,,Geheim");
+    // Notiz mit Anführungszeichen bleibt RFC-4180-gequotet
+    expect(lines[3]).toBe(
+      "2026-01-15,Ausgabe,12.34,Lebensmittel,Gemeinschaftskonto,," +
+        '"Einkauf; ""Wochenende"""'
+    );
+    expect(lines[4]).toBe(
+      "2026-01-20,Umbuchung,500.00,,Gemeinschaftskonto,Privatkonto,"
+    );
+    expect(lines).toHaveLength(5);
+  });
 });
 
 describe("CSV-Import", () => {
@@ -208,6 +229,29 @@ describe("CSV-Import", () => {
     expect(result.errors[1]).toContain("ungültiger Betrag");
     expect(result.errors[2]).toContain("Zeile 6");
     expect(result.errors[2]).toContain("unbekannter Typ");
+  });
+
+  it("erkennt Komma als Trennzeichen automatisch an der Kopfzeile", async () => {
+    const csv = [
+      "Datum,Typ,Betrag,Kategorie,Konto,Zielkonto,Notiz",
+      "2026-02-01,Ausgabe,10.50,Lebensmittel,,,\"Notiz, mit Komma\"",
+      "2026-02-02,Einnahme,99,,,,",
+    ].join("\r\n");
+    const result = await callerFor(admin).finance.importTransactionsCsv({
+      csv,
+      accountId: sharedAccountId,
+    });
+    expect(result).toEqual({ imported: 2, skipped: 0, errors: [] });
+    const txs = await callerFor(admin).finance.listTransactions();
+    const withNote = txs.find(
+      t => t.date === "2026-02-01" && t.note === "Notiz, mit Komma"
+    );
+    expect(withNote?.amount).toBe(1050);
+    expect(withNote?.categoryId).toBe(catFoodId);
+    // Ganzzahliger Betrag (99 €) wird ebenfalls korrekt gelesen
+    expect(txs.some(t => t.date === "2026-02-02" && t.amount === 9900)).toBe(
+      true
+    );
   });
 
   it("verweigert den Import ohne Edit-Recht auf das Konto", async () => {

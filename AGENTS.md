@@ -53,18 +53,24 @@ laufen lassen.
 
 ```
 api/            Backend (Hono + tRPC), Einstieg: api/boot.ts (enthält auch die
-                Admin-Binärrouten GET /api/backup und POST /api/backup/restore)
+                Admin-Binärrouten GET /api/backup und POST /api/backup/restore
+                sowie die Beleg-Routen POST/GET/DELETE /api/attachments*)
   router.ts       appRouter: { ping, auth, finance, forecast }
   middleware.ts   tRPC-Setup: publicQuery / authedQuery / adminQuery
   context.ts      TrpcContext, Session-User aus Cookie
   authRouter.ts   Setup-Wizard, Login, Einladungen, Passwort-Reset
-  financeRouter.ts  Konten (inkl. Besitz/Sichtbarkeit), Transaktionen (inkl.
-                  CSV-Export/-Import), Kategorien, Budgets, Splits, Sparziele
+  financeRouter.ts  Konten (inkl. Besitz/Sichtbarkeit, Kontotypen, Banken),
+                  Transaktionen (inkl. CSV-Export/-Import), Kategorien,
+                  Budgets, Splits, Sparziele
   forecastRouter.ts Prognosen
   lib/            env.ts, session.ts, migrate.ts (ensureSchema), recurringJob.ts,
                   accountAccess.ts (Sichtbarkeits-/Bearbeitungsrechte für Konten:
                   Gemeinschaftskonto vs. privat, serverseitige Prüfung),
+                  accountTypes.ts (IBAN-Normalisierung/-Validierung, Existenz-
+                  prüfung für Kontotyp-Keys und Banken),
                   csv.ts (CSV-Format: Semikolon, Dezimalkomma, RFC-4180-Quoting),
+                  attachments.ts (Beleg-Dateien außerhalb der DB speichern/
+                  löschen, Speicherort ATTACHMENTS_DIR),
                   http.ts, vite.ts (statische Auslieferung in Produktion)
   queries/connection.ts  sql.js-DB mit better-sqlite3-kompatiblem Proxy,
                   initDb() / getDb() / markDirty()
@@ -77,8 +83,9 @@ src/            Frontend (React)
   components/     Layout.tsx, TransactionDialog.tsx, AccountDialog.tsx
                   (Anlegen/Bearbeiten/Löschen von Konten inkl. Sichtbarkeits-
                   Freigaben und Gefahrenzone), CsvImportDialog.tsx
-                  (CSV-Import von Transaktionen), ui/ (shadcn/ui, nicht von
-                  Hand umschreiben — via shadcn generiert)
+                  (CSV-Import von Transaktionen), TransactionAttachmentsDialog.tsx
+                  (Belege/Fotos einer Buchung: ansehen, hochladen, löschen),
+                  ui/ (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert)
   providers/      trpc.tsx (tRPC + QueryClient), auth.tsx
   lib/            finance.ts (Berechnungen, Cent-Helfer), data.ts, utils.ts (cn)
 ```
@@ -88,6 +95,14 @@ Wichtige Konventionen:
 - **Geldbeträge immer in Cent als Integer** speichern und rechnen. Frontend:
   `formatCents` / `parseEuro` in `src/lib/finance.ts`. Datumsformat in der DB:
   Text `YYYY-MM-DD`.
+- **Locale**: Zahlen- und Datumsformate richten sich nach der Browser-Region
+  (`navigator.language`, zentral `getUserLocale()` in `src/lib/finance.ts`) —
+  Dezimaltrennzeichen, Tausender und Datumsdarstellung folgen automatisch der
+  Systemregion (z. B. de-DE `1.234,56` vs. de-CH `1'234.56`). `parseEuro`
+  akzeptiert beide Trennzeichen und interpretiert sie locale-bewusst.
+  CSV-Export nutzt für de-Locales Semikolon + Dezimalkomma, sonst Komma +
+  Dezimalpunkt; der Import erkennt das Trennzeichen automatisch. Die
+  UI-Sprache bleibt davon unberührt deutsch.
 - **Währung**: haushaltsweite Einstellung, gespeichert in der Tabelle
   `app_settings` (Key `currency`, ISO-4217-Code, Default `EUR`); Änderung nur
   durch Admins (Einstellungen-Seite, `finance.setCurrency`). Die 20
@@ -109,8 +124,31 @@ Wichtige Konventionen:
   (`requireAccountAccess`, `visibleAccountIds`) — nicht nur im Frontend
   ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen) sind
   pro anfragendem Nutzer gefiltert.
+- **Kontotypen**: `accounts.type` speichert den KEY aus der Tabelle
+  `account_types` — Builtin-Keys `checking`/`cash`/`savings` (in
+  `ensureSchema` per INSERT OR IGNORE geseedet, nicht löschbar) plus
+  benutzerdefinierte Typen (`custom_<zufalls-id>`). Neue Typen/Banken werden
+  im Konto-Dialog angelegt (`finance.createAccountType`/`createBank`),
+  verwaltet in den Einstellungen (Sektion „Kontotypen & Banken"); Löschen
+  nur, wenn nicht mehr verwendet. Konten haben optional `bankId`
+  (Tabelle `banks`) und `iban` (normalisiert: ohne Leerzeichen,
+  Großbuchstaben — Validierung in `api/lib/accountTypes.ts`).
 - Einladungs-/Reset-Links sind Hash-Routen (`#/einladung/<token>`,
   `#/reset/<token>`) und werden im Server-Log ausgegeben (kein E-Mail-Versand).
+- **Dark Mode**: Umschalter im Layout-Header, via next-themes
+  (`ThemeProvider` in `src/main.tsx`, `attribute="class"`, System-Default);
+  die `.dark`-Variablen stehen in `src/index.css`.
+- **PWA**: Grundgerüst ohne Service Worker — `public/manifest.webmanifest`
+  plus Icons in `public/icons/` (Quell-SVG `icon.svg`, PNGs daraus gerendert),
+  eingebunden in `index.html`.
+- **Beleg-Anhänge**: Metadaten in `transaction_attachments`, Dateien mit
+  UUID-Dateinamen im Verzeichnis `ATTACHMENTS_DIR` (Default: `<DB-Verzeichnis>/attachments`,
+  bei In-Memory-DB `./data/attachments`). Upload/Download/Löschen über die
+  Hono-Routen in `api/boot.ts` mit Konto-Rechten (`edit` für Upload/Löschen,
+  `view` für Download — via `requireAccountAccess`); erlaubt sind Bilder
+  (JPEG/PNG/WebP/GIF) und PDF bis 10 MB. Kaskaden (deleteTransaction,
+  deleteAccount, resetFinanceData) löschen Zeilen UND Dateien über
+  `deleteAttachmentsForTransactions` aus `api/lib/attachments.ts`.
 
 ## Datenbank & Persistenz
 
@@ -126,7 +164,7 @@ Wichtige Konventionen:
   und läuft bei jedem Serverstart — bei Schemaänderungen **beide Stellen**
   aktualisieren. `ensureSchema` ist idempotent; neue Spalten an bestehenden
   Tabellen werden dort guardiert nachgerüstet (PRAGMA table_info +
-  ALTER TABLE, siehe `owner_id` bei `accounts`).
+  ALTER TABLE, siehe `owner_id`/`bank_id`/`iban` bei `accounts`).
 
 ## Testing
 
@@ -164,6 +202,7 @@ Wichtige Konventionen:
   Entwicklung.
 - `PUBLIC_URL` korrekt setzen, sonst zeigen Einladungs-/Reset-Links ins Leere.
 - Environment-Variablen: `DATABASE_URL`, `JWT_SECRET`, `PUBLIC_URL`, `PORT`,
+  `ATTACHMENTS_DIR` (Beleg-Dateien, Default `<DB-Verzeichnis>/attachments`),
   `NODE_ENV`. Achtung: `.env.example` ist veraltet (stammt aus einem Template,
   nennt MySQL/APP_ID) — die tatsächlich verwendeten Variablen stehen in
   `api/lib/env.ts` und `docker-compose.yml`.

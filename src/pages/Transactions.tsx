@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Search, Trash2 } from 'lucide-react';
+import { Download, Paperclip, Search, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,8 +11,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
-import { formatCents, formatDate } from '@/lib/finance';
+import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
+import TransactionAttachmentsDialog from '@/components/TransactionAttachmentsDialog';
 import CsvImportDialog from '@/components/CsvImportDialog';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
@@ -38,7 +39,7 @@ export default function Transactions() {
   const exportCsv = async () => {
     setExporting(true);
     try {
-      const csv = await utils.finance.exportTransactionsCsv.fetch();
+      const csv = await utils.finance.exportTransactionsCsv.fetch({ locale: getUserLocale() });
       // BOM, damit Excel die UTF-8-Umlaute korrekt erkennt
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -196,9 +197,29 @@ export default function Transactions() {
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => deleteTx.mutate({ id: t.id })} title="Löschen">
-                        <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                      </Button>
+                      <div className="flex items-center justify-end">
+                        <TransactionAttachmentsDialog
+                          transactionId={t.id}
+                          note={t.note}
+                          attachments={t.attachments}
+                          trigger={
+                            <Button variant="ghost" size="icon" className="relative" title="Belege">
+                              <Paperclip className={cn(
+                                'h-4 w-4',
+                                t.attachments.length > 0 ? 'text-emerald-600' : 'text-muted-foreground',
+                              )} />
+                              {t.attachments.length > 0 && (
+                                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-semibold text-white">
+                                  {t.attachments.length}
+                                </span>
+                              )}
+                            </Button>
+                          }
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => deleteTx.mutate({ id: t.id })} title="Löschen">
+                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

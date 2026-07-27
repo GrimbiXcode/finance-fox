@@ -27,13 +27,33 @@ export const authTokens = sqliteTable("auth_tokens", {
 
 /* --------------------------------- Finanzen -------------------------------- */
 
+/**
+ * Kontotypen (eigene Typen möglich). `accounts.type` speichert den KEY —
+ * Builtin-Keys: checking/cash/savings, eigene: custom_<zufalls-id>.
+ */
+export const accountTypes = sqliteTable("account_types", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  key: text("key").notNull().unique(),
+  name: text("name").notNull().unique(),
+  builtin: integer("builtin", { mode: "boolean" }).notNull().default(false),
+});
+
+/** Wiederverwendbare Banknamen, referenziert über accounts.bank_id */
+export const banks = sqliteTable("banks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+});
+
 export const accounts = sqliteTable("accounts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
-  type: text("type", { enum: ["checking", "cash", "savings"] }).notNull(),
+  // Key aus account_types (Builtin oder Custom-Typ)
+  type: text("type").notNull(),
   initialBalance: integer("initial_balance").notNull().default(0), // Cent
   // NULL = Gemeinschaftskonto (für alle sicht-/editierbar), sonst Besitzer-User
   ownerId: integer("owner_id"),
+  bankId: integer("bank_id"),
+  iban: text("iban"), // normalisiert: ohne Leerzeichen, Großbuchstaben
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -78,6 +98,20 @@ export const transactionSplits = sqliteTable("transaction_splits", {
   amount: integer("amount").notNull(), // Cent
 }, (t) => [
   index("split_tx_idx").on(t.transactionId),
+]);
+
+/** Beleg-/Foto-Anhänge einer Buchung; Dateien liegen im Attachments-Verzeichnis */
+export const transactionAttachments = sqliteTable("transaction_attachments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  transactionId: integer("transaction_id").notNull(),
+  // Zufälliger Dateiname im Attachments-Verzeichnis (eindeutig)
+  storedName: text("stored_name").notNull().unique(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+}, (t) => [
+  index("attachment_tx_idx").on(t.transactionId),
 ]);
 
 export const budgets = sqliteTable("budgets", {

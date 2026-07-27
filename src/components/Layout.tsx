@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router';
+import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
-  Settings, ShieldCheck, TrendingUp, UserCog, LogOut,
+  Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
@@ -27,6 +28,7 @@ const navItems = [
 export default function Layout() {
   const { user, logout } = useAuth();
   const { accounts, transactions, users } = useFinanceData();
+  const { resolvedTheme, setTheme } = useTheme();
   const total = totalBalance(accounts, transactions);
 
   // Haushaltsweite Währung laden und für formatCents/currencySymbol setzen.
@@ -87,6 +89,16 @@ export default function Layout() {
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}
           </div>
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              title={resolvedTheme === 'dark' ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'}
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            >
+              {resolvedTheme === 'dark'
+                ? <Sun className="h-4 w-4 text-muted-foreground" />
+                : <Moon className="h-4 w-4 text-muted-foreground" />}
+            </Button>
             <div className="flex -space-x-2">
               {users.map((u) => (
                 <div

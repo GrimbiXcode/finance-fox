@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -12,24 +13,18 @@ import {
 } from '@/components/ui/select';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
-import { currencySymbol, parseEuro } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
-
-type AccountType = 'checking' | 'cash' | 'savings';
-
-const typeLabels: Record<AccountType, string> = {
-  checking: 'Girokonto',
-  cash: 'Bargeld',
-  savings: 'Sparkonto',
-};
 
 /** Konto, wie es finance.listAccounts liefert (nur die hier benötigten Felder) */
 export interface DialogAccount {
   id: number;
   name: string;
-  type: AccountType;
+  type: string; // Key aus account_types
   initialBalance: number;
+  bankId: number | null;
+  iban: string | null;
   ownerId: number | null;
   access: 'view' | 'edit';
   isOwner: boolean;
@@ -49,17 +44,24 @@ export default function AccountDialog({ account, trigger }: { account?: DialogAc
 /** Formular-Inhalt; wird bei jedem Öffnen neu gemountet, damit die Initialwerte stimmen */
 function AccountDialogForm({ account, close }: { account?: DialogAccount; close: () => void }) {
   const { user } = useAuth();
-  const { users } = useFinanceData();
+  const { users, accountTypes, banks } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const isEdit = !!account;
   const [name, setName] = useState(account?.name ?? '');
-  const [type, setType] = useState<AccountType>(account?.type ?? 'checking');
+  const [type, setType] = useState<string>(account?.type ?? 'checking');
   const [balance, setBalance] = useState(
     account ? (account.initialBalance / 100).toFixed(2).replace('.', ',') : '',
   );
+  const [bankId, setBankId] = useState<number | null>(account?.bankId ?? null);
+  const [iban, setIban] = useState(account?.iban ?? '');
   const [isPrivate, setIsPrivate] = useState(false);
   const [confirmName, setConfirmName] = useState('');
+  // Inline-Bereiche für "+ Neuer Typ" / "+ Neue Bank"
+  const [newTypeOpen, setNewTypeOpen] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newBankOpen, setNewBankOpen] = useState(false);
+  const [newBankName, setNewBankName] = useState('');
 
   const isPrivateAccount = !!account && account.ownerId !== null;
 
@@ -96,6 +98,26 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
     onSuccess: () => { toast.success('Konto und zugehörige Buchungen gelöscht.'); invalidate(); close(); },
     onError: (err) => toast.error(err.message),
   });
+  const createAccountType = trpc.finance.createAccountType.useMutation({
+    onSuccess: (created) => {
+      toast.success('Kontotyp angelegt.');
+      utils.finance.listAccountTypes.invalidate();
+      setType(created.key); // neuen Typ direkt auswählen
+      setNewTypeName('');
+      setNewTypeOpen(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const createBank = trpc.finance.createBank.useMutation({
+    onSuccess: (created) => {
+      toast.success('Bank angelegt.');
+      utils.finance.listBanks.invalidate();
+      setBankId(created.id); // neue Bank direkt auswählen
+      setNewBankName('');
+      setNewBankOpen(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   // Andere aktive Mitglieder (Besitzer und man selbst ausgeklammert)
   const members = users.filter((u) => u.active && u.id !== account?.ownerId && u.id !== user?.id);
@@ -109,9 +131,15 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
   const submit = () => {
     if (!name.trim()) { toast.error('Bitte einen Namen eingeben.'); return; }
     if (isEdit && account) {
-      updateAccount.mutate({ id: account.id, name: name.trim(), type, initialBalance: parseEuro(balance) });
+      updateAccount.mutate({
+        id: account.id, name: name.trim(), type, initialBalance: parseEuro(balance),
+        bankId, iban: iban.trim(),
+      });
     } else {
-      createAccount.mutate({ name: name.trim(), type, initialBalance: parseEuro(balance), private: isPrivate });
+      createAccount.mutate({
+        name: name.trim(), type, initialBalance: parseEuro(balance),
+        bankId, iban: iban.trim(), private: isPrivate,
+      });
     }
   };
 
@@ -120,7 +148,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
       <DialogHeader>
         <DialogTitle>{isEdit ? 'Konto bearbeiten' : 'Neues Konto'}</DialogTitle>
         <DialogDescription>
-          {isEdit ? 'Name, Typ und Anfangsbestand anpassen.' : 'Lege ein Konto für Einnahmen und Ausgaben an.'}
+          {isEdit ? 'Name, Typ, Bank und Anfangsbestand anpassen.' : 'Lege ein Konto für Einnahmen und Ausgaben an.'}
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-4 py-2">
@@ -131,18 +159,96 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Typ</Label>
-            <Select value={type} onValueChange={(v) => setType(v as AccountType)}>
+            <Select value={type} onValueChange={setType}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.entries(typeLabels).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>{label}</SelectItem>
+                {accountTypes.map((t) => (
+                  <SelectItem key={t.key} value={t.key}>{t.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {newTypeOpen ? (
+              <div className="flex gap-2">
+                <Input
+                  autoFocus
+                  placeholder="z. B. Säule 3a"
+                  value={newTypeName}
+                  onChange={(e) => setNewTypeName(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!newTypeName.trim() || createAccountType.isPending}
+                  onClick={() => createAccountType.mutate({ name: newTypeName.trim() })}
+                >
+                  Anlegen
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                onClick={() => setNewTypeOpen(true)}
+              >
+                <Plus className="h-3 w-3" /> Neuer Typ
+              </button>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Anfangsbestand ({currencySymbol()})</Label>
-            <Input inputMode="decimal" placeholder="0,00" value={balance} onChange={(e) => setBalance(e.target.value)} />
+            <Input inputMode="decimal" placeholder={amountPlaceholder} value={balance} onChange={(e) => setBalance(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Bank (optional)</Label>
+            <Select
+              value={bankId === null ? 'none' : String(bankId)}
+              onValueChange={(v) => setBankId(v === 'none' ? null : Number(v))}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Keine Bank</SelectItem>
+                {banks.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {newBankOpen ? (
+              <div className="flex gap-2">
+                <Input
+                  autoFocus
+                  placeholder="z. B. Postfinance"
+                  value={newBankName}
+                  onChange={(e) => setNewBankName(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!newBankName.trim() || createBank.isPending}
+                  onClick={() => createBank.mutate({ name: newBankName.trim() })}
+                >
+                  Anlegen
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                onClick={() => setNewBankOpen(true)}
+              >
+                <Plus className="h-3 w-3" /> Neue Bank
+              </button>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>IBAN (optional)</Label>
+            <Input
+              placeholder="CH93 0076 2011 6238 5295 7"
+              value={iban}
+              onChange={(e) => setIban(e.target.value)}
+            />
           </div>
         </div>
 

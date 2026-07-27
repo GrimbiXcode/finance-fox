@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, Trash2 } from 'lucide-react';
+import { Download, Search, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,9 @@ import {
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { formatCents, formatDate } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
+import CsvImportDialog from '@/components/CsvImportDialog';
 import { trpc } from '@/providers/trpc';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 export default function Transactions() {
@@ -28,6 +30,29 @@ export default function Transactions() {
   const deleteTx = trpc.finance.deleteTransaction.useMutation({
     onSuccess: () => invalidate(),
   });
+
+  const utils = trpc.useUtils();
+  const [exporting, setExporting] = useState(false);
+
+  /** CSV-Export on demand abrufen und als Datei herunterladen */
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const csv = await utils.finance.exportTransactionsCsv.fetch();
+      // BOM, damit Excel die UTF-8-Umlaute korrekt erkennt
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transaktionen-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'CSV-Export fehlgeschlagen.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -58,7 +83,13 @@ export default function Transactions() {
           <h1 className="text-2xl font-bold">Transaktionen</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} Buchungen · Saldo der Auswahl: {formatCents(sum)}</p>
         </div>
-        <TransactionDialog />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={exportCsv} disabled={exporting}>
+            <Download className="mr-2 h-4 w-4" /> {exporting ? 'Exportiere…' : 'CSV exportieren'}
+          </Button>
+          <CsvImportDialog />
+          <TransactionDialog />
+        </div>
       </div>
 
       <Card>

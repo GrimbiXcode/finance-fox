@@ -52,17 +52,19 @@ laufen lassen.
 ## Code-Organisation
 
 ```
-api/            Backend (Hono + tRPC), Einstieg: api/boot.ts
+api/            Backend (Hono + tRPC), Einstieg: api/boot.ts (enthält auch die
+                Admin-Binärrouten GET /api/backup und POST /api/backup/restore)
   router.ts       appRouter: { ping, auth, finance, forecast }
   middleware.ts   tRPC-Setup: publicQuery / authedQuery / adminQuery
   context.ts      TrpcContext, Session-User aus Cookie
   authRouter.ts   Setup-Wizard, Login, Einladungen, Passwort-Reset
-  financeRouter.ts  Konten (inkl. Besitz/Sichtbarkeit), Transaktionen, Kategorien,
-                  Budgets, Splits, Sparziele
+  financeRouter.ts  Konten (inkl. Besitz/Sichtbarkeit), Transaktionen (inkl.
+                  CSV-Export/-Import), Kategorien, Budgets, Splits, Sparziele
   forecastRouter.ts Prognosen
   lib/            env.ts, session.ts, migrate.ts (ensureSchema), recurringJob.ts,
                   accountAccess.ts (Sichtbarkeits-/Bearbeitungsrechte für Konten:
                   Gemeinschaftskonto vs. privat, serverseitige Prüfung),
+                  csv.ts (CSV-Format: Semikolon, Dezimalkomma, RFC-4180-Quoting),
                   http.ts, vite.ts (statische Auslieferung in Produktion)
   queries/connection.ts  sql.js-DB mit better-sqlite3-kompatiblem Proxy,
                   initDb() / getDb() / markDirty()
@@ -74,7 +76,8 @@ src/            Frontend (React)
   pages/          Eine Komponente pro Seite (Dashboard, Transactions, ...)
   components/     Layout.tsx, TransactionDialog.tsx, AccountDialog.tsx
                   (Anlegen/Bearbeiten/Löschen von Konten inkl. Sichtbarkeits-
-                  Freigaben und Gefahrenzone), ui/ (shadcn/ui, nicht von
+                  Freigaben und Gefahrenzone), CsvImportDialog.tsx
+                  (CSV-Import von Transaktionen), ui/ (shadcn/ui, nicht von
                   Hand umschreiben — via shadcn generiert)
   providers/      trpc.tsx (tRPC + QueryClient), auth.tsx
   lib/            finance.ts (Berechnungen, Cent-Helfer), data.ts, utils.ts (cn)

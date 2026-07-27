@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { DatabaseBackup, Plus, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,6 +64,60 @@ export default function Settings() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  // Datensicherung (nur Admins, siehe unten)
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
+
+  /** SQLite-Datenbank vom Server laden und als Datei herunterladen */
+  const downloadBackup = async () => {
+    setBackupLoading(true);
+    try {
+      const res = await fetch('/api/backup', { credentials: 'same-origin' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? `Backup fehlgeschlagen (Status ${res.status}).`);
+      }
+      const blob = await res.blob();
+      const match = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = match?.[1] ?? 'finance-fox-backup.db';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Backup fehlgeschlagen.');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  /** Backup-Datei an den Server schicken — ersetzt die komplette Datenbank */
+  const restoreBackup = async () => {
+    if (!restoreFile) return;
+    setRestoring(true);
+    try {
+      const res = await fetch('/api/backup/restore', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: restoreFile,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? `Wiederherstellung fehlgeschlagen (Status ${res.status}).`);
+      }
+      toast.success('Backup wiederhergestellt — die Seite wird neu geladen.');
+      // Alle Daten haben sich geändert: kompletter Neustart der App
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Wiederherstellung fehlgeschlagen.');
+      setRestoring(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -225,6 +279,69 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      {user?.role === 'admin' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Datensicherung</CardTitle>
+            <CardDescription>
+              Komplette Datenbank als Datei sichern oder aus einer Sicherung wiederherstellen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" onClick={downloadBackup} disabled={backupLoading}>
+                <DatabaseBackup className="mr-2 h-4 w-4" />
+                {backupLoading ? 'Lade herunter…' : 'Backup herunterladen'}
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                Lädt die komplette SQLite-Datenbank als <code>.db</code>-Datei herunter.
+              </p>
+            </div>
+            <div className="space-y-3 rounded-lg border border-destructive/50 p-3">
+              <p className="text-sm font-semibold text-destructive">Backup wiederherstellen</p>
+              <p className="text-xs text-muted-foreground">
+                Ersetzt die komplette Datenbank auf dem Server durch die hochgeladene Datei.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  ref={restoreInputRef}
+                  type="file"
+                  accept=".db,application/octet-stream"
+                  className="max-w-xs"
+                  onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
+                />
+                <Button
+                  variant="destructive"
+                  disabled={!restoreFile || restoring}
+                  onClick={() => setRestoreOpen(true)}
+                >
+                  <Upload className="mr-2 h-4 w-4" /> Wiederherstellen
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+          <AlertDialog open={restoreOpen} onOpenChange={setRestoreOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Backup wirklich wiederherstellen?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  <span className="font-semibold">{restoreFile?.name}</span> wird auf den Server
+                  geladen und ersetzt <span className="font-semibold">ALLE aktuellen Daten</span> —
+                  Konten, Buchungen, Budgets, Kategorien, Sparziele und Benutzer. Dieser Schritt
+                  kann nicht rückgängig gemacht werden. Lade vorher ein aktuelles Backup herunter.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={restoring}>Abbrechen</AlertDialogCancel>
+                <AlertDialogAction onClick={restoreBackup} disabled={restoring}>
+                  {restoring ? 'Stelle wieder her…' : 'Endgültig wiederherstellen'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

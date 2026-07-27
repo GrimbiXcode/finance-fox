@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import initSqlJs, { type Database } from "sql.js";
+import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@db/schema";
 
@@ -16,6 +16,7 @@ import * as schema from "@db/schema";
 export type Db = ReturnType<typeof createProxyDb>;
 
 let instance: Db | undefined;
+let SQL: SqlJsStatic | undefined;
 let sqlDb: Database | undefined;
 let dbFilePath: string | undefined;
 let flushTimer: NodeJS.Timeout | undefined;
@@ -62,7 +63,8 @@ function createProxyDb(db: Database) {
           return {
             changes: db.getRowsModified(),
             lastInsertRowid: Number(
-              db.exec("SELECT last_insert_rowid() AS id")[0]?.values[0]?.[0] ?? 0,
+              db.exec("SELECT last_insert_rowid() AS id")[0]?.values[0]?.[0] ??
+                0
             ),
           };
         },
@@ -140,14 +142,15 @@ async function init(): Promise<Db> {
   const rawPath = url.replace(/^file:/, "");
   dbFilePath = rawPath === ":memory:" ? undefined : path.resolve(rawPath);
 
-  const SQL = await initSqlJs();
+  const sqlJs = await initSqlJs();
+  SQL = sqlJs;
   if (dbFilePath) {
     fs.mkdirSync(path.dirname(dbFilePath), { recursive: true });
     sqlDb = fs.existsSync(dbFilePath)
-      ? new SQL.Database(fs.readFileSync(dbFilePath))
-      : new SQL.Database();
+      ? new sqlJs.Database(fs.readFileSync(dbFilePath))
+      : new sqlJs.Database();
   } else {
-    sqlDb = new SQL.Database();
+    sqlDb = new sqlJs.Database();
   }
   sqlDb.run("PRAGMA foreign_keys = ON");
 
@@ -166,12 +169,43 @@ export async function initDb(): Promise<Db> {
 /** Synchroner Zugriff nach erfolgtem initDb() */
 export function getDb(): Db {
   if (!instance) {
-    throw new Error("Datenbank nicht initialisiert — initDb() zuerst aufrufen.");
+    throw new Error(
+      "Datenbank nicht initialisiert — initDb() zuerst aufrufen."
+    );
   }
   return instance;
 }
 
 /** Nach direkten Schreibzugriffen außerhalb von Drizzle (z. B. ensureSchema) */
 export function markDirty() {
+  scheduleFlush();
+}
+
+/** Vollständiger binärer Export der aktuellen Datenbank (Backup) */
+export function exportDatabase(): Uint8Array {
+  if (!sqlDb) {
+    throw new Error(
+      "Datenbank nicht initialisiert — initDb() zuerst aufrufen."
+    );
+  }
+  return sqlDb.export();
+}
+
+/**
+ * Ersetzt die In-Memory-Datenbank durch hochgeladene Bytes (Restore).
+ * Alle getDb()-Nutzer sehen danach die neue DB. Der Aufrufer muss danach
+ * ensureSchema() aufrufen (hier bewusst nicht importiert — Zirkelimport mit
+ * api/lib/migrate.ts); der Flush wird bereits angestoßen.
+ */
+export function replaceDatabase(bytes: Uint8Array): void {
+  if (!SQL || !sqlDb) {
+    throw new Error(
+      "Datenbank nicht initialisiert — initDb() zuerst aufrufen."
+    );
+  }
+  sqlDb.close();
+  sqlDb = new SQL.Database(bytes);
+  sqlDb.run("PRAGMA foreign_keys = ON");
+  instance = createProxyDb(sqlDb);
   scheduleFlush();
 }

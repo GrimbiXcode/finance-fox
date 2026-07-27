@@ -18,21 +18,31 @@ export type TrpcContext = {
   user?: SessionUser;
 };
 
+/** Session-User aus dem Cookie hh_session auflösen (auch für Nicht-tRPC-Routen) */
+export async function getSessionUser(
+  req: Request
+): Promise<SessionUser | undefined> {
+  const token = parseSessionCookie(req);
+  if (!token) return undefined;
+  const userId = verifySessionToken(token);
+  if (userId === null) return undefined;
+  const user = await getDb().query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+  if (!user || !user.active) return undefined;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    color: user.color,
+  };
+}
+
 export async function createContext(
-  opts: FetchCreateContextFnOptions,
+  opts: FetchCreateContextFnOptions
 ): Promise<TrpcContext> {
   const ctx: TrpcContext = { req: opts.req, resHeaders: opts.resHeaders };
-  const token = parseSessionCookie(opts.req);
-  if (token) {
-    const userId = verifySessionToken(token);
-    if (userId !== null) {
-      const user = await getDb().query.users.findFirst({ where: eq(users.id, userId) });
-      if (user && user.active) {
-        ctx.user = {
-          id: user.id, email: user.email, name: user.name, role: user.role, color: user.color,
-        };
-      }
-    }
-  }
+  ctx.user = await getSessionUser(opts.req);
   return ctx;
 }

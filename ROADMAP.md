@@ -1,9 +1,14 @@
 # Finance Fox — Feature-Roadmap
 
-Dieses Dokument analysiert den aktuellen Funktionsumfang von Finance Fox,
-sammelt sinnvolle Erweiterungen und ordnet sie zu einer Roadmap. Es ergänzt
-`README.md` (Nutzung) und `AGENTS.md` (Technik) um eine produktseitige
-Perspektive.
+Dieses Dokument beschreibt den aktuellen Funktionsumfang von Finance Fox und
+die geplanten Erweiterungen. Es ergänzt `README.md` (Nutzung) und `AGENTS.md`
+(Technik) um eine produktseitige Perspektive.
+
+**Produktleitbild:** Deutschsprachige Finanz-App für den Mehrpersonen-Haushalt
+(Paare, WGs, Familien), self-hosted in einem Docker-Container, alltagstauglich
+auf dem Handy, ohne Cloud-Zwang. Bewusst einfach statt buchhalterisch
+vollständig — Ziel ist ein schneller, geteilter Überblick über das
+Haushaltsgeld, nicht das Rechnungswesen.
 
 ## Leitplanken (nicht verhandelbar)
 
@@ -13,194 +18,160 @@ Jede Erweiterung muss zu diesen Grundsätzen passen:
   des Projekts, ein Pflicht-Konto oder eine Cloud-Komponente voraussetzen.
 - **Kein SaaS-Betrieb.** Kein Abo, kein Lizenzserver, kein Nutzungs-Tracking,
   kein "Call home". Alles läuft in der eigenen Docker-Instanz.
-- **Zielgruppe ist der Mehrpersonen-Haushalt** (Paare, WGs, Familien) — nicht
-  Einzelnutzer-Buchhaltung, nicht B2B/Freelancer-Rechnungswesen.
+- **Zielgruppe ist der Mehrpersonen-Haushalt** — nicht Einzelnutzer-
+  Buchhaltung, nicht B2B/Freelancer-Rechnungswesen.
 - Optionale externe Integrationen (Bank-Import, Benachrichtigungen) müssen
-  **opt-in**, lokal konfigurierbar und ohne Anthropic/Drittanbieter-Pflicht
-  sein (z. B. selbstgehostetes ntfy statt eines proprietären Push-Diensts).
+  **opt-in**, lokal konfigurierbar und ohne Drittanbieter-Pflicht sein
+  (z. B. selbstgehostetes ntfy statt eines proprietären Push-Diensts).
+- **Einfachheit vor Vollständigkeit.** Features, die nur ein kleines
+  Power-User-Segment braucht, aber für alle Komplexität bringen, werden
+  nicht gebaut.
 
 ## 1. Analyse: Aktueller Funktionsumfang
 
 | Bereich | Status heute |
 |---|---|
 | **Dashboard** | Gesamtvermögen, Einnahmen/Ausgaben, Sparrate, Cashflow- & Kategorien-Charts |
-| **Transaktionen** | Einnahmen/Ausgaben/Umbuchungen, Suche & Filter, eine Kategorie pro Buchung |
-| **Konten** | Giro/Bargeld/Sparkonto, Saldo wird aus Buchungen berechnet (kein manueller Kontoabgleich), keine Bearbeiten-Funktion, Löschen per einzelnem Klick ohne Bestätigung, kein Besitzer-/Sichtbarkeitskonzept — jedes Konto ist für alle Haushaltsmitglieder gleichermaßen sichtbar und bearbeitbar |
-| **Kategorien** | Flache Liste (keine Über-/Unterkategorien), fixe Farbe |
+| **Transaktionen** | Einnahmen/Ausgaben/Umbuchungen, Suche & Filter, eine Kategorie pro Buchung (inline anlegbar), Beleg-Anhänge (Foto/PDF), CSV-Export & -Import, entschlackte Erfassungsmaske |
+| **Konten** | Eigene Kontotypen anlegbar (z. B. Säule 3a, Anlagekonto), Bank & IBAN, Bearbeiten-Dialog, Löschen nur mit Namensbestätigung, Besitz & Sichtbarkeit (privat vs. Gemeinschaftskonto, individuelle Ansehen-/Bearbeiten-Freigaben, serverseitig durchgesetzt) |
+| **Kategorien** | Flache Liste (keine Über-/Unterkategorien), Inline-Anlage in der Erfassungsmaske, automatische Farbvergabe |
 | **Budgets** | Ein monatliches Limit pro Kategorie, Fortschrittsanzeige, kein Rollover, keine Jahresbudgets |
-| **Kostenaufteilung** | Splits pro Transaktion, Salden zwischen Personen, Ausgleichsvorschläge (nur 1 Haushalt, kein Gruppen-/Projektkonzept) |
+| **Kostenaufteilung** | Splits pro Transaktion, Salden zwischen Personen, Ausgleichsvorschläge mit 1-Klick-Verbuchung (kein Gruppen-/Projektkonzept) |
 | **Wiederkehrende Buchungen** | Intervalle weekly/monthly/yearly, täglicher Cron-Job verbucht Fälliges automatisch |
 | **Sparziele** | Zielbetrag, Stichtag, Fortschritt — Zuweisung des gesparten Betrags ist manuell |
 | **Prognosen** | Kontostand-Prognose inkl. Dauerbuchungen, Budget-Hochrechnung, Sparziel-ETA — ein Szenario, keine "Was-wäre-wenn"-Varianten |
-| **Benutzer & Auth** | Setup-Wizard, E-Mail/Passwort, Einladungslinks (nur im Server-Log, kein Mailversand), Admin/Member-Rollen, keine 2FA |
-| **Daten & Betrieb** | SQLite-Datei via sql.js, ein Docker-Container, keine Backup-Funktion in der UI, kein Datenexport, keine PWA/Offline-Fähigkeit |
+| **Benutzer & Auth** | Setup-Wizard, E-Mail/Passwort, Einladungslinks (Server-Log), Admin/Member-Rollen, keine 2FA |
+| **International** | Zahlen- und Datumsformate folgen der Systemregion (z. B. de-DE `1.234,56` vs. de-CH `1'234.56`), haushaltsweite Leitwährung (20 Währungen), UI-Sprache Deutsch |
+| **Daten & Betrieb** | SQLite-Datei via sql.js, ein Docker-Container, Backup/Restore in den Einstellungen, CSV-Export, PWA (installierbar), Dark Mode |
 
-**Kurz gesagt:** Der Kern (Buchen, Budgetieren, Splitten, Prognostizieren)
-ist solide und bereits mehrpersonentauglich. Es fehlen vor allem: Im-/Export,
-Belege/Anhänge, Struktur bei Kategorien/Budgets (Gruppen, Rollover),
-Benachrichtigungen, Datensicherung aus der UI und Barrierefreiheit für den
-Alltag auf dem Handy (PWA).
+**Kurz gesagt:** Kern und Alltagstauglichkeit stehen — buchen, teilen,
+budgetieren, prognostizieren, sichern, auch unterwegs. Die nächsten Lücken
+sind Struktur (Kategorie-Hierarchien, flexible Budgets), Auswertung über
+längere Zeiträume und proaktive Hinweise (Benachrichtigungen).
 
-## 2. Erweiterungsideen
+## 2. Umgesetzte Roadmap-Punkte
+
+Phase 1 (Fundament & Alltagstauglichkeit) ist vollständig umgesetzt:
+
+1. ✅ Konten bearbeiten + entschärftes Löschen (Namensbestätigung)
+2. ✅ Konten-Besitz & Sichtbarkeit (privat vs. Gemeinschaftskonto, Freigaben)
+3. ✅ Backup/Restore in den Einstellungen
+4. ✅ CSV-Export aller Transaktionen + einfacher CSV-Import
+5. ✅ Beleg-/Foto-Anhänge an Transaktionen
+6. ✅ Ausgleichszahlung mit einem Klick verbuchen
+7. ✅ Dark-Mode-Toggle
+8. ✅ PWA-Grundgerüst (installierbar, Manifest, Icons)
+
+Darüber hinaus auf Nutzerwunsch umgesetzt: Locale-bewusste Zahlenformate,
+eigene Kontotypen, Bank & IBAN, Inline-Kategorie-Anlage, überarbeitete
+Erfassungsmaske.
+
+## 3. Erweiterungsideen (Backlog, unbewertet)
 
 ### A. Transaktionen & Kategorien
 - Tags/Labels zusätzlich zur Kategorie (mehrere pro Buchung), Volltextsuche über Notizen
-- Beleg-/Foto-Anhänge pro Transaktion (lokal im Volume gespeichert)
-- Ober-/Unterkategorien (z. B. "Wohnen" → "Strom", "Miete")
-- CSV-Import (Kontoauszug) mit Kategorie-Mapping-Regeln; CSV-Export aller Transaktionen
 - Massenbearbeitung (mehrere Buchungen markieren → Kategorie/Tag ändern)
 - Split-Transaktionen nach Kategorie (eine Buchung, mehrere Kategorien/Beträge)
+- CSV-Import mit Kategorie-Mapping-Regeln (lernende Zuordnung statt nur Name)
 
 ### B. Konten
-- **Konten bearbeiten.** Bisher lassen sich Konten nur anlegen, nicht mehr
-  ändern. Neuer Bearbeiten-Dialog für Name, Typ, Anfangsbestand und (siehe
-  unten) Besitzer/Freigaben — analog zum bestehenden Anlege-Dialog.
-- **Konto-Löschung entschärfen.** Der Papierkorb-Button direkt auf der
-  Konto-Kachel entfällt. Löschen ist nur noch über den Bearbeiten-Dialog
-  erreichbar, dort erst hinter einer eigenen "Gefahrenzone"-Sektion sichtbar,
-  und erfordert als Bestätigung die erneute Eingabe des exakten Kontonamens
-  (Muster wie bei GitHub-Repo-Löschung) — verhindert versehentliches Löschen
-  samt aller zugehörigen Buchungen.
-- **Konten-Besitz & Sichtbarkeit ("Privat" vs. "Gemeinschaftskonto").**
-  Jedes Konto bekommt eine Einordnung:
-  - *Gemeinschaftskonto*: wie heute — automatisch für **alle** Haushalts-
-    mitglieder sicht- und editierbar, keine weitere Konfiguration nötig.
-  - *Privates Konto*: gehört einer bestimmten Person (Besitzer/in). Nur der/die
-    Besitzer/in kann im Bearbeiten-Dialog pro anderem Haushaltsmitglied
-    einzeln festlegen:
-    - kein Zugriff (Konto erscheint für diese Person nirgends — weder in der
-      Kontenliste noch in Dashboard/Transaktionen/Prognosen),
-    - **Ansehen** (nur lesend sichtbar),
-    - **Ansehen & Bearbeiten** (darf auch Buchungen auf diesem Konto anlegen/
-      ändern und die Kontodaten selbst bearbeiten).
-    Admins behalten unabhängig davon die Übersicht über alle Konten (rein zur
-    Haushaltsverwaltung), damit z. B. Backup/Export vollständig bleiben —
-    Details dazu unten unter "Datenmodell".
-  - Bestehende Konten (vor diesem Feature) werden beim Update automatisch als
-    Gemeinschaftskonto eingestuft, damit sich am heutigen Verhalten nichts
-    ändert, bis jemand aktiv ein Konto auf "privat" umstellt.
-  - **Querschnittsauswirkung:** Da Transaktionen an ein Konto gebunden sind,
-    wirkt sich die Sichtbarkeit eines Kontos auch auf Dashboard-Summen,
-    Transaktionsliste, Budgets (soweit kontobezogen ausgewertet) und
-    Prognosen aus — diese Ansichten müssen pro anfragendem Nutzer gefiltert
-    werden, nicht nur die Kontenliste selbst.
-  - **Datenmodell-Skizze:** `accounts.ownerId` (nullable Fremdschlüssel auf
-    `users`; `NULL` = Gemeinschaftskonto) plus neue Tabelle
-    `account_permissions` (`accountId`, `userId`, `canEdit`-Flag) für die
-    individuellen Freigaben bei privaten Konten. Prüfung serverseitig in
-    `financeRouter` (analog zu `authedQuery`/`adminQuery`), nicht nur im
-    Frontend verstecken.
-- Manueller Kontoabgleich (Ist-Saldo erfassen, Differenz als Korrekturbuchung)
-- Kreditkarten-/Darlehenskonto-Typ mit Zinsen/Sollzins-Feld
 - Saldo-Verlaufschart pro Konto (Historie, nicht nur aktueller Stand)
-- Mehrwährungs-Konten (Fremdwährungskonto mit Umrechnungskurs, ergänzend zur haushaltsweiten Leitwährung)
 
 ### C. Budgets
-- Jahres- und Wochenbudgets zusätzlich zu monatlichen
-- Rollover-Option (Restbudget in Folgemonat übernehmen)
 - Envelope-/Umschlag-Budgetierung als Alternative zur Kategorie-Grenze
 - Budget-Vorlagen pro Kategorie-Gruppe
 
 ### D. Kostenaufteilung
 - Aufteilungsvorlagen (z. B. 60/40 statt nur gleichmäßig/individuell), gespeichert pro Kategorie oder Person
-- Ausgleichszahlung direkt als Umbuchung verbuchen (1 Klick aus dem Ausgleichsvorschlag)
-- "Projekte"/Gruppen innerhalb des Haushalts (z. B. gemeinsamer Urlaub separat von laufenden Haushaltskosten)
 
-### E. Sparziele
-- Mehrere Beitragszahler pro Ziel mit Einzel-Fortschritt
-- Automatische Zuweisung von Budget-Überschüssen an ein Ziel (Regel-basiert)
-- Ziel-Kategorien/Icons (Notgroschen, Urlaub, Anschaffung)
-
-### F. Prognosen & Auswertungen
-- Szenario-Planung ("Was, wenn Gehalt X% steigt / Ausgabe Y wegfällt")
-- Jahresrückblick/-vergleich (Vorjahresvergleich je Kategorie)
+### E. Prognosen & Auswertungen
 - Netto-Vermögensentwicklung über Zeit (inkl. Sparziele, Schulden)
-- Report-Export als PDF/CSV für Steuerunterlagen oder eigene Archivierung
 
-### G. Benachrichtigungen (self-hosted, opt-in)
-- Budget-Überschreitung, fällige wiederkehrende Buchung, Sparziel-Meilenstein
-- Anbindung an selbstgehostete Kanäle: ntfy, Apprise, Gotify, Webhook — **kein**
-  Pflicht-E-Mail-Versand über Drittanbieter; SMTP-Konfiguration bleibt optional
-  und lokal (eigener Mailserver des Nutzers)
-
-### H. Import/Export & Datensicherheit
-- Backup-/Restore-Knopf in den Einstellungen (DB-Datei herunterladen/wiederherstellen)
-- Vollständiger Datenexport (JSON/CSV) für Portabilität — wichtig gerade *weil*
-  self-hosted: Nutzer sollen jederzeit ohne Lock-in exportieren können
-- Optionale FinTS/HBCI- oder CAMT.053-Unterstützung für (deutsche) Banken —
-  strikt lokal, keine Drittanbieter-Aggregation der Kontodaten
-
-### I. Mobile & Bedienung
-- PWA (Installierbar, Offline-Zugriff auf zuletzt geladene Daten)
-- Schnellerfassung (ein Tap → Standardkategorie/-konto, für unterwegs)
-- Dashboard-Widgets konfigurierbar/sortierbar pro Nutzer
-
-### J. Benutzerverwaltung & Sicherheit
-- 2FA/TOTP für Login
+### F. Benutzerverwaltung & Sicherheit
 - Feingranulare Rollen (z. B. "nur lesen"-Gast, Kinder-Profil mit Ausgabenlimit)
-- Aktivitäts-/Audit-Log ("Wer hat was gebucht/geändert")
 - E-Mail-Versand für Einladungen/Reset optional über selbstkonfigurierten SMTP
-  (statt nur Server-Log) — weiterhin ohne Pflicht-Cloud-Dienst
 
-### K. Internationalisierung & Anpassung
+### G. Internationalisierung & Anpassung
 - i18n-Grundgerüst (DE bleibt Standard/Quelle, EN als zweite Sprache)
-- Vollständiger Dark-Mode-Toggle (next-themes ist bereits Abhängigkeit, aber
-  ungenutzt — aktuell kein Umschalter im UI)
 - Individuelle Kategorie-Icons/Farben statt fixer Farbliste
 
-## 3. Priorisierte Roadmap
+## 4. Priorisierte Roadmap
 
-### Phase 1 — Fundament & Alltagstauglichkeit (kurzfristig)
-Fokus: Dinge, die *jeder* Haushalt sofort spürt, geringes Risiko, baut auf
-bestehendem Schema auf.
+### Phase 2 — Struktur & proaktiver Alltag (als Nächstes)
 
-1. **Konten bearbeiten + entschärftes Löschen** (Bearbeiten-Dialog,
-   Löschen nur dort mit Namens-Bestätigung) ✅ *umgesetzt*
-2. **Konten-Besitz & Sichtbarkeit** (privat vs. Gemeinschaftskonto, individuelle
-   Ansehen-/Bearbeiten-Freigaben) — größter Einzelposten dieser Phase, da er
-   Datenmodell und mehrere bestehende Abfragen (Dashboard, Transaktionen,
-   Prognosen) berührt; sollte vor den übrigen Phase-1-Punkten oder zumindest
-   gemeinsam mit Punkt 1 (gleicher Dialog) umgesetzt werden ✅ *umgesetzt
-   (gemeinsam mit Punkt 1)*
-3. Backup-/Restore-Funktion in den Einstellungen (Datensicherheit ohne Docker-CLI) ✅ *umgesetzt*
-4. CSV-Export aller Transaktionen (+ einfacher CSV-Import) ✅ *umgesetzt*
-5. Beleg-/Foto-Anhänge an Transaktionen ✅ *umgesetzt*
-6. Ausgleichszahlung aus der Kostenaufteilung mit einem Klick verbuchen ✅ *umgesetzt*
-7. Dark-Mode-Toggle im UI (next-themes ist schon vorhanden) ✅ *umgesetzt*
-8. PWA-Grundgerüst (installierbar, Manifest, Icons) ✅ *umgesetzt*
+Fokus: bessere Einordnung der Buchungen, flexiblere Budgets, die App meldet
+sich von selbst. Reihenfolge = empfohlene Umsetzungsreihenfolge.
 
-### Phase 2 — Struktur & Auswertung (mittelfristig)
-Fokus: Tiefere Funktionalität für Budgetierung und Reporting.
+1. **Ober-/Unterkategorien** (z. B. "Wohnen" → "Strom", "Miete").
+   Größter Struktur-Gewinn im Alltag; Voraussetzung für aussagekräftige
+   Auswertungen. Muss in Budgets (Rollup auf Oberkategorie), Charts und
+   CSV-Import (Mapping) mitgedacht werden.
+2. **Budget-Rollover + Jahresbudgets.** Gehört thematisch zu 1: Restbudget
+   in den Folgemonat übernehmen (opt-in pro Budget), zusätzlich Jahres-
+   statt Monatslimit wählbar.
+3. **Benachrichtigungen via ntfy + generischem Webhook** (selbstgehostet,
+   opt-in): Budget-Überschreitung, fällige wiederkehrende Buchung,
+   Sparziel-Meilenstein. Bewusst klein gehalten: erst ntfy/Webhook, kein
+   Apprise/SMTP in dieser Phase.
+4. **Manueller Kontoabgleich** (Ist-Saldo erfassen, Differenz als
+   Korrekturbuchung). Jetzt deutlich wertvoller, da Konten Bank/IBAN
+   haben und CSV-Import existiert.
+5. **Schnellerfassung** (ein Tap → Standardkonto/-kategorie). Mit der PWA
+   ist die App auf dem Handy installiert — Quick-Add ist das fehlende
+   Daily-Driver-Stück (aus dem alten Mobil-Block hochgezogen).
+6. **Jahresrückblick / Vorjahresvergleich** je Kategorie (im Web, ohne
+   PDF — siehe Nicht-Ziele).
 
-1. Ober-/Unterkategorien
-2. Budget-Rollover + Jahresbudgets
-3. Jahresrückblick/Vorjahresvergleich, PDF-Export von Reports
-4. Szenario-Planung in den Prognosen
-5. Benachrichtigungen via ntfy/Apprise/Webhook (Budget-Warnungen, fällige Buchungen)
-6. Manueller Kontoabgleich
+### Phase 3 — Haushalts-Skalierung & Sicherheit (danach)
 
-### Phase 3 — Sicherheit, Skalierung im Haushalt (längerfristig)
-Fokus: Größere Haushalte, mehr Sicherheit, mehr Automatisierung.
-
-1. 2FA/TOTP, Audit-Log, feingranulare Rollen (Gast, Kind)
-2. Mehrere Beitragszahler pro Sparziel, automatische Überschuss-Zuweisung
-3. Aufteilungsvorlagen & "Projekte" in der Kostenaufteilung
-4. Optionaler FinTS/CAMT-Bankimport (strikt lokal)
-5. i18n (DE/EN)
-6. Kreditkarten-/Darlehenskonten mit Zins-Tracking, Mehrwährungs-Konten
+1. **"Projekte" in der Kostenaufteilung** (z. B. gemeinsamer Urlaub separat
+   von laufenden Haushaltskosten) + Aufteilungsvorlagen (60/40 u. ä.).
+   Der meistgefragte Haushaltsfall nach dem laufenden Splitten.
+2. **Mehrere Beitragszahler pro Sparziel** mit Einzel-Fortschritt — passt
+   direkt zum Mehrpersonen-Leitbild.
+3. **CAMT.053-Bankimport (Datei-basiert)** als Nachfolger des einfachen
+   CSV-Imports: ISO-20022-XML ist der Standard Schweizer (und zunehmend
+   deutscher) Banken, strikt lokal parsebar, keine Drittanbieter.
+4. **2FA/TOTP** für den Login — sinnvoll, sobald die Instanz nicht nur im
+   Heimnetz erreichbar ist.
+5. **Aktivitäts-/Audit-Log** ("Wer hat was gebucht/geändert") — klein
+   gehalten: Chronik der fachlichen Mutationen pro Haushalt.
+6. **Szenario-Planung** in den Prognosen ("Was, wenn Gehalt X% steigt /
+   Ausgabe Y wegfällt") — nützlich, aber klar hinter den Alltagsthemen.
 
 ### Bewusst zurückgestellt / Nicht-Ziele
-- Kein Multi-Tenant-Betrieb für fremde Haushalte auf einer Instanz (jede
-  Installation bleibt ein Haushalt — passt nicht zum Self-Hosting-Gedanken)
-- Keine Bank-Aggregation über Drittanbieter-APIs, die Zugangsdaten extern
-  speichern (z. B. klassische Fintech-SaaS-Aggregatoren)
-- Keine Pflicht-Cloud-Synchronisierung; wenn Multi-Device-Sync später gewünscht
-  ist, dann nur als selbstgehostete Option (z. B. eigener Reverse-Proxy/VPN),
-  nie als gehosteter Dienst des Projekts
 
-## 4. Nächste Schritte
+Mit Begründung — diese Punkte passen aktuell nicht zum Produktleitbild
+("einfach statt buchhalterisch vollständig") oder ihr Nutzen deckt den
+Aufwand nicht:
 
-Diese Roadmap ist eine Diskussionsgrundlage. Empfehlung: Phase 1 zuerst als
-GitHub Issues aufbrechen (ein Issue pro Punkt), da diese Punkte unabhängig
-voneinander sind und schnell Nutzen stiften, ohne das Datenschema grundlegend
-zu ändern.
+- **PDF-Report-Export.** CSV-Export + Browser-Druck decken Archivierung
+  und Steuerbelege ab; eine PDF-Pipeline (Rendering, Fonts, Layout) ist
+  unverhältnismäßig.
+- **FinTS/HBCI-Live-Anbindung.** Hoher Implementierungs- und Wartungs-
+  aufwand, fehleranfällig, nur deutsche Banken. Stattdessen: Datei-
+  basierter CAMT.053-Import (Phase 3).
+- **Mehrwährungs-Konten mit Kursumrechnung.** Erhebliche Komplexität
+  (Kurse, Neubewertung, Summenlogik) für einen Randfall; die haushalts-
+  weite Leitwährung reicht dem Leitbild. Workaround: Umbuchung mit Kurs
+  in der Notiz.
+- **Kreditkarten-/Darlehenskonten mit Zins-Tracking.** Die Kontoführung
+  selbst decken eigene Kontotypen bereits ab; Zins-/Tilgungsrechnung ist
+  Buchhaltung, nicht Haushaltsüberblick.
+- **i18n (EN als Zweitsprache).** Das Produkt ist bewusst deutschsprachig;
+  der Umbau aller UI-Texte lohnt sich erst bei echter Nachfrage außerhalb
+  des DACH-Raums.
+- **Feingranulare Rollen (Gast/Kind).** Die Konto-Sichtbarkeit (privat,
+  Ansehen, Bearbeiten) deckt die meisten Fälle bereits ab; echte Rollen
+  erst bei konkretem Bedarf.
+- **Multi-Tenant-Betrieb für fremde Haushalte** auf einer Instanz — jede
+  Installation bleibt ein Haushalt.
+- **Bank-Aggregation über Drittanbieter-APIs**, die Zugangsdaten extern
+  speichern, und jede Form von Pflicht-Cloud-Synchronisierung.
+
+## 5. Nächste Schritte
+
+Phase 2 als GitHub Issues aufbrechen (ein Issue pro Punkt). Punkt 1
+(Ober-/Unterkategorien) ist der einzige mit größerer Datenmodell-Änderung
+und sollte zuerst angegangen werden, weil Budgets, Auswertungen und
+Import-Regeln darauf aufbauen.

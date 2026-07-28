@@ -7,15 +7,35 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 ## Funktionen
 
 - **Dashboard** — Gesamtvermögen, Einnahmen/Ausgaben, Sparrate, Cashflow- und Kategorien-Charts
-- **Transaktionen** — Einnahmen, Ausgaben, Umbuchungen; Suche & Filter
-- **Konten** — Giro, Bargeld, Sparkonto mit automatisch berechneten Salden
-- **Budgets** — monatliche Limits pro Kategorie mit Fortschritt und Warnung
-- **Kostenaufteilung** — Ausgaben splitten, Salden, Ausgleichsvorschläge
-- **Wiederkehrende Buchungen** — der Server verbucht Fälliges **täglich per Cron-Job** (03:00 Uhr) und bei jedem Start
-- **Sparziele** — Ziele mit Fortschritt und Stichtag
-- **Prognosen** — Kontostand-Prognose (inkl. Dauerbuchungen), Budget-Hochrechnung, Sparziel-ETA
-- **Benutzer & Login** — Ersteinrichtungs-Wizard, E-Mail/Passwort-Login,
-  Einladungslinks für weitere Personen, Admin-Verwaltung
+- **Transaktionen** — Einnahmen, Ausgaben, Umbuchungen; Suche & Filter, Tags, Beleg-Anhänge (Foto/PDF), Bearbeiten mit Änderungshistorie, CSV- & CAMT.053-Import, CSV-Export
+- **Konten** — eigene Kontotypen, Bank & IBAN, Saldo-Verlauf, Besitz & Sichtbarkeit (privat vs. Gemeinschaftskonto mit Freigaben, serverseitig durchgesetzt)
+- **Budgets** — Monats- oder Jahreslimits pro Kategorie mit Fortschritt, Warnung und optionalem Rollover
+- **Kostenaufteilung** — Ausgaben splitten (auch gewichtet über Vorlagen), Projekte, Salden, Ausgleichsvorschläge mit 1-Klick-Verbuchung
+- **Wiederkehrende Buchungen** — inkl. Dauer-Umbuchungen; der Server verbucht Fälliges **täglich per Cron-Job** (03:00 Uhr) und bei jedem Start
+- **Sparziele** — Fortschritt aus verknüpften Konten (ganzes Konto / fixer Anteil / Prozent), Herkunfts-Aufschlüsselung, ETA-Prognose
+- **Prognosen & Auswertung** — Kontostand-Prognose, Budget-Hochrechnung, Sparziel-ETA, Szenario-Planung, Jahresvergleich
+- **Benutzer & Login** — Ersteinrichtungs-Wizard, E-Mail/Passwort-Login, optionale 2FA (TOTP), Einladungslinks, Admin-Verwaltung, Aktivitäts-Log
+- **Rundherum** — Benachrichtigungen (opt-in, ntfy/Webhook), Backup/Restore, Dark Mode, PWA, Zahlen- und Datumsformate nach Systemregion, 20 Währungen
+
+## Screenshots
+
+![Dashboard — Vermögen, Cashflow und Ausgaben nach Kategorie auf einen Blick](docs/screenshots/dashboard.png)
+
+![Transaktionen — Suche, Filter, Tags und Belege pro Buchung](docs/screenshots/transaktionen.png)
+
+![Konten — Salden, Bank & IBAN, aufklappbarer Saldo-Verlauf](docs/screenshots/konten.png)
+
+![Budgets — Limits mit Fortschritt und Rollover](docs/screenshots/budgets.png)
+
+![Kostenaufteilung — Salden und Ausgleichsvorschläge mit 1-Klick-Verbuchung](docs/screenshots/splitting.png)
+
+![Sparziele — konto-verknüpfter Fortschritt mit Herkunft und Prognose](docs/screenshots/sparziele.png)
+
+![Auswertung — Jahresvergleich pro Kategorie](docs/screenshots/auswertung.png)
+
+| Dark Mode | Mobil |
+|---|---|
+| ![Dashboard im Dark Mode](docs/screenshots/dashboard-dark.png) | ![Dashboard auf dem Handy](docs/screenshots/mobile-dashboard.png) |
 
 ## Architektur
 

@@ -33,7 +33,14 @@ function callerFor(user?: SessionUser) {
 const fetchMock = vi.fn(async () => new Response("ok", { status: 200 }));
 
 let goalId: number;
+let adminContributionId: number;
+let memberContributionId: number;
 
+/**
+ * Sparziele 2.0: addGoalContribution ist gesperrt — Beiträge sind reiner
+ * Alt-Bestand. Diese Tests seeden Beiträge daher direkt in die DB und
+ * prüfen die verbleibenden Lese-/Lösch-Endpunkte.
+ */
 beforeAll(async () => {
   await initDb();
   ensureSchema();
@@ -49,56 +56,63 @@ beforeAll(async () => {
       createdAt: new Date(),
     });
   }
-  await callerFor(admin).finance.createGoal({
-    name: "Urlaub",
-    targetAmount: 10000,
-    savedAmount: 2000,
-    color: "#0ea5e9",
-  });
-  goalId = (await callerFor(admin).finance.listGoals())[0].id;
+  const goal = await getDb()
+    .insert(savingsGoals)
+    .values({
+      name: "Urlaub",
+      targetAmount: 10000,
+      savedAmount: 2000,
+      color: "#0ea5e9",
+    })
+    .returning({ id: savingsGoals.id });
+  goalId = goal[0].id;
+  const contribs = await getDb()
+    .insert(goalContributions)
+    .values([
+      {
+        goalId,
+        userId: admin.id,
+        amount: 500,
+        note: "Start",
+        createdAt: new Date(),
+      },
+      {
+        goalId,
+        userId: member.id,
+        amount: 750,
+        note: "",
+        createdAt: new Date(),
+      },
+    ])
+    .returning({ id: goalContributions.id, userId: goalContributions.userId });
+  adminContributionId = contribs.find(c => c.userId === admin.id)!.id;
+  memberContributionId = contribs.find(c => c.userId === member.id)!.id;
 });
 
 beforeEach(() => {
   fetchMock.mockClear();
 });
 
-describe("Sparziel-Beiträge", () => {
-  let memberContributionId: number;
-
-  it("legt Beiträge an und listet sie mit User-Infos", async () => {
-    await callerFor(admin).finance.addGoalContribution({
-      goalId,
-      amount: 500,
-      note: "Start",
-    });
-    const created = await callerFor(member).finance.addGoalContribution({
-      goalId,
-      amount: 750,
-    });
-    memberContributionId = created.id;
-
+describe("Sparziel-Beiträge (Alt-Bestand, schreibgeschützt)", () => {
+  it("listet Beiträge mit User-Infos", async () => {
     const list = await callerFor(member).finance.listGoalContributions({
       goalId,
     });
     expect(list).toHaveLength(2);
-    const fromMember = list.find((c) => c.id === memberContributionId);
+    const fromMember = list.find(c => c.id === memberContributionId);
     expect(fromMember?.userId).toBe(member.id);
     expect(fromMember?.userName).toBe("Mitglied");
     expect(fromMember?.userColor).toBe(member.color);
     expect(fromMember?.amount).toBe(750);
     expect(fromMember?.note).toBe("");
-    const fromAdmin = list.find((c) => c.userId === admin.id);
+    const fromAdmin = list.find(c => c.userId === admin.id);
     expect(fromAdmin?.note).toBe("Start");
   });
 
   it("verbietet Mitgliedern das Löschen fremder Beiträge", async () => {
-    const list = await callerFor(member).finance.listGoalContributions({
-      goalId,
-    });
-    const adminContribution = list.find((c) => c.userId === admin.id)!;
     await expect(
       callerFor(member).finance.deleteGoalContribution({
-        id: adminContribution.id,
+        id: adminContributionId,
       })
     ).rejects.toMatchObject({
       code: "FORBIDDEN",
@@ -106,11 +120,24 @@ describe("Sparziel-Beiträge", () => {
     });
   });
 
+  it("lässt Mitglieder eigene Beiträge löschen", async () => {
+    const rows = await getDb()
+      .insert(goalContributions)
+      .values({
+        goalId,
+        userId: member.id,
+        amount: 100,
+        note: "",
+        createdAt: new Date(),
+      })
+      .returning({ id: goalContributions.id });
+    await callerFor(member).finance.deleteGoalContribution({ id: rows[0].id });
+    await expect(
+      callerFor(admin).finance.deleteGoalContribution({ id: rows[0].id })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("lässt Admins fremde Beiträge löschen", async () => {
-    const list = await callerFor(admin).finance.listGoalContributions({
-      goalId,
-    });
-    const adminContribution = list.find((c) => c.userId === admin.id)!;
     // Admin löscht den fremden Beitrag des Mitglieds
     await callerFor(admin).finance.deleteGoalContribution({
       id: memberContributionId,
@@ -118,126 +145,46 @@ describe("Sparziel-Beiträge", () => {
     const after = await callerFor(admin).finance.listGoalContributions({
       goalId,
     });
-    expect(after.find((c) => c.id === memberContributionId)).toBeUndefined();
-    expect(after.find((c) => c.id === adminContribution.id)).toBeDefined();
-  });
-
-  it("lässt Mitglieder eigene Beiträge löschen", async () => {
-    const created = await callerFor(member).finance.addGoalContribution({
-      goalId,
-      amount: 100,
-    });
-    await callerFor(member).finance.deleteGoalContribution({ id: created.id });
-    await expect(
-      callerFor(admin).finance.deleteGoalContribution({ id: created.id })
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
-  });
-
-  it("validiert: Betrag muss positiv sein", async () => {
-    await expect(
-      callerFor(admin).finance.addGoalContribution({ goalId, amount: 0 })
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(
-      callerFor(admin).finance.addGoalContribution({ goalId, amount: -500 })
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-  });
-
-  it("validiert: unbekanntes Sparziel wird abgelehnt", async () => {
-    await expect(
-      callerFor(admin).finance.addGoalContribution({
-        goalId: 99999,
-        amount: 100,
-      })
-    ).rejects.toMatchObject({
-      code: "NOT_FOUND",
-      message: "Sparziel nicht gefunden.",
-    });
+    expect(after.find(c => c.id === memberContributionId)).toBeUndefined();
+    expect(after.find(c => c.id === adminContributionId)).toBeDefined();
   });
 
   it("löscht Beiträge kaskadierend beim Löschen des Ziels", async () => {
-    await callerFor(admin).finance.createGoal({
-      name: "Temporär",
-      targetAmount: 1000,
-      color: "#f59e0b",
-    });
-    const goals = await callerFor(admin).finance.listGoals();
-    const temp = goals.find((g) => g.name === "Temporär")!;
-    await callerFor(admin).finance.addGoalContribution({
-      goalId: temp.id,
+    const temp = await getDb()
+      .insert(savingsGoals)
+      .values({
+        name: "Temporär",
+        targetAmount: 1000,
+        savedAmount: 0,
+        color: "#f59e0b",
+      })
+      .returning({ id: savingsGoals.id });
+    await getDb().insert(goalContributions).values({
+      goalId: temp[0].id,
+      userId: admin.id,
       amount: 100,
+      note: "",
+      createdAt: new Date(),
     });
-    await callerFor(admin).finance.deleteGoal({ id: temp.id });
+    await callerFor(admin).finance.deleteGoal({ id: temp[0].id });
     const rows = await getDb()
       .select()
       .from(goalContributions)
-      .where(eq(goalContributions.goalId, temp.id));
+      .where(eq(goalContributions.goalId, temp[0].id));
     expect(rows).toHaveLength(0);
   });
 });
 
-describe("Gesamtfortschritt (Basis + Beiträge)", () => {
-  it("goalForecast summiert savedAmount und Beiträge", async () => {
-    await callerFor(admin).finance.createGoal({
-      name: "Auto",
-      targetAmount: 10000,
-      savedAmount: 3000,
-      color: "#a855f7",
-    });
-    const goals = await callerFor(admin).finance.listGoals();
-    const auto = goals.find((g) => g.name === "Auto")!;
-    await callerFor(admin).finance.addGoalContribution({
-      goalId: auto.id,
-      amount: 2000,
-    });
-    await callerFor(member).finance.addGoalContribution({
-      goalId: auto.id,
-      amount: 1500,
-    });
-
-    const forecast = await callerFor(member).forecast.goalForecast();
-    const row = forecast.find((f) => f.id === auto.id)!;
-    // Gesamt = 3000 Basis + 2000 + 1500 Beiträge
-    expect(row.savedAmount).toBe(6500);
-    expect(row.remaining).toBe(3500);
-  });
-});
-
-describe("Meilenstein-Benachrichtigung über Beiträge", () => {
-  it("löst beim Überschreiten von 25 % des Gesamtfortschritts aus", async () => {
-    await callerFor(admin).finance.setNotifySettings({
-      ntfyUrl: "https://ntfy.example.org/t",
-      webhookUrl: null,
-      events: { budget: true, recurring: true, goal: true },
-    });
-    await callerFor(admin).finance.createGoal({
-      name: "Notgroschen",
-      targetAmount: 10000,
-      savedAmount: 2000, // 20 %
-      color: "#f43f5e",
-    });
-    const goals = await callerFor(admin).finance.listGoals();
-    const goal = goals.find((g) => g.name === "Notgroschen")!;
-    const caller = callerFor(member);
-
-    // 20 % → 24 %: noch kein Meilenstein
-    await caller.finance.addGoalContribution({ goalId: goal.id, amount: 400 });
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    // 24 % → 26 %: 25-%-Meilenstein überschritten
-    await caller.finance.addGoalContribution({ goalId: goal.id, amount: 200 });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as unknown as [
-      string,
-      RequestInit,
-    ];
-    expect((init.headers as Record<string, string>).Title).toContain("25 %");
-
-    // Cleanup: Benachrichtigungs-Konfiguration zurücksetzen
-    await callerFor(admin).finance.setNotifySettings({
-      ntfyUrl: null,
-      webhookUrl: null,
-      events: { budget: true, recurring: true, goal: true },
-    });
+describe("Alt-Bestand im Fortschritt", () => {
+  it("zählt savedAmount + Beiträge als Quelle „Manuell (Bestand)“", async () => {
+    // Urlaub: 2000 Basis + 500 Admin-Beitrag (Member-Beitrag oben gelöscht)
+    const goal = (await callerFor(admin).finance.listGoals()).find(
+      g => g.id === goalId
+    )!;
+    expect(goal.savedAmount).toBe(2000);
+    expect(goal.totalSaved).toBe(2500);
+    const legacy = goal.sources.find(s => s.kind === "legacy");
+    expect(legacy?.amount).toBe(2500);
   });
 });
 
@@ -245,7 +192,7 @@ describe("Schema", () => {
   it("Tabelle goal_contributions existiert nach ensureSchema", async () => {
     const rows = await getDb().select().from(savingsGoals);
     expect(rows.length).toBeGreaterThan(0);
-    // Select auf die neue Tabelle schlägt fehl, wenn sie nicht existiert
+    // Select auf die Tabelle schlägt fehl, wenn sie nicht existiert
     await expect(
       getDb().select().from(goalContributions)
     ).resolves.toBeDefined();

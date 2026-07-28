@@ -76,6 +76,10 @@ api/            Backend (Hono + tRPC), Einstieg: api/boot.ts (enthält auch die
                   finance.listBudgetStatus und forecast.budgetForecast),
                   attachments.ts (Beleg-Dateien außerhalb der DB speichern/
                   löschen, Speicherort ATTACHMENTS_DIR),
+                  goalProgress.ts (Sparziel-Fortschritt aus goal_sources:
+                  Formel full/absolute/percent, Sichtbarkeitsfilter — geteilt
+                  von finance.listGoals, forecast.goalForecast und den
+                  Meilenstein-Benachrichtigungen),
                   http.ts, vite.ts (statische Auslieferung in Produktion)
                   audit.ts (Aktivitäts-/Audit-Log: logAudit, best effort)
   queries/connection.ts  sql.js-DB mit better-sqlite3-kompatiblem Proxy,
@@ -134,8 +138,9 @@ Wichtige Konventionen:
   `sendTestNotification`). Nur http/https-URLs; Versandfehler werden nur
   geloggt, nie den Hauptflow brechen. Trigger: Budget-Kipppunkt >100 % in
   `finance.createTransaction`, Sammelmeldung am Ende von `runRecurringJob`,
-  Sparziel-Meilensteine (25/50/75/100 %) in `finance.updateGoalSaved` und
-  `finance.addGoalContribution`.
+  Sparziel-Meilensteine (25/50/75/100 %, ungefilterter Haushalts-
+  Gesamtfortschritt vor/nach) in `finance.createTransaction` (Buchung auf
+  einem ziel-verknüpften Konto) und `finance.addGoalSource`.
 - **Kontoabgleich**: `finance.reconcileAccount` bucht die Differenz zwischen
   Ist- und berechnetem Soll-Saldo (Logik wie `listAccounts`) als Korrektur-
   buchung ohne Kategorie (Einnahme/Ausgabe, erfordert `edit`); bei Differenz 0
@@ -150,17 +155,43 @@ Wichtige Konventionen:
   aufklappbarer Bereich „Saldo-Verlauf" pro Konto-Karte auf der
   Konten-Seite (Zeitraum-Wahl + recharts-AreaChart, Query nur bei
   geöffnetem Zustand). Tests: `api/balanceHistory.test.ts`.
-- **Sparziel-Beiträge**: Tabelle `goal_contributions` (goalId, userId, amount
-  in Cent positiv, note, createdAt) — mehrere Beitragszahler pro Sparziel.
-  Gesamtfortschritt = `savings_goals.savedAmount` (Basis, weiterhin manuell
-  via `updateGoalSaved`, Alt-Daten) + Summe der Beiträge; diese Summenlogik
-  steckt in der Goals-Anzeige (`src/pages/Goals.tsx`, gestapelter Balken +
-  Einzel-Fortschritt je Person) und in `forecast.goalForecast`. Endpunkte
-  `finance.addGoalContribution` (userId = aktueller User, löst Meilenstein-
-  Benachrichtigungen auf den Gesamtfortschritt aus) /
-  `listGoalContributions` (mit Name/Farbe des Zahlers) /
-  `deleteGoalContribution` (nur eigener Beitrag oder Admin). `deleteGoal`
-  und `resetFinanceData` löschen Beiträge kaskadierend mit.
+- **Sparziel-Quellen (Sparziele 2.0)**: Tabelle `goal_sources` (goalId,
+  accountId, mode `full`/`absolute`/`percent`, value NULL bzw. Cent > 0
+  bzw. 1–100, createdAt) — max. EINE Quelle pro Konto und Ziel (Duplikat →
+  CONFLICT). Fortschrittsformel pro Quelle (Saldo wie `listAccounts`):
+  full `max(0, saldo)`, absolute `min(value, max(0, saldo))`, percent
+  `round(max(0, saldo) × value / 100)`; Gesamt = Σ sichtbarer Quellen +
+  `savedAmount` + Σ Beiträge (Alt-Bestand „Manuell (Bestand)"). Zentrale
+  Logik in `api/lib/goalProgress.ts` (`accountBalances`,
+  `computeGoalProgress(db, user | null, goal)` — `user null` = ungefilterte
+  Systemperspektive für Benachrichtigungen, sonst nur Quellen mit
+  sichtbarem Konto, `hasHiddenSources` ohne Betrags-/Namens-Leak); geteilt
+  von `finance.listGoals` (liefert `totalSaved`, `percent`, `sources[]`,
+  `hasHiddenSources`), `forecast.goalForecast` und den Meilenstein-
+  Benachrichtigungen. Endpunkte `finance.addGoalSource` (Ziel existiert,
+  `view` aufs Konto, Modus-Validierung, Meilenstein-Vergleich) /
+  `deleteGoalSource` (`view` aufs verknüpfte Konto). **Gesperrt**:
+  `updateGoalSaved` und `addGoalContribution` → BAD_REQUEST („Manuelle
+  Einzahlungen sind nicht mehr möglich — verknüpfe das Sparziel mit einem
+  Konto."); `listGoalContributions` bleibt für den Bestand lesbar.
+  `forecast.goalForecast` simuliert pro Ziel monatlich (max. 120 Monate)
+  die Salden der verknüpften Konten mit den wiederkehrenden Buchungen
+  (Vorgehen wie `forecast.balance` inkl. Sichtbarkeitsfilter): ETA =
+  erster Monat mit Fortschritt ≥ Ziel (sonst null), `monthlyRate` =
+  Ø Fortschrittsänderung der nächsten 3 simulierten Monate. Kaskaden:
+  `deleteGoal`, `deleteAccount` und `resetFinanceData` löschen Quellen mit.
+  UI: `src/pages/Goals.tsx` (gestapelter Herkunfts-Balken, Herkunfts-
+  Zeilen „Konto — Modus → Betrag" + „Manuell (Bestand)", Hinweis
+  „Enthält verborgene Quellen", Prognose-Zeile, Quellen-Verwaltung per
+  Dialog). Tests: `api/goalSources.test.ts`.
+- **Sparziel-Beiträge (Alt-Bestand)**: Tabelle `goal_contributions`
+  (goalId, userId, amount in Cent positiv, note, createdAt) — seit
+  Sparziele 2.0 schreibgeschützt (keine neuen Beiträge mehr möglich, siehe
+  oben); zählt zusammen mit `savings_goals.savedAmount` als Herkunft
+  „Manuell (Bestand)" in den Fortschritt. Lesen über
+  `finance.listGoalContributions` (mit Name/Farbe des Zahlers), Löschen
+  weiterhin via `deleteGoalContribution` (nur eigener Beitrag oder Admin).
+  `deleteGoal` und `resetFinanceData` löschen Beiträge kaskadierend mit.
 - **2FA/TOTP (opt-in pro Benutzer)**: RFC 6238 (SHA1, 30 s, 6 Stellen) ohne
   Bibliothek über node:crypto in `api/lib/totp.ts` (Base32, generateSecret,
   totpCode, verifyTotp mit ±1-Fenster, otpauth-URL). `users.totpSecret`/

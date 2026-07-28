@@ -168,6 +168,16 @@ export function ensureSchema() {
     )`,
     `CREATE INDEX IF NOT EXISTS goal_contrib_goal_idx
       ON goal_contributions (goal_id)`,
+    `CREATE TABLE IF NOT EXISTS goal_sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id INTEGER NOT NULL,
+      account_id INTEGER NOT NULL,
+      mode TEXT NOT NULL,
+      value INTEGER,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS goal_sources_goal_idx
+      ON goal_sources (goal_id)`,
     `CREATE TABLE IF NOT EXISTS audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER,

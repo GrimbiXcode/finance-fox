@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -13,6 +13,7 @@ import {
   budgets,
   categories,
   goalContributions,
+  goalSources,
   projects,
   recurring,
   savingsGoals,
@@ -47,6 +48,7 @@ import {
 import { deleteAttachmentsForTransactions } from "./lib/attachments";
 import { parseCamt053 } from "./lib/camt";
 import { computeBudgetStatuses } from "./lib/budgets";
+import { computeGoalProgress } from "./lib/goalProgress";
 import { getNotifyConfig, isHttpUrl, sendNotification } from "./lib/notify";
 import {
   ensureAccountTypeExists,
@@ -74,7 +76,8 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
 /**
  * Meilenstein-Benachrichtigung (25/50/75/100 %) für Sparziele — löst aus,
  * wenn der Fortschritt einen Meilenstein von unten überschreitet.
- * Wird mit dem Gesamtfortschritt (Basis savedAmount + Beiträge) gefüttert.
+ * Wird mit dem ungefilterten Haushalts-Gesamtfortschritt gefüttert
+ * (computeGoalProgress mit user null, siehe api/lib/goalProgress.ts).
  */
 async function notifyGoalMilestones(
   db: ReturnType<typeof getDb>,
@@ -425,6 +428,9 @@ export const financeRouter = createRouter({
           .where(eq(transactions.accountId, input.id))
           .run();
         tx.delete(recurring).where(eq(recurring.accountId, input.id)).run();
+        tx.delete(goalSources)
+          .where(eq(goalSources.accountId, input.id))
+          .run();
         tx.delete(accountPermissions)
           .where(eq(accountPermissions.accountId, input.id))
           .run();
@@ -1244,6 +1250,32 @@ export const financeRouter = createRouter({
         input.type === "expense" && input.categoryId
           ? await computeBudgetStatuses(db, ctx.user)
           : null;
+      // Sparziel-Wächter: betrifft die Buchung ein mit einem Sparziel
+      // verknüpftes Konto (Quell- oder Zielkonto), den ungefilterten
+      // Gesamtfortschritt vor dem Insert festhalten (Meilensteine)
+      const linkedAccountIds =
+        input.type === "transfer" && input.toAccountId
+          ? [input.accountId, input.toAccountId]
+          : [input.accountId];
+      const linkedSources = await db
+        .select()
+        .from(goalSources)
+        .where(inArray(goalSources.accountId, linkedAccountIds));
+      const goalTotalsBefore = new Map<
+        number,
+        { goal: { name: string; targetAmount: number }; total: number }
+      >();
+      for (const goalId of new Set(linkedSources.map(s => s.goalId))) {
+        const goal = await db.query.savingsGoals.findFirst({
+          where: eq(savingsGoals.id, goalId),
+        });
+        if (goal) {
+          goalTotalsBefore.set(goalId, {
+            goal,
+            total: (await computeGoalProgress(db, null, goal)).total,
+          });
+        }
+      }
       const txId = db.transaction(tx => {
         const inserted = tx
           .insert(transactions)
@@ -1303,6 +1335,16 @@ export const financeRouter = createRouter({
             );
           }
         }
+      }
+      // Sparziel-Meilensteine: Gesamtfortschritt (ungefiltert) nach dem
+      // Insert mit dem Stand vorher vergleichen
+      for (const [goalId, before] of goalTotalsBefore) {
+        const goal = await db.query.savingsGoals.findFirst({
+          where: eq(savingsGoals.id, goalId),
+        });
+        if (!goal) continue;
+        const after = (await computeGoalProgress(db, null, goal)).total;
+        await notifyGoalMilestones(db, before.goal, before.total, after);
       }
       return { id: txId };
     }),
@@ -1533,14 +1575,36 @@ export const financeRouter = createRouter({
 
   /* --------------------------------- Sparziele -------------------------------- */
 
-  listGoals: authedQuery.query(() => getDb().select().from(savingsGoals)),
+  /**
+   * Sparziele inkl. Fortschritt aus den verknüpften Konten (goal_sources)
+   * plus Alt-Bestand (savedAmount + Beiträge). Pro anfragendem Nutzer
+   * zählen nur Quellen mit sichtbarem Konto (api/lib/goalProgress.ts).
+   */
+  listGoals: authedQuery.query(async ({ ctx }) => {
+    const db = getDb();
+    const goals = await db.select().from(savingsGoals);
+    return Promise.all(
+      goals.map(async g => {
+        const progress = await computeGoalProgress(db, ctx.user, g);
+        return {
+          ...g,
+          totalSaved: progress.total,
+          percent:
+            g.targetAmount > 0
+              ? Math.min(100, Math.round((progress.total / g.targetAmount) * 100))
+              : 0,
+          sources: progress.sources,
+          hasHiddenSources: progress.hasHiddenSources,
+        };
+      })
+    );
+  }),
 
   createGoal: authedQuery
     .input(
       z.object({
         name: z.string().min(1),
         targetAmount: z.number().int().positive(),
-        savedAmount: z.number().int().min(0).default(0),
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         deadline: isoDate.optional(),
       })
@@ -1562,83 +1626,18 @@ export const financeRouter = createRouter({
       return { ok: true };
     }),
 
-  updateGoalSaved: authedQuery
-    .input(
-      z.object({
-        id: z.number().int().positive(),
-        savedAmount: z.number().int().min(0),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      const db = getDb();
-      // Zustand vorher laden, um überschrittene Meilensteine zu erkennen
-      const goal = await db.query.savingsGoals.findFirst({
-        where: eq(savingsGoals.id, input.id),
-      });
-      await db
-        .update(savingsGoals)
-        .set({ savedAmount: input.savedAmount })
-        .where(eq(savingsGoals.id, input.id));
-      logAudit(
-        db,
-        ctx.user.id,
-        "goal.updated",
-        "goal",
-        input.id,
-        `${goal?.name ?? "Sparziel"}: ${auditAmount(input.savedAmount)} angespart`
-      );
-      // Meilenstein-Benachrichtigung (25/50/75/100 %), nur beim Ansteigen
-      if (goal && goal.targetAmount > 0) {
-        const beforePct = (goal.savedAmount / goal.targetAmount) * 100;
-        const afterPct = (input.savedAmount / goal.targetAmount) * 100;
-        for (const milestone of [25, 50, 75, 100]) {
-          if (beforePct < milestone && afterPct >= milestone) {
-            await sendNotification(
-              db,
-              "goal",
-              `Sparziel ${goal.name}: ${milestone} % erreicht`,
-              `Beim Sparziel „${goal.name}“ sind ${milestone} % angespart.`
-            );
-          }
-        }
-      }
-      return { ok: true };
-    }),
-
-  deleteGoal: authedQuery
-    .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ ctx, input }) => {
-      const db = getDb();
-      const goal = await db.query.savingsGoals.findFirst({
-        where: eq(savingsGoals.id, input.id),
-      });
-      // Beiträge des Ziels mitlöschen (Kaskade)
-      await db
-        .delete(goalContributions)
-        .where(eq(goalContributions.goalId, input.id));
-      await db.delete(savingsGoals).where(eq(savingsGoals.id, input.id));
-      logAudit(
-        db,
-        ctx.user.id,
-        "goal.deleted",
-        "goal",
-        input.id,
-        goal?.name ?? ""
-      );
-      return { ok: true };
-    }),
-
   /**
-   * Beitrag eines Mitglieds zu einem Sparziel. Der Gesamtfortschritt eines
-   * Ziels ist savedAmount (Basis, manuell via updateGoalSaved) plus Summe
-   * aller Beiträge — Beiträge lösen wie updateGoalSaved Meilensteine aus.
+   * Verknüpft ein Konto als Fortschrittsquelle mit einem Sparziel.
+   * Maximal eine Quelle pro Konto und Ziel; das Konto muss für den Nutzer
+   * mindestens sichtbar sein.
    */
-  addGoalContribution: authedQuery
+  addGoalSource: authedQuery
     .input(
       z.object({
         goalId: z.number().int().positive(),
-        amount: z.number().int().positive(),
-        note: z.string().max(500).optional(),
+        accountId: z.number().int().positive(),
+        mode: z.enum(["full", "absolute", "percent"]),
+        value: z.number().int().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1652,38 +1651,168 @@ export const financeRouter = createRouter({
           message: "Sparziel nicht gefunden.",
         });
       }
-      // Fortschritt vor dem Beitrag (Basis + bisherige Beiträge)
-      const existing = await db
-        .select({ amount: goalContributions.amount })
-        .from(goalContributions)
-        .where(eq(goalContributions.goalId, input.goalId));
-      const beforeTotal =
-        goal.savedAmount + existing.reduce((s, c) => s + c.amount, 0);
+      const account = await requireAccountAccess(
+        db,
+        ctx.user,
+        input.accountId,
+        "view"
+      );
+      // Modus-Validierung: full ohne Wert, absolute mit Cent-Betrag > 0,
+      // percent mit 1–100
+      if (input.mode === "full" && input.value !== undefined) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Beim Modus „Ganzes Konto“ darf kein Wert angegeben werden.",
+        });
+      }
+      if (input.mode === "absolute" && (!input.value || input.value <= 0)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Beim Modus „Absoluter Betrag“ muss ein Betrag größer 0 angegeben werden.",
+        });
+      }
+      if (
+        input.mode === "percent" &&
+        (!input.value || input.value < 1 || input.value > 100)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Beim Modus „Prozent“ muss ein Wert zwischen 1 und 100 angegeben werden.",
+        });
+      }
+      const existing = await db.query.goalSources.findFirst({
+        where: and(
+          eq(goalSources.goalId, input.goalId),
+          eq(goalSources.accountId, input.accountId)
+        ),
+      });
+      if (existing) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Dieses Konto ist bereits mit dem Sparziel verknüpft.",
+        });
+      }
+      // Meilenstein-Vergleich auf dem ungefilterten Haushalts-Gesamtwert
+      const beforeTotal = (await computeGoalProgress(db, null, goal)).total;
       const inserted = await db
-        .insert(goalContributions)
+        .insert(goalSources)
         .values({
           goalId: input.goalId,
-          userId: ctx.user.id,
-          amount: input.amount,
-          note: input.note ?? "",
+          accountId: input.accountId,
+          mode: input.mode,
+          value: input.mode === "full" ? null : input.value!,
           createdAt: new Date(),
         })
-        .returning({ id: goalContributions.id });
-      await notifyGoalMilestones(
-        db,
-        goal,
-        beforeTotal,
-        beforeTotal + input.amount
-      );
+        .returning({ id: goalSources.id });
+      const afterTotal = (await computeGoalProgress(db, null, goal)).total;
+      await notifyGoalMilestones(db, goal, beforeTotal, afterTotal);
       logAudit(
         db,
         ctx.user.id,
-        "goal.contribution.added",
+        "goal.sourceAdded",
         "goal",
         input.goalId,
-        `${auditAmount(input.amount)} für „${goal.name}“`
+        `Konto „${account.name}“ (${input.mode})`
       );
       return { id: inserted[0].id };
+    }),
+
+  /** Konto-Verknüpfung eines Sparziels entfernen (Konto muss sichtbar sein) */
+  deleteGoalSource: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.goalSources.findFirst({
+        where: eq(goalSources.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Verknüpfung nicht gefunden.",
+        });
+      }
+      const account = await requireAccountAccess(
+        db,
+        ctx.user,
+        row.accountId,
+        "view"
+      );
+      await db.delete(goalSources).where(eq(goalSources.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.sourceDeleted",
+        "goal",
+        row.goalId,
+        `Konto „${account.name}“`
+      );
+      return { ok: true };
+    }),
+
+  /**
+   * Gesperrt (Sparziele 2.0): der Fortschritt ergibt sich aus verknüpften
+   * Konten. Die manuelle Basis savedAmount bleibt als Alt-Bestand lesbar.
+   */
+  updateGoalSaved: authedQuery
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        savedAmount: z.number().int().min(0),
+      })
+    )
+    .mutation(() => {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Manuelle Einzahlungen sind nicht mehr möglich — verknüpfe das Sparziel mit einem Konto.",
+      });
+    }),
+
+  deleteGoal: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const goal = await db.query.savingsGoals.findFirst({
+        where: eq(savingsGoals.id, input.id),
+      });
+      // Beiträge und Konto-Verknüpfungen des Ziels mitlöschen (Kaskade)
+      await db
+        .delete(goalContributions)
+        .where(eq(goalContributions.goalId, input.id));
+      await db.delete(goalSources).where(eq(goalSources.goalId, input.id));
+      await db.delete(savingsGoals).where(eq(savingsGoals.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.deleted",
+        "goal",
+        input.id,
+        goal?.name ?? ""
+      );
+      return { ok: true };
+    }),
+
+  /**
+   * Gesperrt (Sparziele 2.0): keine manuellen Beiträge mehr — der
+   * Fortschritt ergibt sich aus verknüpften Konten. Bestehende Beiträge
+   * bleiben als Alt-Bestand lesbar (listGoalContributions).
+   */
+  addGoalContribution: authedQuery
+    .input(
+      z.object({
+        goalId: z.number().int().positive(),
+        amount: z.number().int().positive(),
+        note: z.string().max(500).optional(),
+      })
+    )
+    .mutation(() => {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Manuelle Einzahlungen sind nicht mehr möglich — verknüpfe das Sparziel mit einem Konto.",
+      });
     }),
 
   /** Beiträge eines Sparziels inkl. Name/Farbe des Beitragszahlers */
@@ -1967,6 +2096,7 @@ export const financeRouter = createRouter({
       tx.delete(recurring).where(ne(recurring.id, -1)).run();
       tx.delete(budgets).where(ne(budgets.id, -1)).run();
       tx.delete(goalContributions).where(ne(goalContributions.id, -1)).run();
+      tx.delete(goalSources).where(ne(goalSources.id, -1)).run();
       tx.delete(savingsGoals).where(ne(savingsGoals.id, -1)).run();
       tx.delete(categories).where(ne(categories.id, -1)).run();
       tx.delete(accountPermissions).where(ne(accountPermissions.id, -1)).run();

@@ -2,13 +2,14 @@ import { z } from "zod";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
-  accounts, categories, goalContributions, recurring, savingsGoals,
-  transactions,
+  accounts, categories, goalContributions, goalSources, recurring,
+  savingsGoals, transactions,
 } from "@db/schema";
 import {
   touchesVisibleAccount, visibleAccountIds,
 } from "./lib/accountAccess";
 import { computeBudgetStatuses } from "./lib/budgets";
+import { sourceAmount } from "./lib/goalProgress";
 
 function localISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -259,66 +260,161 @@ export const forecastRouter = createRouter({
     });
   }),
 
-  /** Sparziel-Prognose: wann ist das Ziel bei aktueller Sparrate erreicht? */
+  /**
+   * Sparziel-Prognose (Sparziele 2.0): monatliche Simulation (max. 120
+   * Monate) — die Salden der mit den Zielen verknüpften Konten werden mit
+   * den wiederkehrenden Buchungen fortgeschrieben (Vorgehen wie bei der
+   * Saldo-Prognose inkl. Sichtbarkeitsfilter), die Fortschrittsformel aus
+   * api/lib/goalProgress.ts je Monat angewendet. ETA = erster Monat mit
+   * Fortschritt ≥ Zielbetrag (null, wenn in 120 Monaten nicht erreicht);
+   * monthlyRate = durchschnittliche monatliche Fortschrittsänderung der
+   * nächsten 3 simulierten Monate.
+   */
   goalForecast: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
-    const [goals, allTxs, allContribs] = await Promise.all([
-      db.select().from(savingsGoals),
-      db.select().from(transactions),
-      db.select().from(goalContributions),
-    ]);
-    const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
-    // Gesamtfortschritt = Basis (savedAmount) + Summe der Beiträge je Ziel
+    const [goals, allAccs, allTxs, allRecs, allSources, allContribs] =
+      await Promise.all([
+        db.select().from(savingsGoals),
+        db.select().from(accounts),
+        db.select().from(transactions),
+        db.select().from(recurring),
+        db.select().from(goalSources),
+        db.select().from(goalContributions),
+      ]);
+
+    // Start-Salden der sichtbaren Konten (Logik wie listAccounts)
+    const balances = new Map<number, number>();
+    for (const a of allAccs) {
+      if (visible.has(a.id)) balances.set(a.id, a.initialBalance);
+    }
+    for (const t of allTxs) {
+      if (t.type === "transfer") {
+        if (balances.has(t.accountId)) {
+          balances.set(t.accountId, balances.get(t.accountId)! - t.amount);
+        }
+        if (t.toAccountId !== null && balances.has(t.toAccountId)) {
+          balances.set(t.toAccountId, balances.get(t.toAccountId)! + t.amount);
+        }
+      } else if (balances.has(t.accountId)) {
+        balances.set(
+          t.accountId,
+          balances.get(t.accountId)! + (t.type === "income" ? t.amount : -t.amount)
+        );
+      }
+    }
+
+    // Dauerbuchungen: wie bei der Saldo-Prognose — eine sichtbare Seite
+    // (Quelle ODER Ziel) genügt für die Berücksichtigung
+    const recs = allRecs.filter(
+      r =>
+        r.active &&
+        (visible.has(r.accountId) ||
+          (r.toAccountId !== null && visible.has(r.toAccountId)))
+    );
+    const sourcesByGoal = new Map<number, typeof allSources>();
+    for (const s of allSources) {
+      const list = sourcesByGoal.get(s.goalId) ?? [];
+      list.push(s);
+      sourcesByGoal.set(s.goalId, list);
+    }
     const contribSum = new Map<number, number>();
     for (const c of allContribs) {
       contribSum.set(c.goalId, (contribSum.get(c.goalId) ?? 0) + c.amount);
     }
-    const currentKey = localISO(new Date()).slice(0, 7);
 
-    // Durchschnittliche monatliche Sparrate (Einnahmen - Ausgaben, letzte 3 Monate)
-    let surplus = 0;
-    let months = 0;
-    for (let i = 1; i <= 3; i += 1) {
-      const k = addMonths(currentKey, -i);
-      let inc = 0;
-      let exp = 0;
-      let has = false;
-      for (const t of txs) {
-        if (t.type === "transfer" || monthKey(t.date) !== k) continue;
-        has = true;
-        if (t.type === "income") inc += t.amount;
-        else exp += t.amount;
+    // Fortschritt eines Ziels aus einem Saldo-Stand: nur Quellen mit
+    // sichtbarem Konto, Alt-Bestand (savedAmount + Beiträge) konstant
+    const progressOf = (
+      goalId: number,
+      savedAmount: number,
+      bals: Map<number, number>
+    ) => {
+      let total = savedAmount + (contribSum.get(goalId) ?? 0);
+      for (const s of sourcesByGoal.get(goalId) ?? []) {
+        if (!visible.has(s.accountId)) continue;
+        total += sourceAmount(s.mode, s.value, bals.get(s.accountId) ?? 0);
       }
-      if (has) {
-        surplus += inc - exp;
-        months += 1;
+      return total;
+    };
+
+    const MAX_MONTHS = 120;
+    const currentKey = monthKey(localISO(new Date()));
+    // totals[i] = Fortschritt nach i simulierten Monaten (Index 0 = heute)
+    const totalsByGoal = new Map<number, number[]>();
+    for (const g of goals) {
+      totalsByGoal.set(g.id, [progressOf(g.id, g.savedAmount, balances)]);
+    }
+
+    for (let i = 1; i <= MAX_MONTHS; i += 1) {
+      const monthStart = `${addMonths(currentKey, i)}-01`;
+      const monthEndDate = new Date(`${addMonths(currentKey, i + 1)}-01T12:00:00`);
+      monthEndDate.setDate(0);
+      const monthEnd = localISO(monthEndDate);
+      for (const r of recs) {
+        // Auf Monatsanfang vorspulen, dann alle Fälligkeiten im Monat buchen
+        let next = r.nextDate;
+        let guard = 0;
+        while (next < monthStart && guard < 1000) {
+          next = advanceDate(next, r.interval);
+          guard += 1;
+        }
+        while (next <= monthEnd && guard < 1000) {
+          if (r.type === "income") {
+            if (balances.has(r.accountId)) {
+              balances.set(r.accountId, balances.get(r.accountId)! + r.amount);
+            }
+          } else if (r.type === "expense") {
+            if (balances.has(r.accountId)) {
+              balances.set(r.accountId, balances.get(r.accountId)! - r.amount);
+            }
+          } else {
+            // Umbuchung: Quelle −, Ziel + (nur soweit sichtbar/verfolgt)
+            if (balances.has(r.accountId)) {
+              balances.set(r.accountId, balances.get(r.accountId)! - r.amount);
+            }
+            if (r.toAccountId !== null && balances.has(r.toAccountId)) {
+              balances.set(
+                r.toAccountId,
+                balances.get(r.toAccountId)! + r.amount
+              );
+            }
+          }
+          next = advanceDate(next, r.interval);
+          guard += 1;
+        }
+      }
+      for (const g of goals) {
+        totalsByGoal.get(g.id)!.push(progressOf(g.id, g.savedAmount, balances));
       }
     }
-    const monthlySurplus = months > 0 ? Math.round(surplus / months) : 0;
 
-    return goals.map((g) => {
-      const totalSaved = g.savedAmount + (contribSum.get(g.id) ?? 0);
-      const remaining = Math.max(0, g.targetAmount - totalSaved);
-      let eta: string | null = null;
-      if (remaining === 0) {
-        eta = "Erreicht";
-      } else if (monthlySurplus > 0) {
-        const monthsNeeded = Math.ceil(remaining / monthlySurplus);
-        const etaDate = new Date();
-        etaDate.setMonth(etaDate.getMonth() + monthsNeeded);
-        eta = localISO(etaDate).slice(0, 7);
+    return goals.map(g => {
+      const totals = totalsByGoal.get(g.id)!;
+      const total = totals[0];
+      const remaining = Math.max(0, g.targetAmount - total);
+      let etaMonth: string | null = null;
+      if (remaining > 0) {
+        for (let i = 1; i <= MAX_MONTHS; i += 1) {
+          if (totals[i] >= g.targetAmount) {
+            etaMonth = addMonths(currentKey, i);
+            break;
+          }
+        }
       }
+      // Durchschnittliche monatliche Fortschrittsänderung der nächsten
+      // 3 simulierten Monate (für die Anzeige „+x pro Monat")
+      const monthlyRate = Math.round((totals[3] - totals[0]) / 3);
       return {
-        id: g.id,
+        goalId: g.id,
         name: g.name,
         color: g.color,
         targetAmount: g.targetAmount,
-        savedAmount: totalSaved,
         deadline: g.deadline,
+        total,
         remaining,
-        monthlySurplus,
-        etaMonth: eta,
+        etaMonth,
+        monthlyRate,
       };
     });
   }),

@@ -266,11 +266,10 @@ describe("Trigger: Budget-Überschreitung in createTransaction", () => {
   });
 });
 
-describe("Trigger: Sparziel-Meilenstein in updateGoalSaved", () => {
-  it("löst bei 50 % aus, nicht bei 40 %", async () => {
+describe("Legacy-Sperre: updateGoalSaved (Sparziele 2.0)", () => {
+  it("lehnt manuelle Einzahlungen ab und sendet keine Benachrichtigung", async () => {
     await configureNotify("https://ntfy.example.org/t", null);
     const db = getDb();
-    // Start bei 30 % — der 25-%-Meilenstein ist bereits überschritten
     const goal = await db
       .insert(savingsGoals)
       .values({
@@ -280,18 +279,17 @@ describe("Trigger: Sparziel-Meilenstein in updateGoalSaved", () => {
         color: "#10b981",
       })
       .returning({ id: savingsGoals.id });
-    const caller = callerFor(admin);
-
-    await caller.finance.updateGoalSaved({ id: goal[0].id, savedAmount: 4000 });
+    await expect(
+      callerFor(admin).finance.updateGoalSaved({
+        id: goal[0].id,
+        savedAmount: 5000,
+      })
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "Manuelle Einzahlungen sind nicht mehr möglich — verknüpfe das Sparziel mit einem Konto.",
+    });
     expect(fetchMock).not.toHaveBeenCalled();
-
-    await caller.finance.updateGoalSaved({ id: goal[0].id, savedAmount: 5000 });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as unknown as [
-      string,
-      RequestInit,
-    ];
-    expect((init.headers as Record<string, string>).Title).toContain("50 %");
   });
 });
 

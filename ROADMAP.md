@@ -38,7 +38,7 @@ Jede Erweiterung muss zu diesen Grundsätzen passen:
 | **Budgets** | Ein monatliches Limit pro Kategorie, Fortschrittsanzeige, kein Rollover, keine Jahresbudgets |
 | **Kostenaufteilung** | Splits pro Transaktion, Salden zwischen Personen, Ausgleichsvorschläge mit 1-Klick-Verbuchung (kein Gruppen-/Projektkonzept) |
 | **Wiederkehrende Buchungen** | Intervalle weekly/monthly/yearly, täglicher Cron-Job verbucht Fälliges automatisch |
-| **Sparziele** | Zielbetrag, Stichtag, Fortschritt — Zuweisung des gesparten Betrags ist manuell |
+| **Sparziele** | Zielbetrag, Stichtag, Fortschritt aus verknüpften Konten (ganzes Konto / fixer Anteil / Prozent, Sichtbarkeitsfilter), Herkunfts-Aufschlüsselung inkl. Alt-Bestand, ETA-Prognose über Dauerbuchungen |
 | **Prognosen** | Kontostand-Prognose inkl. Dauerbuchungen, Budget-Hochrechnung, Sparziel-ETA — ein Szenario, keine "Was-wäre-wenn"-Varianten |
 | **Benutzer & Auth** | Setup-Wizard, E-Mail/Passwort, Einladungslinks (Server-Log), Admin/Member-Rollen, keine 2FA |
 | **International** | Zahlen- und Datumsformate folgen der Systemregion (z. B. de-DE `1.234,56` vs. de-CH `1'234.56`), haushaltsweite Leitwährung (20 Währungen), UI-Sprache Deutsch |
@@ -89,6 +89,15 @@ Erfassungsmaske.
 
 ### E. Prognosen & Auswertungen
 - Netto-Vermögensentwicklung über Zeit (inkl. Sparziele, Schulden)
+- ✅ Sparziele an Konten knüpfen („Sparziele 2.0", aus Nutzerwunsch):
+  Fortschritt aus verknüpften Konten (Modi ganzes Konto / absoluter Betrag /
+  Prozent) statt manueller Einzahlungen, Herkunfts-Aufschlüsselung,
+  ETA-Prognose über Dauerbuchungen auf den verknüpften Konten;
+  manuelle Einzahlungen/Beiträge gesperrt (Alt-Bestand bleibt lesbar).
+  Davon unberührt bleibt der weiterhin offene Punkt „Automatische Zuweisung
+  von Budget-Überschüssen an Sparziele".
+- Automatische Zuweisung von Budget-Überschüssen an Sparziele (unverbrauchtes
+  Budget periodisch auf ein verknüpftes Ziel-Konto umbuchen)
 
 ### F. Benutzerverwaltung & Sicherheit
 - Feingranulare Rollen (z. B. "nur lesen"-Gast, Kinder-Profil mit Ausgabenlimit)

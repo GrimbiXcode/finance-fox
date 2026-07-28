@@ -250,6 +250,27 @@ export const goalContributions = sqliteTable(
   t => [index("goal_contrib_goal_idx").on(t.goalId)]
 );
 
+/**
+ * Konto-Verknüpfungen eines Sparziels (Sparziele 2.0): der Fortschritt
+ * ergibt sich aus den verknüpften Konten — Modus "full" (ganzer Saldo),
+ * "absolute" (fixer Anteil in Cent, value > 0) oder "percent" (1–100 % des
+ * Saldos, value). Fachlich gilt: max. EINE Quelle pro Konto und Ziel.
+ * Auswertung zentral in api/lib/goalProgress.ts.
+ */
+export const goalSources = sqliteTable(
+  "goal_sources",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    goalId: integer("goal_id").notNull(),
+    accountId: integer("account_id").notNull(),
+    mode: text("mode", { enum: ["full", "absolute", "percent"] }).notNull(),
+    // absolute: Cent > 0; percent: 1–100; full: NULL
+    value: integer("value"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("goal_sources_goal_idx").on(t.goalId)]
+);
+
 /* -------------------------------- Audit-Log -------------------------------- */
 
 /**

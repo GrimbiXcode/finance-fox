@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
+import { CalendarClock, ChevronDown, ChevronUp, Link2, Plus, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,72 +7,100 @@ import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
-import { amountPlaceholder, currencySymbol, formatCents, formatDate, parseEuro } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, formatCents, formatDate, formatMonth, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
-import { useAuth, type SessionUser } from '@/providers/auth';
 import { toast } from 'sonner';
 
 const GOAL_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#6366f1'];
+/** Farben der Herkunfts-Segmente (Konto-Quellen nach Index, Bestand grau) */
+const SOURCE_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#6366f1'];
+const LEGACY_COLOR = '#94a3b8';
 
 type Goal = ReturnType<typeof useFinanceData>['goals'][number];
+type Account = ReturnType<typeof useFinanceData>['accounts'][number];
+type GoalForecastRow = { goalId: number; etaMonth: string | null; monthlyRate: number };
+
+/** Deutsche Kurzbezeichnung der Quellen-Modi */
+function modeLabel(mode: 'full' | 'absolute' | 'percent', value: number | null | undefined): string {
+  if (mode === 'full') return 'gesamtes Konto';
+  if (mode === 'absolute') return `Anteil ${formatCents(value ?? 0)}`;
+  return `${value ?? 0} %`;
+}
 
 /**
- * Karte eines Sparziels. Gesamtfortschritt = Basis (savedAmount, manuell
- * per „Einzahlen") + Summe der Beiträge aller Mitglieder. Der gestapelte
- * Balken und die Beitragsliste zeigen den Einzel-Fortschritt je Person.
+ * Karte eines Sparziels (Sparziele 2.0). Der Fortschritt ergibt sich aus
+ * den verknüpften Konten (Quellen) plus dem Alt-Bestand „Manuell" — der
+ * gestapelte Balken und die Herkunfts-Zeilen zeigen die Zusammensetzung.
  */
-function GoalCard({ goal, currentUser, onDeposit, onDelete }: {
+function GoalCard({ goal, accounts, forecast, onDelete }: {
   goal: Goal;
-  currentUser: SessionUser | null | undefined;
-  onDeposit: (goal: Goal) => void;
+  accounts: Account[];
+  forecast: GoalForecastRow | undefined;
   onDelete: (id: number) => void;
 }) {
   const invalidate = useInvalidateFinance();
   const contribsQuery = trpc.finance.listGoalContributions.useQuery({ goalId: goal.id });
-  const [showContribs, setShowContribs] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
+  const [showSources, setShowSources] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkAccount, setLinkAccount] = useState('');
+  const [linkMode, setLinkMode] = useState<'full' | 'absolute' | 'percent'>('full');
+  const [linkValue, setLinkValue] = useState('');
 
-  const addContribution = trpc.finance.addGoalContribution.useMutation({
+  const addSource = trpc.finance.addGoalSource.useMutation({
     onSuccess: () => {
-      toast.success('Beitrag verbucht.');
+      toast.success('Konto verknüpft.');
       invalidate();
-      setAddOpen(false); setAmount(''); setNote('');
+      setLinkOpen(false); setLinkAccount(''); setLinkMode('full'); setLinkValue('');
     },
     onError: (err) => toast.error(err.message),
   });
-  const deleteContribution = trpc.finance.deleteGoalContribution.useMutation({
-    onSuccess: () => { toast.success('Beitrag gelöscht.'); invalidate(); },
+  const deleteSource = trpc.finance.deleteGoalSource.useMutation({
+    onSuccess: () => { toast.success('Verknüpfung entfernt.'); invalidate(); },
     onError: (err) => toast.error(err.message),
   });
 
   const contribs = contribsQuery.data ?? [];
-  const contribTotal = contribs.reduce((s, c) => s + c.amount, 0);
-  const total = goal.savedAmount + contribTotal;
-  const pct = goal.targetAmount > 0 ? Math.min(100, Math.round((total / goal.targetAmount) * 100)) : 0;
+  const total = goal.totalSaved;
+  const pct = goal.percent;
   const done = total >= goal.targetAmount;
 
-  // Einzel-Fortschritt: Summe je Beitragszahler
-  const perUser = new Map<number, { name: string; color: string; sum: number }>();
-  for (const c of contribs) {
-    const entry = perUser.get(c.userId) ?? { name: c.userName, color: c.userColor, sum: 0 };
-    entry.sum += c.amount;
-    perUser.set(c.userId, entry);
-  }
+  // Farbe je Quelle: Konto-Quellen nach Index, Bestand grau
+  const colorOf = (index: number, kind: 'account' | 'legacy') =>
+    kind === 'legacy' ? LEGACY_COLOR : SOURCE_COLORS[index % SOURCE_COLORS.length];
   // Balkenbreiten als Anteil am Zielbetrag (Summe auf 100 % gedeckelt)
   const widthOf = (cents: number) =>
     goal.targetAmount > 0 ? Math.min(100, (cents / goal.targetAmount) * 100) : 0;
 
-  const submitContribution = () => {
-    const cents = parseEuro(amount);
-    if (cents <= 0) { toast.error('Betrag angeben.'); return; }
-    addContribution.mutate({ goalId: goal.id, amount: cents, note: note.trim() || undefined });
-  };
+  // Verknüpfbare Konten: sichtbar und noch nicht mit diesem Ziel verknüpft
+  const linkedAccountIds = new Set(
+    goal.sources.filter((s) => s.kind === 'account').map((s) => s.accountId),
+  );
+  const linkableAccounts = accounts.filter((a) => !linkedAccountIds.has(a.id));
 
-  const mayDelete = (userId: number) =>
-    currentUser?.role === 'admin' || currentUser?.id === userId;
+  const submitLink = () => {
+    const accountId = Number(linkAccount);
+    if (!accountId) { toast.error('Konto wählen.'); return; }
+    if (linkMode === 'absolute') {
+      const cents = parseEuro(linkValue);
+      if (cents <= 0) { toast.error('Betrag größer 0 angeben.'); return; }
+      addSource.mutate({ goalId: goal.id, accountId, mode: linkMode, value: cents });
+      return;
+    }
+    if (linkMode === 'percent') {
+      const pctValue = Number(linkValue);
+      if (!Number.isInteger(pctValue) || pctValue < 1 || pctValue > 100) {
+        toast.error('Prozentwert zwischen 1 und 100 angeben.');
+        return;
+      }
+      addSource.mutate({ goalId: goal.id, accountId, mode: linkMode, value: pctValue });
+      return;
+    }
+    addSource.mutate({ goalId: goal.id, accountId, mode: 'full' });
+  };
 
   return (
     <Card>
@@ -92,56 +120,87 @@ function GoalCard({ goal, currentUser, onDeposit, onDelete }: {
           <span className="text-xl font-bold" style={{ color: goal.color }}>{formatCents(total)}</span>
           <span className="text-sm text-muted-foreground">von {formatCents(goal.targetAmount)}</span>
         </div>
-        {/* Gestapelter Balken: Basis in Zielfarbe, Beiträge in Personenfarbe */}
+        {/* Gestapelter Herkunfts-Balken: ein Segment pro Quelle */}
         <div className="flex h-2 w-full overflow-hidden rounded-full bg-secondary">
-          {goal.savedAmount > 0 && (
-            <div style={{ width: `${widthOf(goal.savedAmount)}%`, backgroundColor: goal.color }} />
-          )}
-          {[...perUser.values()].map((p) => (
-            <div key={p.name} style={{ width: `${widthOf(p.sum)}%`, backgroundColor: p.color }} />
+          {goal.sources.map((s, i) => (
+            s.amount > 0 && (
+              <div
+                key={s.kind === 'account' ? `acc-${s.sourceId}` : 'legacy'}
+                style={{ width: `${widthOf(s.amount)}%`, backgroundColor: colorOf(i, s.kind) }}
+              />
+            )
           ))}
         </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">{done ? 'Erreicht! 🎉' : `${pct} %`}</span>
-          {!done && (
-            <Button variant="outline" size="sm" onClick={() => onDeposit(goal)}>Einzahlen</Button>
+          {!done && forecast && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CalendarClock className="h-3.5 w-3.5" />
+              {forecast.etaMonth
+                ? `Voraussichtlich erreicht: ${formatMonth(forecast.etaMonth)}`
+                : 'Mit aktuellen Dauerbuchungen nicht erreichbar'}
+              {forecast.monthlyRate > 0 && ` (+${formatCents(forecast.monthlyRate)}/Monat)`}
+            </span>
           )}
         </div>
+        {goal.hasHiddenSources && (
+          <p className="text-xs italic text-muted-foreground">Enthält verborgene Quellen</p>
+        )}
 
         <Button
           variant="ghost"
           size="sm"
           className="w-full justify-between"
-          onClick={() => setShowContribs((v) => !v)}
+          onClick={() => setShowSources((v) => !v)}
         >
-          Beiträge ({contribs.length})
-          {showContribs ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          Herkunft ({goal.sources.length})
+          {showSources ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </Button>
 
-        {showContribs && (
+        {showSources && (
           <div className="space-y-2 border-t pt-3">
-            {/* Summen je Person (Einzel-Fortschritt) */}
+            {/* Herkunfts-Zeilen: Konto — Modus → Betrag, Bestand zuletzt */}
             <div className="space-y-1">
-              {goal.savedAmount > 0 && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: goal.color }} />
-                    Basis (manuell)
-                  </span>
-                  <span className="font-medium">{formatCents(goal.savedAmount)}</span>
-                </div>
+              {goal.sources.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Noch keine Quelle — verknüpfe ein Konto mit diesem Ziel.
+                </p>
               )}
-              {[...perUser.values()].map((p) => (
-                <div key={p.name} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                    {p.name}
+              {goal.sources.map((s, i) => (
+                <div
+                  key={s.kind === 'account' ? `acc-${s.sourceId}` : 'legacy'}
+                  className="flex items-center justify-between gap-2 text-sm"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: colorOf(i, s.kind) }}
+                    />
+                    <span className="truncate">
+                      {s.kind === 'legacy'
+                        ? 'Manuell (Bestand)'
+                        : `${s.accountName} — ${modeLabel(s.mode ?? 'full', s.value)}`}
+                    </span>
                   </span>
-                  <span className="font-medium">{formatCents(p.sum)}</span>
+                  <span className="flex shrink-0 items-center gap-1">
+                    <span className="font-medium">→ {formatCents(s.amount)}</span>
+                    {s.kind === 'account' && s.sourceId !== undefined && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        title="Verknüpfung entfernen"
+                        onClick={() => deleteSource.mutate({ id: s.sourceId! })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                      </Button>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>
 
+            {/* Bestand: bisherige Beiträge (schreibgeschützt) */}
             {contribs.length > 0 && (
               <ul className="space-y-1 border-t pt-2">
                 {contribs.map((c) => (
@@ -158,44 +217,64 @@ function GoalCard({ goal, currentUser, onDeposit, onDelete }: {
                         {formatDate(new Date(c.createdAt).toISOString().slice(0, 10))}
                       </span>
                       <span className="font-medium">{formatCents(c.amount)}</span>
-                      {mayDelete(c.userId) && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          title="Beitrag löschen"
-                          onClick={() => deleteContribution.mutate({ id: c.id })}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                        </Button>
-                      )}
                     </span>
                   </li>
                 ))}
               </ul>
             )}
 
-            <Dialog open={addOpen} onOpenChange={setAddOpen}>
+            <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="w-full">
-                  <Plus className="mr-2 h-4 w-4" /> Beitrag hinzufügen
+                  <Link2 className="mr-2 h-4 w-4" /> Konto verknüpfen
                 </Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>Beitrag zu „{goal.name}"</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>Konto mit „{goal.name}“ verknüpfen</DialogTitle></DialogHeader>
                 <div className="grid gap-4 py-2">
                   <div className="space-y-2">
-                    <Label>Betrag ({currencySymbol()})</Label>
-                    <Input inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
+                    <Label>Konto</Label>
+                    <Select value={linkAccount} onValueChange={setLinkAccount}>
+                      <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
+                      <SelectContent>
+                        {linkableAccounts.map((a) => (
+                          <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {linkableAccounts.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Alle sichtbaren Konten sind bereits verknüpft.
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    <Label>Notiz (optional)</Label>
-                    <Input placeholder="z. B. Geburtstagsgeld" value={note} onChange={(e) => setNote(e.target.value)} />
+                    <Label>Modus</Label>
+                    <Select value={linkMode} onValueChange={(v) => setLinkMode(v as typeof linkMode)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Ganzes Konto</SelectItem>
+                        <SelectItem value="absolute">Absoluter Betrag</SelectItem>
+                        <SelectItem value="percent">Prozent vom Saldo</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {linkMode === 'absolute' && (
+                    <div className="space-y-2">
+                      <Label>Betrag ({currencySymbol()})</Label>
+                      <Input inputMode="decimal" placeholder={amountPlaceholder} value={linkValue} onChange={(e) => setLinkValue(e.target.value)} />
+                    </div>
+                  )}
+                  {linkMode === 'percent' && (
+                    <div className="space-y-2">
+                      <Label>Prozent (1–100)</Label>
+                      <Input inputMode="numeric" placeholder="z. B. 50" value={linkValue} onChange={(e) => setLinkValue(e.target.value)} />
+                    </div>
+                  )}
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setAddOpen(false)}>Abbrechen</Button>
-                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submitContribution} disabled={addContribution.isPending}>Verbuchen</Button>
+                  <Button variant="outline" onClick={() => setLinkOpen(false)}>Abbrechen</Button>
+                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submitLink} disabled={addSource.isPending || linkableAccounts.length === 0}>Verknüpfen</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -207,46 +286,34 @@ function GoalCard({ goal, currentUser, onDeposit, onDelete }: {
 }
 
 export default function Goals() {
-  const { goals } = useFinanceData();
-  const { user } = useAuth();
+  const { goals, accounts } = useFinanceData();
   const invalidate = useInvalidateFinance();
+  const goalFc = trpc.forecast.goalForecast.useQuery();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
-  const [saved, setSaved] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [depositFor, setDepositFor] = useState<number | null>(null);
-  const [deposit, setDeposit] = useState('');
 
   const createGoal = trpc.finance.createGoal.useMutation({
     onSuccess: () => {
       toast.success('Sparziel angelegt.');
       invalidate();
-      setOpen(false); setName(''); setTarget(''); setSaved(''); setDeadline('');
+      setOpen(false); setName(''); setTarget(''); setDeadline('');
     },
     onError: (err) => toast.error(err.message),
   });
-  const updateSaved = trpc.finance.updateGoalSaved.useMutation({
-    onSuccess: () => { toast.success('Einzahlung verbucht.'); invalidate(); setDepositFor(null); setDeposit(''); },
-  });
   const deleteGoal = trpc.finance.deleteGoal.useMutation({ onSuccess: () => invalidate() });
+
+  const forecastByGoal = new Map((goalFc.data ?? []).map((f) => [f.goalId, f]));
 
   const submit = () => {
     const targetCents = parseEuro(target);
     if (!name.trim() || targetCents <= 0) { toast.error('Name und Zielbetrag angeben.'); return; }
     createGoal.mutate({
-      name: name.trim(), targetAmount: targetCents, savedAmount: parseEuro(saved),
+      name: name.trim(), targetAmount: targetCents,
       color: GOAL_COLORS[goals.length % GOAL_COLORS.length],
       deadline: deadline || undefined,
     });
-  };
-
-  const submitDeposit = () => {
-    const goal = goals.find((g) => g.id === depositFor);
-    if (!goal) return;
-    const cents = parseEuro(deposit);
-    if (cents <= 0) { toast.error('Betrag angeben.'); return; }
-    updateSaved.mutate({ id: goal.id, savedAmount: Math.min(goal.targetAmount, goal.savedAmount + cents) });
   };
 
   return (
@@ -267,15 +334,9 @@ export default function Goals() {
                 <Label>Name</Label>
                 <Input placeholder="z. B. Urlaub, Notgroschen" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Zielbetrag ({currencySymbol()})</Label>
-                  <Input inputMode="decimal" placeholder={amountPlaceholder} value={target} onChange={(e) => setTarget(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Bereits gespart ({currencySymbol()})</Label>
-                  <Input inputMode="decimal" placeholder={amountPlaceholder} value={saved} onChange={(e) => setSaved(e.target.value)} />
-                </div>
+              <div className="space-y-2">
+                <Label>Zielbetrag ({currencySymbol()})</Label>
+                <Input inputMode="decimal" placeholder={amountPlaceholder} value={target} onChange={(e) => setTarget(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Stichtag (optional)</Label>
@@ -302,26 +363,12 @@ export default function Goals() {
           <GoalCard
             key={g.id}
             goal={g}
-            currentUser={user}
-            onDeposit={(goal) => setDepositFor(goal.id)}
+            accounts={accounts}
+            forecast={forecastByGoal.get(g.id)}
             onDelete={(id) => deleteGoal.mutate({ id })}
           />
         ))}
       </div>
-
-      <Dialog open={depositFor !== null} onOpenChange={(o) => { if (!o) setDepositFor(null); }}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Auf Sparziel einzahlen</DialogTitle></DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label>Betrag ({currencySymbol()})</Label>
-            <Input inputMode="decimal" placeholder={amountPlaceholder} value={deposit} onChange={(e) => setDeposit(e.target.value)} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDepositFor(null)}>Abbrechen</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submitDeposit} disabled={updateSaved.isPending}>Einzahlen</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

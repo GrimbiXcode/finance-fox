@@ -91,6 +91,8 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "goal.deleted": "Sparziel gelöscht",
   "goal.contribution.added": "Sparziel-Beitrag hinzugefügt",
   "goal.contribution.deleted": "Sparziel-Beitrag gelöscht",
+  "goal.sourceAdded": "Sparziel mit Konto verknüpft",
+  "goal.sourceDeleted": "Sparziel-Verknüpfung gelöst",
   "project.created": "Projekt angelegt",
   "project.deleted": "Projekt gelöscht",
   "splitTemplate.created": "Aufteilungsvorlage angelegt",

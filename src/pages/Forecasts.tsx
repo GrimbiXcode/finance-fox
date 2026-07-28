@@ -262,8 +262,8 @@ export default function Forecasts() {
               Sparziel-Prognose
             </CardTitle>
             <CardDescription>
-              Wann sind die Ziele erreicht — bei aktueller Sparrate von{' '}
-              {goalFc.data?.[0] ? formatCents(goalFc.data[0].monthlySurplus) : '…'}/Monat?
+              Wann sind die Ziele erreicht — mit den aktuellen Dauerbuchungen
+              auf den verknüpften Konten?
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -271,23 +271,24 @@ export default function Forecasts() {
               <p className="py-4 text-center text-sm text-muted-foreground">Keine Sparziele angelegt.</p>
             )}
             {(goalFc.data ?? []).map((g) => {
-              const pct = g.targetAmount > 0 ? Math.min(100, Math.round((g.savedAmount / g.targetAmount) * 100)) : 0;
+              const pct = g.targetAmount > 0 ? Math.min(100, Math.round((g.total / g.targetAmount) * 100)) : 0;
               return (
-                <div key={g.id} className="space-y-1.5">
+                <div key={g.goalId} className="space-y-1.5">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{g.name}</span>
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <CalendarClock className="h-3.5 w-3.5" />
-                      {g.etaMonth === 'Erreicht'
+                      {g.remaining === 0
                         ? <Badge className="bg-emerald-600 text-[10px]">Erreicht</Badge>
                         : g.etaMonth
                           ? <span>voraussichtlich <span className="font-medium text-foreground">{formatMonth(g.etaMonth)}</span></span>
-                          : <span>bei aktueller Sparrate nicht erreichbar</span>}
+                          : <span>mit aktuellen Dauerbuchungen nicht erreichbar</span>}
                     </span>
                   </div>
                   <Progress value={pct} style={{ ['--progress-color' as string]: g.color }} className="[&>div]:bg-[var(--progress-color)]" />
                   <p className="text-xs text-muted-foreground">
                     Noch {formatCents(g.remaining)} offen
+                    {g.monthlyRate > 0 ? ` · +${formatCents(g.monthlyRate)}/Monat` : ''}
                     {g.deadline ? ` · Stichtag ${new Date(`${g.deadline}T12:00:00`).toLocaleDateString(getUserLocale())}` : ''}
                   </p>
                 </div>

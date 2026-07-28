@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
 import {
   amountPlaceholder, currencySymbol, formatCents, getUserLocale, parseEuro, todayISO,
@@ -71,7 +71,7 @@ export default function TransactionDialog({
   trigger?: ReactNode;
 }) {
   const { user } = useAuth();
-  const { accounts, categories, users, projects, splitTemplates, tags } = useFinanceData();
+  const { accounts, banks, categories, users, projects, splitTemplates, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const isEdit = transaction !== undefined;
@@ -429,7 +429,7 @@ export default function TransactionDialog({
                 <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
                   <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
                   <SelectContent>
-                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -438,7 +438,7 @@ export default function TransactionDialog({
                 <Select value={String(effectiveToAccountId || '')} onValueChange={setToAccountId}>
                   <SelectTrigger><SelectValue placeholder="Zielkonto" /></SelectTrigger>
                   <SelectContent>
-                    {accounts.filter((a) => a.id !== effectiveAccountId).map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                    {accounts.filter((a) => a.id !== effectiveAccountId).map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -450,15 +450,21 @@ export default function TransactionDialog({
                 <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
                   <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
                   <SelectContent>
-                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Kategorie</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
+                {/* Sentinel „none" statt leerem String — Radix Select erlaubt keinen leeren value;
+                    intern bleibt „keine Kategorie" der leere String (submit mappt auf undefined/null) */}
+                <Select
+                  value={categoryId || 'none'}
+                  onValueChange={(v) => setCategoryId(v === 'none' ? '' : v)}
+                >
                   <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Keine Kategorie</SelectItem>
                     {groupedCategories.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>
                         {c.parentId ? `\u00A0\u00A0${c.name}` : c.name}

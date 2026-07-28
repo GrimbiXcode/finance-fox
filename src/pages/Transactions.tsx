@@ -13,7 +13,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import TransactionAttachmentsDialog from '@/components/TransactionAttachmentsDialog';
@@ -25,7 +25,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 export default function Transactions() {
-  const { accounts, categories, transactions, users, projects, tags } = useFinanceData();
+  const { accounts, banks, categories, transactions, users, projects, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -130,7 +130,7 @@ export default function Transactions() {
               <Input placeholder="Suchen…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger><SelectValue placeholder="Typ" /></SelectTrigger>
+              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Typ" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Alle Typen</SelectItem>
                 <SelectItem value="income">Einnahmen</SelectItem>
@@ -139,28 +139,28 @@ export default function Transactions() {
               </SelectContent>
             </Select>
             <Select value={accountFilter} onValueChange={setAccountFilter}>
-              <SelectTrigger><SelectValue placeholder="Konto" /></SelectTrigger>
+              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Konto" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Alle Konten</SelectItem>
-                {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger><SelectValue placeholder="Kategorie" /></SelectTrigger>
+              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Kategorie" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Alle Kategorien</SelectItem>
                 {categories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={userFilter} onValueChange={setUserFilter}>
-              <SelectTrigger><SelectValue placeholder="Person" /></SelectTrigger>
+              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Person" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Alle Personen</SelectItem>
                 {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={tagFilter} onValueChange={setTagFilter}>
-              <SelectTrigger><SelectValue placeholder="Tag" /></SelectTrigger>
+              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Tag" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Alle Tags</SelectItem>
                 {tags.map((tag) => <SelectItem key={tag.id} value={String(tag.id)}>{tag.name}</SelectItem>)}

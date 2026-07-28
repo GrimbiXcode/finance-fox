@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Banknote, ChevronDown, ChevronUp, CreditCard, LayoutGrid, Pencil, PiggyBank, Plus, Table as TableIcon, Wallet } from 'lucide-react';
+import { Banknote, ChevronDown, ChevronUp, CreditCard, LayoutGrid, Pencil, PiggyBank, Plus, Search, Table as TableIcon, Wallet } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AccountDialog from '@/components/AccountDialog';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
+import { useTableSort } from '@/lib/sort';
 import { currencySymbol, formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +33,11 @@ const HISTORY_RANGES = [
 ] as const;
 
 type HistoryMonths = (typeof HISTORY_RANGES)[number]['months'];
+
+type AccountRow = ReturnType<typeof useFinanceData>['accounts'][number];
+
+/** Sortierbare Spalten der Tabellenansicht */
+type AccountSortKey = 'name' | 'type' | 'bank' | 'txCount' | 'initial' | 'balance';
 
 type ViewMode = 'cards' | 'table';
 const VIEW_KEY = 'ff-accounts-view';
@@ -107,6 +114,7 @@ export default function Accounts() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [bankFilter, setBankFilter] = useState('all');
+  const [search, setSearch] = useState('');
   const [view, setView] = useState<ViewMode>(readViewMode);
   const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
@@ -120,10 +128,40 @@ export default function Accounts() {
     if (typeFilter !== 'all' && a.type !== typeFilter) return false;
     if (bankFilter === 'none' && a.bankId !== null) return false;
     if (bankFilter !== 'all' && bankFilter !== 'none' && a.bankId !== Number(bankFilter)) return false;
+    const term = search.trim().toLowerCase().replace(/\s/g, '');
+    if (term) {
+      // Suche über Kontoname, Bankname und IBAN (Leerzeichen ignoriert)
+      const haystack = `${a.name} ${a.bankId !== null ? (bankName.get(a.bankId) ?? '') : ''} ${a.iban ?? ''}`
+        .toLowerCase().replace(/\s/g, '');
+      if (!haystack.includes(term)) return false;
+    }
     return true;
   });
   const txCountOf = (id: number) =>
     transactions.filter((t) => t.accountId === id || t.toAccountId === id).length;
+
+  // Clientseitige Sortierung der Tabellenansicht (wirkt auf die gefilterte Liste)
+  const { toggleSort, sorted, iconFor, isActive } = useTableSort<AccountSortKey, AccountRow>({
+    name: (a) => a.name,
+    type: (a) => typeName.get(a.type) ?? a.type,
+    bank: (a) => (a.bankId !== null ? bankName.get(a.bankId) ?? '' : ''),
+    txCount: (a) => txCountOf(a.id),
+    initial: (a) => a.initialBalance,
+    balance: (a) => a.balance,
+  });
+
+  /** Sortierbarer Spaltenkopf: Klick schaltet die Sortierung, Pfeil-Icon zeigt sie an */
+  const sortableHead = (key: AccountSortKey, label: string, className?: string) => {
+    const Icon = iconFor(key);
+    return (
+      <TableHead className={cn('cursor-pointer select-none', className)} onClick={() => toggleSort(key)}>
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <Icon className={cn('h-3.5 w-3.5', isActive(key) ? 'text-foreground' : 'text-muted-foreground/40')} />
+        </span>
+      </TableHead>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -140,15 +178,22 @@ export default function Accounts() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Suche: Name, Bank, IBAN…" className="w-56 pl-8"
+            value={search} onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-44"><SelectValue placeholder="Kontotyp" /></SelectTrigger>
+          <SelectTrigger className="w-44 min-w-0 [&>span]:truncate"><SelectValue placeholder="Kontotyp" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle Typen</SelectItem>
             {accountTypes.map((t) => <SelectItem key={t.key} value={t.key}>{t.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={bankFilter} onValueChange={setBankFilter}>
-          <SelectTrigger className="w-44"><SelectValue placeholder="Bank" /></SelectTrigger>
+          <SelectTrigger className="w-44 min-w-0 [&>span]:truncate"><SelectValue placeholder="Bank" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle Banken</SelectItem>
             <SelectItem value="none">Ohne Bank</SelectItem>
@@ -250,18 +295,19 @@ export default function Accounts() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Konto</TableHead>
-              <TableHead>Typ</TableHead>
-              <TableHead>Bank</TableHead>
+              {sortableHead('name', 'Konto')}
+              {sortableHead('type', 'Typ')}
+              {sortableHead('bank', 'Bank')}
               <TableHead>IBAN</TableHead>
-              <TableHead className="text-right">Buchungen</TableHead>
-              <TableHead className="text-right">Anfangsbestand</TableHead>
-              <TableHead className="text-right">Saldo</TableHead>
+              {sortableHead('txCount', 'Buchungen', 'text-right')}
+              {sortableHead('initial', 'Anfangsbestand', 'text-right')}
+              {sortableHead('balance', 'Saldo', 'text-right')}
               <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((a) => {
+            {/* Sortierung vor dem Rendern der Zeilenpaare — die Verlauf-Zeile bleibt unter ihrem Konto */}
+            {sorted(filtered).map((a) => {
               const Icon = typeIcons[a.type] ?? Wallet;
               return [
                 <TableRow key={a.id}>
@@ -320,6 +366,26 @@ export default function Accounts() {
               ];
             })}
           </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={4} className="font-medium">
+                Total ({filtered.length} {filtered.length === 1 ? 'Konto' : 'Konten'})
+              </TableCell>
+              <TableCell className="text-right">
+                {filtered.reduce((s, a) => s + txCountOf(a.id), 0)}
+              </TableCell>
+              <TableCell className="text-right">
+                {formatCents(filtered.reduce((s, a) => s + a.initialBalance, 0))}
+              </TableCell>
+              <TableCell className={cn(
+                'text-right font-bold',
+                filtered.reduce((s, a) => s + a.balance, 0) < 0 && 'text-destructive',
+              )}>
+                {formatCents(filtered.reduce((s, a) => s + a.balance, 0))}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
         </Table>
       </Card>
       )}

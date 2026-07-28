@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { amountPlaceholder, currencySymbol, formatCents, formatDate, formatMonth, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ const LEGACY_COLOR = '#94a3b8';
 
 type Goal = ReturnType<typeof useFinanceData>['goals'][number];
 type Account = ReturnType<typeof useFinanceData>['accounts'][number];
+type Bank = ReturnType<typeof useFinanceData>['banks'][number];
 type GoalForecastRow = { goalId: number; etaMonth: string | null; monthlyRate: number };
 
 /** Deutsche Kurzbezeichnung der Quellen-Modi */
@@ -36,9 +37,10 @@ function modeLabel(mode: 'full' | 'absolute' | 'percent', value: number | null |
  * den verknüpften Konten (Quellen) plus dem Alt-Bestand „Manuell" — der
  * gestapelte Balken und die Herkunfts-Zeilen zeigen die Zusammensetzung.
  */
-function GoalCard({ goal, accounts, forecast }: {
+function GoalCard({ goal, accounts, banks, forecast }: {
   goal: Goal;
   accounts: Account[];
+  banks: Bank[];
   forecast: GoalForecastRow | undefined;
 }) {
   const invalidate = useInvalidateFinance();
@@ -242,7 +244,7 @@ function GoalCard({ goal, accounts, forecast }: {
                       <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
                       <SelectContent>
                         {linkableAccounts.map((a) => (
-                          <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                          <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -290,7 +292,7 @@ function GoalCard({ goal, accounts, forecast }: {
 }
 
 export default function Goals() {
-  const { goals, accounts } = useFinanceData();
+  const { goals, accounts, banks } = useFinanceData();
   const goalFc = trpc.forecast.goalForecast.useQuery();
 
   const forecastByGoal = new Map((goalFc.data ?? []).map((f) => [f.goalId, f]));
@@ -322,6 +324,7 @@ export default function Goals() {
             key={g.id}
             goal={g}
             accounts={accounts}
+            banks={banks}
             forecast={forecastByGoal.get(g.id)}
           />
         ))}

@@ -37,6 +37,19 @@ export function useFinanceData() {
   };
 }
 
+/**
+ * Anzeigename eines Kontos in Auswahllisten: „Kontoname (Bankname)",
+ * Konten ohne Bank bleiben beim reinen Namen.
+ */
+export function accountLabel(
+  account: { name: string; bankId: number | null },
+  banks: { id: number; name: string }[],
+): string {
+  if (account.bankId === null) return account.name;
+  const bank = banks.find((b) => b.id === account.bankId);
+  return bank ? `${account.name} (${bank.name})` : account.name;
+}
+
 /** Invalidiert nach einer Mutation alle Finanz-Queries */
 export function useInvalidateFinance() {
   const utils = trpc.useUtils();

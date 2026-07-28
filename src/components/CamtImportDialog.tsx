@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -34,7 +34,7 @@ export default function CamtImportDialog() {
 
 /** Formular-Inhalt; wird bei jedem Öffnen neu gemountet, damit der Zustand frisch ist */
 function CamtImportForm({ close }: { close: () => void }) {
-  const { accounts } = useFinanceData();
+  const { accounts, banks } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [file, setFile] = useState<File | null>(null);
   const [accountId, setAccountId] = useState('');
@@ -100,7 +100,7 @@ function CamtImportForm({ close }: { close: () => void }) {
               <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
               <SelectContent>
                 {editableAccounts.map((a) => (
-                  <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                  <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

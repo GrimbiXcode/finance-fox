@@ -14,7 +14,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { useTableSort } from '@/lib/sort';
 import { useAuth } from '@/providers/auth';
 import { amountPlaceholder, currencySymbol, formatCents, formatDate, parseEuro, todayISO } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
@@ -38,6 +39,12 @@ const readViewMode = (): ViewMode =>
   localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'cards';
 
 type RecurringRow = ReturnType<typeof useFinanceData>['recurring'][number];
+
+/** Sortierreihenfolge der Intervalle: wöchentlich < monatlich < jährlich */
+const INTERVAL_ORDER: Record<Interval, number> = { weekly: 0, monthly: 1, yearly: 2 };
+
+/** Sortierbare Spalten der Tabellenansicht */
+type RecSortKey = 'type' | 'note' | 'person' | 'amount' | 'interval' | 'nextDate' | 'status';
 
 /** Formularwerte als Strings (1:1 an die Input-Felder gebunden) */
 interface RecurringFormValues {
@@ -84,7 +91,7 @@ function RecurringForm({
   onSubmit: (values: RecurringFormValues) => void;
 }) {
   const { user } = useAuth();
-  const { accounts, categories, users } = useFinanceData();
+  const { accounts, banks, categories, users } = useFinanceData();
   const [values, setValues] = useState(initial);
   const set = <K extends keyof RecurringFormValues>(key: K, value: RecurringFormValues[K]) =>
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -130,7 +137,7 @@ function RecurringForm({
             <Select value={values.accountId} onValueChange={(v) => set('accountId', v)}>
               <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
               <SelectContent>
-                {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -141,7 +148,7 @@ function RecurringForm({
                 <SelectTrigger><SelectValue placeholder="Zielkonto" /></SelectTrigger>
                 <SelectContent>
                   {accounts.filter((a) => String(a.id) !== values.accountId).map((a) => (
-                    <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                    <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -149,9 +156,15 @@ function RecurringForm({
           ) : (
             <div className="space-y-2">
               <Label>Kategorie</Label>
-              <Select value={values.categoryId} onValueChange={(v) => set('categoryId', v)}>
+              {/* Sentinel „none" statt leerem String — Radix Select erlaubt keinen leeren value;
+                  intern bleibt „keine Kategorie" der leere String (submit mappt auf undefined/null) */}
+              <Select
+                value={values.categoryId || 'none'}
+                onValueChange={(v) => set('categoryId', v === 'none' ? '' : v)}
+              >
                 <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">Keine Kategorie</SelectItem>
                   {categories.filter((c) => c.type === values.type).map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                   ))}
@@ -192,13 +205,14 @@ function RecurringForm({
 
 export default function Recurring() {
   const { user } = useAuth();
-  const { accounts, categories, recurring, users } = useFinanceData();
+  const { accounts, banks, categories, recurring, users } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringRow | null>(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [accountFilter, setAccountFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [userFilter, setUserFilter] = useState('all');
   const [view, setView] = useState<ViewMode>(readViewMode);
 
   const createRecurring = trpc.finance.createRecurring.useMutation({
@@ -284,8 +298,35 @@ export default function Recurring() {
     }
     if (statusFilter === 'active' && !r.active) return false;
     if (statusFilter === 'paused' && r.active) return false;
+    if (userFilter !== 'all' && r.userId !== Number(userFilter)) return false;
     return true;
   });
+
+  // Clientseitige Sortierung der Tabellenansicht (wirkt auf die gefilterte Liste)
+  const { toggleSort, sorted, iconFor, isActive } = useTableSort<RecSortKey, RecurringRow>({
+    type: (r) => typeLabel[r.type],
+    note: (r) =>
+      r.note ||
+      (r.type === 'transfer' ? 'Umbuchung' : categories.find((c) => c.id === r.categoryId)?.name ?? ''),
+    person: (r) => users.find((u) => u.id === r.userId)?.name ?? '',
+    amount: (r) => r.amount,
+    interval: (r) => INTERVAL_ORDER[r.interval],
+    nextDate: (r) => r.nextDate,
+    status: (r) => (r.active ? 0 : 1), // aktiv vor pausiert
+  });
+
+  /** Sortierbarer Spaltenkopf: Klick schaltet die Sortierung, Pfeil-Icon zeigt sie an */
+  const sortableHead = (key: RecSortKey, label: string, className?: string) => {
+    const Icon = iconFor(key);
+    return (
+      <TableHead className={cn('cursor-pointer select-none', className)} onClick={() => toggleSort(key)}>
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <Icon className={cn('h-3.5 w-3.5', isActive(key) ? 'text-foreground' : 'text-muted-foreground/40')} />
+        </span>
+      </TableHead>
+    );
+  };
 
   const editButton = (r: RecurringRow) =>
     canEdit(r) ? (
@@ -328,7 +369,7 @@ export default function Recurring() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Typ" /></SelectTrigger>
+          <SelectTrigger className="w-40 min-w-0 [&>span]:truncate"><SelectValue placeholder="Typ" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle Typen</SelectItem>
             <SelectItem value="expense">Ausgaben</SelectItem>
@@ -337,18 +378,25 @@ export default function Recurring() {
           </SelectContent>
         </Select>
         <Select value={accountFilter} onValueChange={setAccountFilter}>
-          <SelectTrigger className="w-44"><SelectValue placeholder="Konto" /></SelectTrigger>
+          <SelectTrigger className="w-44 min-w-0 [&>span]:truncate"><SelectValue placeholder="Konto" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle Konten</SelectItem>
-            {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+            {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-36 min-w-0 [&>span]:truncate"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle Status</SelectItem>
             <SelectItem value="active">Aktiv</SelectItem>
             <SelectItem value="paused">Pausiert</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={userFilter} onValueChange={setUserFilter}>
+          <SelectTrigger className="w-40 min-w-0 [&>span]:truncate"><SelectValue placeholder="Person" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Personen</SelectItem>
+            {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <span className="text-sm text-muted-foreground">
@@ -457,18 +505,19 @@ export default function Recurring() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Typ</TableHead>
-                <TableHead>Notiz</TableHead>
+                {sortableHead('type', 'Typ')}
+                {sortableHead('note', 'Notiz')}
                 <TableHead>Von → Nach</TableHead>
-                <TableHead className="text-right">Betrag</TableHead>
-                <TableHead>Intervall</TableHead>
-                <TableHead>Nächster Termin</TableHead>
-                <TableHead>Status</TableHead>
+                {sortableHead('person', 'Person')}
+                {sortableHead('amount', 'Betrag', 'text-right')}
+                {sortableHead('interval', 'Intervall')}
+                {sortableHead('nextDate', 'Nächster Termin')}
+                {sortableHead('status', 'Status')}
                 <TableHead className="w-28" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((r) => {
+              {sorted(filtered).map((r) => {
                 const cat = categories.find((c) => c.id === r.categoryId);
                 const account = accounts.find((a) => a.id === r.accountId);
                 const toAccount = r.toAccountId ? accounts.find((a) => a.id === r.toAccountId) : undefined;
@@ -495,6 +544,17 @@ export default function Recurring() {
                       ) : (
                         account?.name ?? '?'
                       )}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const owner = users.find((u) => u.id === r.userId);
+                        return owner ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: owner.color }} />
+                            {owner.name}
+                          </span>
+                        ) : '—';
+                      })()}
                     </TableCell>
                     <TableCell className={cn(
                       'text-right font-bold',

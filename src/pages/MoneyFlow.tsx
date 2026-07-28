@@ -1,13 +1,19 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { GitBranch } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import MoneyFlowChart from '@/components/MoneyFlowChart';
+import MoneyFlowChart, { MoneyFlowAccountCard } from '@/components/MoneyFlowChart';
+import { buildMoneyFlow } from '@/lib/moneyflow';
 import { useFinanceData } from '@/lib/data';
 
 /** Geldfluss-Übersicht: Konten als Knoten, Dauerbuchungen als gerichtete Ströme */
 export default function MoneyFlow() {
-  const { accounts, recurring, isLoading } = useFinanceData();
+  const { accounts, accountTypes, banks, recurring, isLoading } = useFinanceData();
+
+  const flow = useMemo(() => buildMoneyFlow(accounts, recurring), [accounts, recurring]);
+  const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
+  const bankName = new Map(banks.map((b) => [b.id, b.name]));
 
   return (
     <div className="space-y-6">
@@ -54,7 +60,7 @@ export default function MoneyFlow() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <MoneyFlowChart />
+            <MoneyFlowChart flow={flow} />
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <span className="inline-block h-0.5 w-6 rounded bg-emerald-600" /> Einnahme
@@ -70,6 +76,29 @@ export default function MoneyFlow() {
               </span>
               <span>Linienstärke ∝ Betrag/Monat</span>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Konten ohne jede Dauerbuchung — abgesetzt unterhalb der Grafik */}
+      {accounts.length > 0 && recurring.length > 0 && flow.unconnected.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Ohne Geldflüsse</CardTitle>
+            <CardDescription>
+              Diese Konten haben keine wiederkehrenden Buchungen und hängen an
+              keinem Geldfluss.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            {flow.unconnected.map((a) => (
+              <MoneyFlowAccountCard
+                key={a.id}
+                account={a}
+                typeLabel={typeName.get(a.type) ?? a.type}
+                bankLabel={a.bankId !== null ? bankName.get(a.bankId) : undefined}
+              />
+            ))}
           </CardContent>
         </Card>
       )}

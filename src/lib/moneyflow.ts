@@ -58,6 +58,12 @@ export interface MoneyFlowEdge {
   labelT: number;
   /** true, wenn die Kante viele parallele Geschwister hat (Badge kompakter) */
   labelCompact: boolean;
+  /**
+   * Endgültige Label-Position in Prozent der Chart-Fläche (Mittelpunkt des
+   * Badges) — von assignLabelPositions kollisionsfrei neben die Kurve gelegt.
+   */
+  labelX: number;
+  labelY: number;
   kind: 'income' | 'expense' | 'transfer';
 }
 
@@ -70,6 +76,11 @@ export interface MoneyFlow {
   expenseTotal: number;
   /** berechnete Mindesthöhe der Chart-Fläche in px (wächst mit der Kontenzahl) */
   heightPx: number;
+  /**
+   * Konten ohne jede Kante (weder Einnahme/Ausgabe noch Umbuchung — pausierte
+   * Flüsse zählen als Verbindung); die Seite zeigt sie unterhalb der Grafik.
+   */
+  unconnected: MoneyFlowAccount[];
 }
 
 /** Pseudo-Knoten für externe Zu-/Abflüsse */
@@ -98,6 +109,50 @@ export function monthlyAmount(amount: number, interval: MoneyFlowRecurring['inte
   if (interval === 'weekly') return Math.round((amount * 52) / 12);
   if (interval === 'yearly') return Math.round(amount / 12);
   return amount;
+}
+
+/**
+ * Kubische S-Kurve (Sankey-Stil): Kontrollpunkte auf halbem Weg, horizontale
+ * Tangente an beiden Enden. Kanten innerhalb derselben Spalte weichen als
+ * Bogen zur Seite aus (curve = seitlicher Offset). Liefert Pfad plus Punkt-
+ * und Tangenten-Funktion für beliebiges t (Label-Position/-Verschiebung).
+ * Koordinaten in denselben Einheiten wie die übergebenen Knoten (Prozent).
+ */
+export function edgeGeometry(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  curve: number,
+) {
+  let c1: { x: number; y: number };
+  let c2: { x: number; y: number };
+  if (Math.abs(a.x - b.x) < 5) {
+    const cx = a.x + curve;
+    c1 = { x: cx, y: a.y };
+    c2 = { x: cx, y: b.y };
+  } else {
+    const mx = (a.x + b.x) / 2;
+    c1 = { x: mx, y: a.y + curve };
+    c2 = { x: mx, y: b.y + curve };
+  }
+  return {
+    d: `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`,
+    /** Punkt auf der kubischen Bezier-Kurve bei Parameter t (0–1) */
+    point: (t: number) => {
+      const u = 1 - t;
+      return {
+        x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x,
+        y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y,
+      };
+    },
+    /** Tangenten-Richtung der Kurve bei t (Ableitung, nicht normiert) */
+    tangent: (t: number) => {
+      const u = 1 - t;
+      return {
+        x: 3 * u * u * (c1.x - a.x) + 6 * u * t * (c2.x - c1.x) + 3 * t * t * (b.x - c2.x),
+        y: 3 * u * u * (c1.y - a.y) + 6 * u * t * (c2.y - c1.y) + 3 * t * t * (b.y - c2.y),
+      };
+    },
+  };
 }
 
 /** Anzahl der Konto-Spalten: bis 6 Konten eine, ab 7 zwei, ab 15 drei */
@@ -260,6 +315,166 @@ function assignLabelT(edges: MoneyFlowEdge[]): void {
   stagger(byTarget, -1);
 }
 
+/**
+ * Kollisionsmodell für die Label-Platzierung: Knoten-Karten und Label-Badges
+ * als achsenparallele Rechtecke in geschätzten Pixeln. Die Karten sind w-32
+ * (sm:w-40) mit Icon, Name und Saldo-Zeile, Badges eine kurze Textzeile —
+ * bewusst etwas großzügig angesetzt, damit kein Label unter eine Karte rutscht.
+ */
+export const NODE_W_PX = 172;
+export const NODE_H_PX = 88;
+export const LABEL_W_PX = 80;
+export const LABEL_H_PX = 20;
+/** Angenommene Container-Breite für das Kollisionsmodell (px) */
+const ASSUMED_WIDTH_PX = 1000;
+
+export interface RectPx {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+function rectCentered(cx: number, cy: number, w: number, h: number): RectPx {
+  return { x1: cx - w / 2, y1: cy - h / 2, x2: cx + w / 2, y2: cy + h / 2 };
+}
+
+/** Überlappungsfläche zweier Rechtecke in px² (0 bei Berührung/Nichtschnitt) */
+function overlapArea(a: RectPx, b: RectPx): number {
+  const w = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1);
+  const h = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/** Knoten-Karte als Rechteck in geschätzten Pixeln (Kollisionsmodell) */
+export function nodeRectPx(node: MoneyFlowNode, heightPx: number): RectPx {
+  return rectCentered(
+    (node.x / 100) * ASSUMED_WIDTH_PX,
+    (node.y / 100) * heightPx,
+    NODE_W_PX,
+    NODE_H_PX,
+  );
+}
+
+/** Label-Badge als Rechteck in geschätzten Pixeln (Kollisionsmodell) */
+export function labelRectPx(edge: MoneyFlowEdge, heightPx: number): RectPx {
+  const w = edge.labelCompact ? 64 : LABEL_W_PX;
+  const h = edge.labelCompact ? 17 : LABEL_H_PX;
+  return rectCentered(
+    (edge.labelX / 100) * ASSUMED_WIDTH_PX,
+    (edge.labelY / 100) * heightPx,
+    w,
+    h,
+  );
+}
+
+/**
+ * Label-Kollisionen auflösen (läuft nach assignLabelT): jedes Badge startet
+ * auf der Kurve bei labelT. Schneidet seine Box eine Knoten-Box oder ein
+ * bereits platziertes Badge, wandert es iterativ senkrecht zur Kurventangente
+ * in den freien Raum — beide Seiten (zuerst weg vom näheren Endknoten),
+ * ergänzt um rein horizontale Schritte (an den Kurvenenden ist die Tangente
+ * waagrecht, der freie Raum liegt zwischen den Spalten), wachsender Offset,
+ * t lokal ±0,05 variierbar, geclamppt auf den Container.
+ * Überlappung mit Karten zählt vierfach. Fallback ist die Position mit der
+ * geringsten Überlappung — nie schlechter als die Startposition.
+ */
+function assignLabelPositions(
+  nodes: MoneyFlowNode[],
+  edges: MoneyFlowEdge[],
+  heightPx: number,
+): void {
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const nodeRects = nodes.map((n) => nodeRectPx(n, heightPx));
+  const placed: RectPx[] = [];
+  /** Seitlicher Schritt und maximale Auslenkung der Verschiebung (px) */
+  const STEP_PX = 14;
+  const MAX_STEPS = 8;
+  const W = ASSUMED_WIDTH_PX;
+
+  // große Flüsse zuerst platzieren — ihre Badges bekommen die freien Plätze
+  const ordered = [...edges].sort(
+    (a, b) => b.monthlyAmount - a.monthlyAmount || a.id.localeCompare(b.id),
+  );
+
+  for (const e of ordered) {
+    const a = nodeById.get(e.from);
+    const b = nodeById.get(e.to);
+    if (!a || !b) continue;
+    const g = edgeGeometry(a, b, e.curve);
+    const w = e.labelCompact ? 64 : LABEL_W_PX;
+    const h = e.labelCompact ? 17 : LABEL_H_PX;
+    // Geometrie komponentenweise in Pixel umrechnen, damit die Normale maßstäblich ist
+    const toPx = (p: { x: number; y: number }) => ({
+      x: (p.x / 100) * W,
+      y: (p.y / 100) * heightPx,
+    });
+    const centerA = toPx(a);
+    const centerB = toPx(b);
+
+    const scoreAt = (rect: RectPx) => {
+      let s = 0;
+      for (const nr of nodeRects) s += 4 * overlapArea(rect, nr);
+      for (const pr of placed) s += overlapArea(rect, pr);
+      return s;
+    };
+
+    const findSpot = (): RectPx => {
+      let best: RectPx | null = null;
+      let bestScore = Infinity;
+      for (const dt of [0, -0.05, 0.05]) {
+        const t = Math.max(0.05, Math.min(0.95, e.labelT + dt));
+        const base = toPx(g.point(t));
+        const tan = toPx(g.tangent(t));
+        const len = Math.hypot(tan.x, tan.y) || 1;
+        const nx = -tan.y / len;
+        const ny = tan.x / len;
+        // bevorzugte Seite: weg vom Zentrum des näheren Endknotens
+        const near =
+          Math.hypot(base.x - centerA.x, base.y - centerA.y) <=
+          Math.hypot(base.x - centerB.x, base.y - centerB.y)
+            ? centerA
+            : centerB;
+        const pref = (base.x - near.x) * nx + (base.y - near.y) * ny >= 0 ? 1 : -1;
+        // Fluchtrichtungen: senkrecht zur Tangente (beide Seiten) — plus rein
+        // horizontal, denn an den Kurvenenden ist die Tangente waagrecht und
+        // der freie Raum liegt seitlich (zwischen den Spalten), nicht darüber.
+        const dirs: [number, number][] = [
+          [pref * nx, pref * ny],
+          [-pref * nx, -pref * ny],
+          [pref, 0],
+          [-pref, 0],
+        ];
+        for (let k = 0; k <= MAX_STEPS; k++) {
+          for (const [dx, dy] of dirs) {
+            const cx = Math.max(
+              w / 2,
+              Math.min(W - w / 2, base.x + k * STEP_PX * dx),
+            );
+            const cy = Math.max(
+              h / 2,
+              Math.min(heightPx - h / 2, base.y + k * STEP_PX * dy),
+            );
+            const rect = rectCentered(cx, cy, w, h);
+            const s = scoreAt(rect);
+            if (s < bestScore) {
+              best = rect;
+              bestScore = s;
+            }
+            if (s === 0) return rect;
+          }
+        }
+      }
+      return best ?? rectCentered(centerA.x, centerA.y, w, h);
+    };
+
+    const rect = findSpot();
+    placed.push(rect);
+    e.labelX = (((rect.x1 + rect.x2) / 2) / W) * 100;
+    e.labelY = (((rect.y1 + rect.y2) / 2) / heightPx) * 100;
+  }
+}
+
 /** Geldfluss-Graph aus Konten und Dauerbuchungen aufbauen */
 export function buildMoneyFlow(
   accounts: MoneyFlowAccount[],
@@ -289,11 +504,23 @@ export function buildMoneyFlow(
       curve: 0,
       labelT: 0.5,
       labelCompact: false,
+      labelX: 0,
+      labelY: 0,
       kind: r.type,
     });
   }
 
-  const ordered = orderAccounts(accounts, edges);
+  // Konten ohne jede Kante fliegen aus dem Diagramm in ein eigenes Areal —
+  // pausierte Dauerbuchungen erzeugen Kanten und zählen als Verbindung.
+  const connectedIds = new Set<number>();
+  for (const e of edges) {
+    if (e.from.startsWith('account-')) connectedIds.add(Number(e.from.slice(8)));
+    if (e.to.startsWith('account-')) connectedIds.add(Number(e.to.slice(8)));
+  }
+  const connected = accounts.filter((a) => connectedIds.has(a.id));
+  const unconnected = accounts.filter((a) => !connectedIds.has(a.id));
+
+  const ordered = orderAccounts(connected, edges);
   const { accountNodes, heightPx } = layoutColumns(ordered);
 
   const nodes: MoneyFlowNode[] = [
@@ -314,6 +541,7 @@ export function buildMoneyFlow(
   const nodeX = new Map(nodes.map((n) => [n.id, n.x]));
   assignCurves(edges, nodeX);
   assignLabelT(edges);
+  assignLabelPositions(nodes, edges, heightPx);
 
   const incomeTotal = edges
     .filter((e) => e.kind === 'income')
@@ -322,5 +550,5 @@ export function buildMoneyFlow(
     .filter((e) => e.kind === 'expense')
     .reduce((s, e) => s + e.monthlyAmount, 0);
 
-  return { nodes, edges, incomeTotal, expenseTotal, heightPx };
+  return { nodes, edges, incomeTotal, expenseTotal, heightPx, unconnected };
 }

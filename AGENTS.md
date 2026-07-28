@@ -331,7 +331,23 @@ Wichtige Konventionen:
   Ziel-Gruppen Richtung Quelle, dicke Kanten zentraler; ab 5 Geschwistern
   kompaktes Badge via `labelCompact`),
   darüber absolut positionierte HTML-Knoten (Positionen in Prozent);
-  Hover auf einen Knoten hebt seine Kanten hervor.
+  Hover auf einen Knoten hebt seine Kanten hervor. Konten ohne jede Kante
+  (pausierte Dauerbuchungen zählen als Verbindung) fliegen aus dem Diagramm:
+  `buildMoneyFlow` liefert sie als `unconnected`, Layout/Höhenformel rechnen
+  nur mit den verbundenen Konten, und die Seite zeigt sie in einer abgesetzten
+  Card „Ohne Geldflüsse" unterhalb der Grafik (flex-wrap, gleiches
+  Karten-Design via `MoneyFlowAccountCard`). Die endgültige Label-Position
+  (`labelX`/`labelY`) ermittelt `assignLabelPositions` nach `assignLabelT`
+  als Repulsion-Pass über einem Kollisionsmodell aus achsenparallelen
+  Rechtecken in geschätzten Pixeln (`nodeRectPx`/`labelRectPx`, angenommene
+  Container-Breite 1000 px): Start auf der Kurve bei `labelT`, bei Kollision
+  mit einer Karten- oder bereits platzierten Label-Box iterative Verschiebung
+  senkrecht zur Kurventangente (plus rein horizontal — Kurvenenden haben
+  waagrechte Tangenten) in den freien Raum, beide Seiten (zuerst weg vom
+  näheren Endknoten), wachsender Offset, `t` lokal ±0,05, Clamping im
+  Container; Karten-Überlappung zählt vierfach, Fallback ist die Position
+  mit der geringsten Überlappung. `edgeGeometry` (Pfad, Punkt, Tangente)
+  liegt in `src/lib/moneyflow.ts` und wird vom Chart importiert.
 - **Szenario-Planung**: `forecast.balance` nimmt optional `incomePct`
   (Skalierung der wiederkehrenden Einnahmen in %, 100 = unverändert, 50–200)
   und `excludeCategoryId` entgegen. Das Szenario wirkt NUR auf zukünftige

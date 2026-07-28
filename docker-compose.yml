@@ -17,6 +17,9 @@ services:
       # Optional: Secure-Flag des Session-Cookies erzwingen (Default: https in PUBLIC_URL)
       # - COOKIE_SECURE=false
       - DATABASE_URL=file:/app/data/finance-fox.db
+      # Beleg-Anhänge liegen per Default unter /app/data/attachments
+      # (selbes Volume) — nur bei abweichendem Speicherort setzen:
+      # - ATTACHMENTS_DIR=/app/data/attachments
     volumes:
       - finance-fox-data:/app/data
     restart: unless-stopped

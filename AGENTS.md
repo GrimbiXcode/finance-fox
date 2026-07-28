@@ -203,9 +203,8 @@ Wichtige Konventionen:
 - `PUBLIC_URL` korrekt setzen, sonst zeigen Einladungs-/Reset-Links ins Leere.
 - Environment-Variablen: `DATABASE_URL`, `JWT_SECRET`, `PUBLIC_URL`, `PORT`,
   `ATTACHMENTS_DIR` (Beleg-Dateien, Default `<DB-Verzeichnis>/attachments`),
-  `NODE_ENV`. Achtung: `.env.example` ist veraltet (stammt aus einem Template,
-  nennt MySQL/APP_ID) — die tatsächlich verwendeten Variablen stehen in
-  `api/lib/env.ts` und `docker-compose.yml`.
+  `COOKIE_SECURE`, `NODE_ENV` — dokumentiert in `.env.example` und
+  `docker-compose.yml`; Defaults in `api/lib/env.ts`.
 - Session-Cookie: HttpOnly, SameSite=Lax. Das `Secure`-Flag richtet sich nach
   `PUBLIC_URL` (https:// → Secure), überschreibbar per `COOKIE_SECURE=true|false`
   — so funktioniert der Login auch über HTTP im Heimnetz.

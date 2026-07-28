@@ -487,6 +487,93 @@ describe("Meilenstein-Benachrichtigungen", () => {
   });
 });
 
+describe("Sparziel bearbeiten (updateGoal)", () => {
+  it("ändert Name, Zielbetrag, Farbe und setzt/entfernt den Stichtag", async () => {
+    const goalId = await createGoalDb("Alt", 100000);
+    const caller = callerFor(admin);
+
+    await caller.finance.updateGoal({
+      id: goalId,
+      name: "Neu",
+      targetAmount: 250000,
+      color: "#f59e0b",
+      deadline: "2030-12-31",
+    });
+    const updated = (await caller.finance.listGoals()).find(
+      g => g.id === goalId
+    )!;
+    expect(updated.name).toBe("Neu");
+    expect(updated.targetAmount).toBe(250000);
+    expect(updated.color).toBe("#f59e0b");
+    expect(updated.deadline).toBe("2030-12-31");
+
+    // Stichtag entfernen (null)
+    await caller.finance.updateGoal({
+      id: goalId,
+      name: "Neu",
+      targetAmount: 250000,
+      color: "#f59e0b",
+      deadline: null,
+    });
+    const cleared = (await caller.finance.listGoals()).find(
+      g => g.id === goalId
+    )!;
+    expect(cleared.deadline).toBeNull();
+  });
+
+  it("lehnt unbekannte Ziele mit NOT_FOUND ab", async () => {
+    await expect(
+      callerFor(admin).finance.updateGoal({
+        id: 99999,
+        name: "Gibt es nicht",
+        targetAmount: 1000,
+        color: "#0ea5e9",
+      })
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Sparziel nicht gefunden.",
+    });
+  });
+
+  it("validiert Zielbetrag, Farbe und Stichtag", async () => {
+    const goalId = await createGoalDb("Validierung", 100000);
+    const caller = callerFor(admin);
+    const base = { id: goalId, name: "Validierung", color: "#0ea5e9" };
+    await expect(
+      caller.finance.updateGoal({ ...base, targetAmount: 0 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.finance.updateGoal({ ...base, targetAmount: 1000, color: "rot" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.finance.updateGoal({
+        ...base,
+        targetAmount: 1000,
+        deadline: "31.12.2030",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // Unverändert nach den fehlgeschlagenen Versuchen
+    const goal = (await caller.finance.listGoals()).find(g => g.id === goalId)!;
+    expect(goal.targetAmount).toBe(100000);
+  });
+
+  it("schreibt einen Audit-Eintrag goal.updated", async () => {
+    const goalId = await createGoalDb("Audit-Alt", 50000);
+    const caller = callerFor(admin);
+    await caller.finance.updateGoal({
+      id: goalId,
+      name: "Audit-Neu",
+      targetAmount: 60000,
+      color: "#0ea5e9",
+    });
+    const entries = await caller.finance.listAuditLog({ entity: "goal" });
+    const entry = entries.find(
+      e => e.action === "goal.updated" && e.entityId === goalId
+    );
+    expect(entry?.detail).toContain("Audit-Neu");
+  });
+});
+
 describe("Kaskaden", () => {
   it("löscht Quellen kaskadierend beim Löschen des Ziels", async () => {
     const accountId = await createAccount("Kaskade", 1000);

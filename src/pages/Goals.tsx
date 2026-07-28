@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { CalendarClock, ChevronDown, ChevronUp, Link2, Plus, Trash2 } from 'lucide-react';
+import { CalendarClock, ChevronDown, ChevronUp, Link2, Pencil, Plus, Trash2 } from 'lucide-react';
+import GoalDialog from '@/components/GoalDialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +16,6 @@ import { amountPlaceholder, currencySymbol, formatCents, formatDate, formatMonth
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
-const GOAL_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#6366f1'];
 /** Farben der Herkunfts-Segmente (Konto-Quellen nach Index, Bestand grau) */
 const SOURCE_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#6366f1'];
 const LEGACY_COLOR = '#94a3b8';
@@ -36,11 +36,10 @@ function modeLabel(mode: 'full' | 'absolute' | 'percent', value: number | null |
  * den verknüpften Konten (Quellen) plus dem Alt-Bestand „Manuell" — der
  * gestapelte Balken und die Herkunfts-Zeilen zeigen die Zusammensetzung.
  */
-function GoalCard({ goal, accounts, forecast, onDelete }: {
+function GoalCard({ goal, accounts, forecast }: {
   goal: Goal;
   accounts: Account[];
   forecast: GoalForecastRow | undefined;
-  onDelete: (id: number) => void;
 }) {
   const invalidate = useInvalidateFinance();
   const contribsQuery = trpc.finance.listGoalContributions.useQuery({ goalId: goal.id });
@@ -111,9 +110,14 @@ function GoalCard({ goal, accounts, forecast, onDelete }: {
             {goal.deadline ? `bis ${formatDate(goal.deadline)}` : 'ohne Stichtag'}
           </CardDescription>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => onDelete(goal.id)} title="Ziel löschen">
-          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-        </Button>
+        <GoalDialog
+          goal={goal}
+          trigger={
+            <Button variant="ghost" size="icon" title="Ziel bearbeiten">
+              <Pencil className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          }
+        />
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-baseline justify-between">
@@ -287,34 +291,9 @@ function GoalCard({ goal, accounts, forecast, onDelete }: {
 
 export default function Goals() {
   const { goals, accounts } = useFinanceData();
-  const invalidate = useInvalidateFinance();
   const goalFc = trpc.forecast.goalForecast.useQuery();
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [target, setTarget] = useState('');
-  const [deadline, setDeadline] = useState('');
-
-  const createGoal = trpc.finance.createGoal.useMutation({
-    onSuccess: () => {
-      toast.success('Sparziel angelegt.');
-      invalidate();
-      setOpen(false); setName(''); setTarget(''); setDeadline('');
-    },
-    onError: (err) => toast.error(err.message),
-  });
-  const deleteGoal = trpc.finance.deleteGoal.useMutation({ onSuccess: () => invalidate() });
 
   const forecastByGoal = new Map((goalFc.data ?? []).map((f) => [f.goalId, f]));
-
-  const submit = () => {
-    const targetCents = parseEuro(target);
-    if (!name.trim() || targetCents <= 0) { toast.error('Name und Zielbetrag angeben.'); return; }
-    createGoal.mutate({
-      name: name.trim(), targetAmount: targetCents,
-      color: GOAL_COLORS[goals.length % GOAL_COLORS.length],
-      deadline: deadline || undefined,
-    });
-  };
 
   return (
     <div className="space-y-6">
@@ -323,32 +302,11 @@ export default function Goals() {
           <h1 className="text-2xl font-bold">Sparziele</h1>
           <p className="text-sm text-muted-foreground">{goals.length} Ziele im Haushalt</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
+        <GoalDialog
+          trigger={
             <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neues Ziel</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Neues Sparziel</DialogTitle></DialogHeader>
-            <div className="grid gap-4 py-2">
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input placeholder="z. B. Urlaub, Notgroschen" value={name} onChange={(e) => setName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Zielbetrag ({currencySymbol()})</Label>
-                <Input inputMode="decimal" placeholder={amountPlaceholder} value={target} onChange={(e) => setTarget(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Stichtag (optional)</Label>
-                <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={createGoal.isPending}>Anlegen</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          }
+        />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -365,7 +323,6 @@ export default function Goals() {
             goal={g}
             accounts={accounts}
             forecast={forecastByGoal.get(g.id)}
-            onDelete={(id) => deleteGoal.mutate({ id })}
           />
         ))}
       </div>

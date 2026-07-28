@@ -2052,6 +2052,53 @@ export const financeRouter = createRouter({
     }),
 
   /**
+   * Stammdaten eines Sparziels ändern (Name, Zielbetrag, Farbe, Stichtag;
+   * deadline null/undefined = Stichtag entfernen). Bewusst KEIN Meilenstein-/
+   * Prognose-Trigger: Schwellen prüfen nur die Transaktions- und
+   * Quellen-Trigger (createTransaction / addGoalSource).
+   */
+  updateGoal: authedQuery
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        name: z.string().min(1),
+        targetAmount: z.number().int().positive(),
+        color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        deadline: isoDate.nullish(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const goal = await db.query.savingsGoals.findFirst({
+        where: eq(savingsGoals.id, input.id),
+      });
+      if (!goal) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Sparziel nicht gefunden.",
+        });
+      }
+      await db
+        .update(savingsGoals)
+        .set({
+          name: input.name,
+          targetAmount: input.targetAmount,
+          color: input.color,
+          deadline: input.deadline ?? null,
+        })
+        .where(eq(savingsGoals.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.updated",
+        "goal",
+        input.id,
+        `${input.name} (Ziel ${auditAmount(input.targetAmount)})`
+      );
+      return { ok: true };
+    }),
+
+  /**
    * Verknüpft ein Konto als Fortschrittsquelle mit einem Sparziel.
    * Maximal eine Quelle pro Konto und Ziel; das Konto muss für den Nutzer
    * mindestens sichtbar sein.

@@ -183,7 +183,11 @@ Wichtige Konventionen:
   UI: `src/pages/Goals.tsx` (gestapelter Herkunfts-Balken, Herkunfts-
   Zeilen „Konto — Modus → Betrag" + „Manuell (Bestand)", Hinweis
   „Enthält verborgene Quellen", Prognose-Zeile, Quellen-Verwaltung per
-  Dialog). Tests: `api/goalSources.test.ts`.
+  Dialog). `finance.updateGoal` ändert die Stammdaten (Name, Zielbetrag,
+  Farbe, Stichtag — null = entfernen) ohne Meilenstein-/Prognose-Trigger;
+  Anlegen/Bearbeiten/Löschen laufen über `src/components/GoalDialog.tsx`
+  (Muster AccountDialog, Löschen nur in der Gefahrenzone des Edit-Dialogs
+  mit AlertDialog-Bestätigung). Tests: `api/goalSources.test.ts`.
 - **Sparziel-Beiträge (Alt-Bestand)**: Tabelle `goal_contributions`
   (goalId, userId, amount in Cent positiv, note, createdAt) — seit
   Sparziele 2.0 schreibgeschützt (keine neuen Beiträge mehr möglich, siehe

@@ -250,6 +250,23 @@ describe("listTransactions (Filterung)", () => {
 });
 
 describe("createTransaction / deleteTransaction (Rechte)", () => {
+  it("liefert die ID der neuen Buchung zurück", async () => {
+    const id = await insertAccount(owner.id);
+    const result = await callerFor(owner).finance.createTransaction({
+      type: "expense",
+      accountId: id,
+      amount: 123,
+      userId: owner.id,
+      date: "2026-07-03",
+      note: "rueckgabe-id",
+    });
+    expect(result.id).toBeGreaterThan(0);
+    const txRow = await getDb().query.transactions.findFirst({
+      where: eq(transactions.note, "rueckgabe-id"),
+    });
+    expect(txRow?.id).toBe(result.id);
+  });
+
   it("erfordert edit auf dem Konto; Viewer und Fremde werden abgelehnt", async () => {
     const id = await insertAccount(owner.id);
     await setPermission(id, viewer.id, false);

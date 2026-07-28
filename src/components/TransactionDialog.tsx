@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { ChevronRight, Plus } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { ChevronRight, Paperclip, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -32,6 +32,10 @@ const shareFormatter = new Intl.NumberFormat(getUserLocale(), {
   useGrouping: false,
 });
 
+// Erlaubte Beleg-Typen und Größenlimit wie in api/lib/attachments.ts
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf';
+
 /** Dialog zum Erfassen einer neuen Buchung (Einnahme, Ausgabe, Umbuchung) */
 export default function TransactionDialog({ defaultType = 'expense' }: { defaultType?: TxType }) {
   const { user } = useAuth();
@@ -53,17 +57,12 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   // Inline-Bereich für "+ Neue Kategorie" (Muster wie "+ Neuer Typ" im Konto-Dialog)
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  // Gewählte Beleg-Dateien (werden nach dem Speichern der Buchung hochgeladen)
+  const [files, setFiles] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const createTx = trpc.finance.createTransaction.useMutation({
-    onSuccess: () => {
-      toast.success('Buchung gespeichert.');
-      invalidate();
-      setOpen(false);
-      setAmount(''); setNote(''); setCategoryId(''); setSplitEnabled(false); setShares({});
-      setDate(todayISO());
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  const createTx = trpc.finance.createTransaction.useMutation();
 
   const createCategory = trpc.finance.createCategory.useMutation({
     onSuccess: async (_data, vars) => {
@@ -108,7 +107,38 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
     if (selected && selected.type !== value) setCategoryId('');
   };
 
-  const submit = () => {
+  /** Dateien zur Beleg-Liste hinzufügen (mit Größen-Check pro Datei) */
+  const addFiles = (selected: FileList | null) => {
+    if (!selected) return;
+    const next: File[] = [];
+    for (const file of Array.from(selected)) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        toast.error(`Die Datei „${file.name}" ist zu groß (maximal 10 MB).`);
+        continue;
+      }
+      next.push(file);
+    }
+    if (next.length > 0) setFiles((f) => [...f, ...next]);
+  };
+
+  /** Einzelnen Beleg hochladen; true bei Erfolg */
+  const uploadAttachment = async (transactionId: number, file: File): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/attachments?transactionId=${transactionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'X-Filename': encodeURIComponent(file.name),
+        },
+        body: file,
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const submit = async () => {
     const cents = parseEuro(amount);
     if (cents <= 0) { toast.error('Bitte einen gültigen Betrag eingeben.'); return; }
     if (!effectiveAccountId) { toast.error('Bitte zuerst ein Konto anlegen.'); return; }
@@ -127,12 +157,32 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
       splits = parsed.filter((p) => p.amount > 0);
     }
 
-    createTx.mutate({
-      type, accountId: effectiveAccountId,
-      toAccountId: type === 'transfer' ? effectiveToAccountId : undefined,
-      amount: cents, categoryId: categoryId ? Number(categoryId) : undefined,
-      userId: effectiveUserId, date, note, splits,
-    });
+    setSaving(true);
+    try {
+      // Erst die Buchung speichern, dann die Belege zur neuen ID hochladen
+      const created = await createTx.mutateAsync({
+        type, accountId: effectiveAccountId,
+        toAccountId: type === 'transfer' ? effectiveToAccountId : undefined,
+        amount: cents, categoryId: categoryId ? Number(categoryId) : undefined,
+        userId: effectiveUserId, date, note, splits,
+      });
+      for (const file of files) {
+        const ok = await uploadAttachment(created.id, file);
+        if (!ok) {
+          toast.warning(`Buchung gespeichert, aber Beleg „${file.name}" konnte nicht hochgeladen werden.`);
+        }
+      }
+      toast.success('Buchung gespeichert.');
+      invalidate();
+      setOpen(false);
+      setAmount(''); setNote(''); setCategoryId(''); setSplitEnabled(false); setShares({});
+      setFiles([]);
+      setDate(todayISO());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Die Buchung konnte nicht gespeichert werden.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const splitEvenly = () => {
@@ -330,13 +380,57 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
               </div>
             </CollapsibleContent>
           </Collapsible>
+
+          <div className="space-y-2">
+            <input
+              ref={fileInput}
+              type="file"
+              accept={ATTACHMENT_ACCEPT}
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                addFiles(e.target.files);
+                e.target.value = ''; // gleiche Datei erneut wählbar machen
+              }}
+            />
+            <button
+              type="button"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => fileInput.current?.click()}
+            >
+              <Paperclip className="h-3.5 w-3.5" /> Belege hinzufügen
+            </button>
+            {files.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {files.map((file, idx) => (
+                  <span
+                    key={`${file.name}-${idx}`}
+                    className="flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-xs"
+                  >
+                    <span className="max-w-48 truncate">{file.name}</span>
+                    <button
+                      type="button"
+                      title="Datei entfernen"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setFiles((f) => f.filter((_, i) => i !== idx))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Belege fügst du nach dem Speichern in der Transaktionsliste hinzu.
-        </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
-          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={createTx.isPending}>Speichern</Button>
+          <Button
+            className="bg-emerald-600 hover:bg-emerald-700"
+            onClick={submit}
+            disabled={saving}
+          >
+            {saving ? 'Speichern…' : 'Speichern'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

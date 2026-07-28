@@ -577,22 +577,23 @@ export const financeRouter = createRouter({
           });
         }
       }
-      db.transaction(tx => {
+      const txId = db.transaction(tx => {
         const inserted = tx
           .insert(transactions)
           .values({ ...txData, createdAt: new Date() })
           .returning({ id: transactions.id })
           .all();
-        const txId = inserted[0]?.id;
-        if (txId && splits && splits.length > 0) {
+        const id = inserted[0]?.id;
+        if (id && splits && splits.length > 0) {
           for (const s of splits) {
             tx.insert(transactionSplits)
-              .values({ transactionId: txId, ...s })
+              .values({ transactionId: id, ...s })
               .run();
           }
         }
+        return id;
       });
-      return { ok: true };
+      return { id: txId };
     }),
 
   deleteTransaction: authedQuery

@@ -114,6 +114,20 @@ export function ensureSchema() {
       created_at INTEGER NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS attachment_tx_idx ON transaction_attachments (transaction_id)`,
+    `CREATE TABLE IF NOT EXISTS tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS transaction_tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transaction_id INTEGER NOT NULL,
+      tag_id INTEGER NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS tx_tag_unique_idx
+      ON transaction_tags (transaction_id, tag_id)`,
+    `CREATE INDEX IF NOT EXISTS tx_tag_tag_idx ON transaction_tags (tag_id)`,
     `CREATE TABLE IF NOT EXISTS budgets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category_id INTEGER NOT NULL UNIQUE,

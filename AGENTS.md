@@ -60,7 +60,7 @@ api/            Backend (Hono + tRPC), Einstieg: api/boot.ts (enthält auch die
   context.ts      TrpcContext, Session-User aus Cookie
   authRouter.ts   Setup-Wizard, Login, Einladungen, Passwort-Reset
   financeRouter.ts  Konten (inkl. Besitz/Sichtbarkeit, Kontotypen, Banken),
-                  Transaktionen (inkl. CSV-Export/-Import), Kategorien,
+                  Transaktionen (inkl. CSV-Export/-Import), Kategorien, Tags,
                   Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele
   forecastRouter.ts Prognosen
   lib/            env.ts, session.ts, migrate.ts (ensureSchema), recurringJob.ts,
@@ -141,6 +141,15 @@ Wichtige Konventionen:
   buchung ohne Kategorie (Einnahme/Ausgabe, erfordert `edit`); bei Differenz 0
   wird nichts gebucht. UI: Sektion „Kontoabgleich" im AccountDialog
   (Bearbeiten-Modus).
+- **Saldo-Verlauf**: `finance.accountBalanceHistory` (erfordert `view`)
+  liefert pro Konto eine sparsame Punkteserie `[{date, balance}]`:
+  Startpunkt (Zeitraum-Beginn mit Saldo aus allen früheren Buchungen),
+  jeder Tag mit Saldo-Änderung, Endpunkt heute — Vorzeichenlogik wie
+  `listAccounts`; zukünftige Buchungen bleiben außen vor. Input `months`
+  (3/6/12, Default 12; 0 = komplette Historie ab erster Buchung). UI:
+  aufklappbarer Bereich „Saldo-Verlauf" pro Konto-Karte auf der
+  Konten-Seite (Zeitraum-Wahl + recharts-AreaChart, Query nur bei
+  geöffnetem Zustand). Tests: `api/balanceHistory.test.ts`.
 - **Sparziel-Beiträge**: Tabelle `goal_contributions` (goalId, userId, amount
   in Cent positiv, note, createdAt) — mehrere Beitragszahler pro Sparziel.
   Gesamtfortschritt = `savings_goals.savedAmount` (Basis, weiterhin manuell
@@ -183,6 +192,24 @@ Wichtige Konventionen:
   Vorlagen + Schnellwahl 60/40, 70/30 zwischen aktuellem User und erstem
   weiteren Mitglied), „Als Vorlage speichern" aus den aktuellen Anteilen;
   Löschen in der Sektion „Projekte & Vorlagen" auf der Splitting-Seite.
+- **Tags/Labels**: Tabellen `tags` (Name unique, Farbe) und
+  `transaction_tags` (Unique-Index (transactionId, tagId)) — mehrere Tags pro
+  Buchung, haushaltsweit (keine Konto-Bindung, keine Sichtbarkeitslogik; die
+  Buchungsfilter über die Kontorechte greifen wie bisher). Endpunkte
+  `finance.listTags`/`createTag` (Name getrimmt, Duplikat case-insensitiv
+  CONFLICT; Farbe automatisch = am seltensten verwendete Farbe der Palette
+  `TAG_COLORS` in `contracts/types.ts`)/`deleteTag` (löst Zuordnungen still
+  mit auf — bewusst KEIN CONFLICT, Tags sind leichtgewichtig)/
+  `setTransactionTags` (Ersetzen-Semantik, erfordert `edit` auf dem
+  Buchungskonto). `createTransaction` nimmt optional `tagIds`,
+  `listTransactions` liefert pro Buchung `tags: [{id, name, color}]` gebatcht.
+  Kaskaden: deleteTransaction/deleteAccount/resetFinanceData räumen
+  `transaction_tags` ab (Reset löscht auch die Tags selbst). Audit:
+  `tag.created`/`tag.deleted`/`transaction.tags`. UI: Tag-Auswahl +
+  Inline-Anlage im Details-Bereich des TransactionDialog, Badges +
+  Tag-Filter + Tag-Popover zum nachträglichen Taggen in der
+  Transaktionsliste (Tag-Namen sind Teil des Such-Haystacks), Verwaltung
+  als Card „Tags" in den Einstellungen. Tests: `api/tags.test.ts`.
 - **Schnellerfassung**: `src/components/QuickAddDialog.tsx` (Button „Schnell"
   im Layout-Header) bucht eine Ausgabe mit nur Betrag + Notiz; Defaults:
   erstes Konto mit `access === "edit"`, zuletzt verwendete Ausgaben-Kategorie,
@@ -214,9 +241,10 @@ Wichtige Konventionen:
   (best effort, fängt Fehler intern ab; akzeptiert db- wie tx-Handle, damit
   der Eintrag im selben Transaktionskontext landet). Instrumentiert sind die
   fachlichen Mutationen in `financeRouter.ts` (Konten, Kategorien, Buchungen
-  inkl. CSV-/CAMT-/Komplett-Import, Budgets, Dauerbuchungen, Sparziele inkl.
-  Beiträge, Projekte, Aufteilungsvorlagen, Kontoabgleich, Reset, Währung,
-  Benachrichtigungs-Einstellungen) und in `authRouter.ts` (Login Erfolg/
+  inkl. CSV-/CAMT-/Komplett-Import, Tags, Budgets, Dauerbuchungen, Sparziele
+  inkl. Beiträge, Projekte, Aufteilungsvorlagen, Kontoabgleich, Reset,
+  Währung, Benachrichtigungs-Einstellungen) und in `authRouter.ts` (Login
+  Erfolg/
   Fehlschlag, Logout, TOTP-Login/-Verwaltung, Benutzer anlegen/deaktivieren/
   reaktivieren, Profil, Passwort). Lesen für alle Mitglieder über
   `finance.listAuditLog` (neueste zuerst, Limit max 500, optionaler

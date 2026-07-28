@@ -1,10 +1,13 @@
-import { Banknote, CreditCard, Pencil, PiggyBank, Plus, Wallet } from 'lucide-react';
+import { useState } from 'react';
+import { Banknote, ChevronDown, ChevronUp, CreditCard, Pencil, PiggyBank, Plus, Wallet } from 'lucide-react';
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AccountDialog from '@/components/AccountDialog';
+import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
-import { formatCents } from '@/lib/finance';
+import { currencySymbol, formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
 /** Icons für die Builtin-Typen; eigene Typen bekommen das Fallback-Icon */
@@ -17,8 +20,82 @@ const typeIcons: Record<string, typeof CreditCard> = {
 /** IBAN zur Anzeige in 4er-Gruppen formatieren */
 const formatIban = (iban: string) => iban.replace(/(.{4})/g, '$1 ').trim();
 
+/** Zeitraum-Optionen für den Saldo-Verlauf (months: 0 = komplette Historie) */
+const HISTORY_RANGES = [
+  { label: '3M', months: 3 },
+  { label: '6M', months: 6 },
+  { label: '12M', months: 12 },
+  { label: 'Alles', months: 0 },
+] as const;
+
+type HistoryMonths = (typeof HISTORY_RANGES)[number]['months'];
+
+/** Aufklappbarer Saldo-Verlauf eines Kontos (AreaChart, Zeitraum wählbar) */
+function BalanceHistory({ accountId }: { accountId: number }) {
+  const [months, setMonths] = useState<HistoryMonths>(12);
+  const query = trpc.finance.accountBalanceHistory.useQuery({ accountId, months });
+  const data = (query.data ?? []).map((p) => ({ date: p.date, saldo: p.balance / 100 }));
+  const gradientId = `gSaldo${accountId}`;
+
+  return (
+    <div className="border-t px-4 pb-4 pt-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Saldo-Verlauf</span>
+        <div className="flex gap-1">
+          {HISTORY_RANGES.map((r) => (
+            <Button
+              key={r.months}
+              size="sm"
+              variant={months === r.months ? 'secondary' : 'ghost'}
+              className="h-6 px-2 text-xs"
+              onClick={() => setMonths(r.months)}
+            >
+              {r.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {query.isLoading ? (
+        <p className="py-10 text-center text-xs text-muted-foreground">Verlauf wird geladen…</p>
+      ) : (
+        <div className="h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="date" tickLine={false} axisLine={false} fontSize={11}
+                tickFormatter={(v: string) => formatDate(v)}
+              />
+              <YAxis
+                tickLine={false} axisLine={false} width={64} fontSize={11}
+                domain={['auto', 'auto']}
+                tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
+              />
+              <Tooltip
+                labelFormatter={(label) => formatDate(String(label))}
+                formatter={(value: number | string) =>
+                  `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`}
+              />
+              <Area
+                type="monotone" dataKey="saldo" stroke="#10b981"
+                fill={`url(#${gradientId})`} strokeWidth={2}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Accounts() {
   const { accounts, accountTypes, banks, transactions } = useFinanceData();
+  const [openId, setOpenId] = useState<number | null>(null);
   const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
 
@@ -59,16 +136,26 @@ export default function Accounts() {
                     <CardDescription>{typeName.get(a.type) ?? a.type}</CardDescription>
                   </div>
                 </div>
-                {a.access === 'edit' && (
-                  <AccountDialog
-                    account={a}
-                    trigger={
-                      <Button variant="ghost" size="icon" title="Konto bearbeiten">
-                        <Pencil className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                    }
-                  />
-                )}
+                <div className="flex items-center">
+                  {a.access === 'edit' && (
+                    <AccountDialog
+                      account={a}
+                      trigger={
+                        <Button variant="ghost" size="icon" title="Konto bearbeiten">
+                          <Pencil className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      }
+                    />
+                  )}
+                  <Button
+                    variant="ghost" size="icon" title="Saldo-Verlauf"
+                    onClick={() => setOpenId(openId === a.id ? null : a.id)}
+                  >
+                    {openId === a.id
+                      ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className={cn('text-2xl font-bold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
@@ -85,6 +172,7 @@ export default function Accounts() {
                   </div>
                 )}
               </CardContent>
+              {openId === a.id && <BalanceHistory accountId={a.id} />}
             </Card>
           );
         })}

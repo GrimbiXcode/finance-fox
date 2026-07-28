@@ -165,6 +165,31 @@ export const transactionAttachments = sqliteTable(
   t => [index("attachment_tx_idx").on(t.transactionId)]
 );
 
+/**
+ * Tags/Labels: haushaltsweit, keine Konto-Bindung und keine
+ * Sichtbarkeitslogik — Buchungen bleiben über die Kontorechte gefiltert.
+ */
+export const tags = sqliteTable("tags", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  color: text("color").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/** Zuordnung Buchung ↔ Tag (mehrere Tags pro Buchung) */
+export const transactionTags = sqliteTable(
+  "transaction_tags",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    transactionId: integer("transaction_id").notNull(),
+    tagId: integer("tag_id").notNull(),
+  },
+  t => [
+    uniqueIndex("tx_tag_unique_idx").on(t.transactionId, t.tagId),
+    index("tx_tag_tag_idx").on(t.tagId),
+  ]
+);
+
 export const budgets = sqliteTable("budgets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   categoryId: integer("category_id").notNull().unique(),

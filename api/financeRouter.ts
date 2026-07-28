@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -17,12 +17,14 @@ import {
   recurring,
   savingsGoals,
   splitTemplates,
+  tags,
   transactions,
   transactionAttachments,
   transactionSplits,
+  transactionTags,
   users,
 } from "@db/schema";
-import { CURRENCY_CODES, DEFAULT_CURRENCY } from "@contracts/types";
+import { CURRENCY_CODES, DEFAULT_CURRENCY, TAG_COLORS } from "@contracts/types";
 import type { ShareWeight } from "@contracts/splitShares";
 import { runRecurringJob } from "./lib/recurringJob";
 import {
@@ -192,6 +194,104 @@ export const financeRouter = createRouter({
       return { ok: true, difference };
     }),
 
+  /**
+   * Saldo-Verlauf eines Kontos als sparsame Punkteserie für ein Chart:
+   * Startpunkt (Zeitraum-Beginn mit dem Saldo aus allen früheren Buchungen),
+   * jeder Tag mit Saldo-Änderung, Endpunkt (heute mit aktuellem Saldo).
+   * Vorzeichenlogik wie listAccounts. Erfordert "view" auf dem Konto.
+   */
+  accountBalanceHistory: authedQuery
+    .input(
+      z.object({
+        accountId: z.number().int().positive(),
+        // Rückblick in Monaten; 0 = komplette Historie ab erster Buchung
+        months: z
+          .union([z.literal(3), z.literal(6), z.literal(12), z.literal(0)])
+          .default(12),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const account = await requireAccountAccess(
+        db,
+        ctx.user,
+        input.accountId,
+        "view"
+      );
+      const txs = await db
+        .select({
+          type: transactions.type,
+          accountId: transactions.accountId,
+          toAccountId: transactions.toAccountId,
+          amount: transactions.amount,
+          date: transactions.date,
+        })
+        .from(transactions)
+        .where(
+          or(
+            eq(transactions.accountId, account.id),
+            eq(transactions.toAccountId, account.id)
+          )
+        );
+
+      const localIso = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const now = new Date();
+      const today = localIso(now);
+
+      // Zeitraum-Beginn: heute − months Monate; bei 0 die erste Buchung
+      let startDate: string;
+      if (input.months === 0) {
+        startDate = txs.reduce((min, t) => (t.date < min ? t.date : min), today);
+      } else {
+        startDate = localIso(
+          new Date(
+            now.getFullYear(),
+            now.getMonth() - input.months,
+            now.getDate()
+          )
+        );
+      }
+
+      // Tages-Deltas ab Startdatum sammeln; frühere Buchungen fließen in den
+      // Start-Saldo ein, zukünftige Buchungen bleiben außen vor
+      let balance = account.initialBalance;
+      const deltaByDate = new Map<string, number>();
+      for (const t of txs) {
+        let delta = 0;
+        if (t.type === "transfer") {
+          if (t.accountId === account.id) delta -= t.amount;
+          if (t.toAccountId === account.id) delta += t.amount;
+        } else if (t.accountId === account.id) {
+          delta = t.type === "income" ? t.amount : -t.amount;
+        }
+        if (delta === 0) continue;
+        if (t.date < startDate) {
+          balance += delta;
+          continue;
+        }
+        if (t.date > today) continue;
+        deltaByDate.set(t.date, (deltaByDate.get(t.date) ?? 0) + delta);
+      }
+
+      const points: { date: string; balance: number }[] = [
+        { date: startDate, balance },
+      ];
+      for (const date of [...deltaByDate.keys()].sort()) {
+        balance += deltaByDate.get(date)!;
+        const last = points[points.length - 1];
+        // Buchung genau am Startdatum (months=0): in den Startpunkt falten,
+        // damit kein Datum doppelt in der Serie auftaucht
+        if (last.date === date) last.balance = balance;
+        else points.push({ date, balance });
+      }
+      // Endpunkt heute immer vorhanden (mindestens 2 Punkte für das Chart)
+      if (points[points.length - 1].date !== today || points.length === 1) {
+        points.push({ date: today, balance });
+      }
+      return points;
+    }),
+
   createAccount: authedQuery
     .input(
       z.object({
@@ -316,6 +416,9 @@ export const financeRouter = createRouter({
         for (const id of txIds) {
           tx.delete(transactionSplits)
             .where(eq(transactionSplits.transactionId, id))
+            .run();
+          tx.delete(transactionTags)
+            .where(eq(transactionTags.transactionId, id))
             .run();
         }
         tx.delete(transactions)
@@ -880,12 +983,134 @@ export const financeRouter = createRouter({
       return { ok: true };
     }),
 
+  /* ---------------------------------- Tags ---------------------------------- */
+
+  /**
+   * Alle Tags des Haushalts, alphabetisch nach Name. Tags sind haushaltsweit
+   * (keine Konto-Bindung, keine Sichtbarkeitslogik).
+   */
+  listTags: authedQuery.query(() =>
+    getDb().select().from(tags).orderBy(tags.name)
+  ),
+
+  createTag: authedQuery
+    .input(z.object({ name: z.string().trim().min(1).max(80) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const existing = await db.select().from(tags);
+      if (
+        existing.some(t => t.name.toLowerCase() === input.name.toLowerCase())
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Ein Tag mit diesem Namen existiert bereits.",
+        });
+      }
+      // Farbe automatisch: die am seltensten verwendete Palettenfarbe
+      const counts = new Map<string, number>(TAG_COLORS.map(c => [c, 0]));
+      for (const t of existing) {
+        counts.set(t.color, (counts.get(t.color) ?? 0) + 1);
+      }
+      const color: string = TAG_COLORS.reduce((best, c) =>
+        (counts.get(c) ?? 0) < (counts.get(best) ?? 0) ? c : best
+      );
+      const rows = await db
+        .insert(tags)
+        .values({ name: input.name, color, createdAt: new Date() })
+        .returning();
+      logAudit(db, ctx.user.id, "tag.created", "tag", rows[0].id, input.name);
+      return rows[0];
+    }),
+
+  /**
+   * Tag löschen — bewusst OHNE Sperre bei vorhandenen Zuordnungen (anders
+   * als bei Kategorien/Projekten): Tags sind leichtgewichtige Labels, ihre
+   * Zuordnungen zu Buchungen werden einfach mit entfernt.
+   */
+  deleteTag: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.tags.findFirst({
+        where: eq(tags.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Tag nicht gefunden.",
+        });
+      }
+      db.transaction(tx => {
+        tx.delete(transactionTags)
+          .where(eq(transactionTags.tagId, input.id))
+          .run();
+        tx.delete(tags).where(eq(tags.id, input.id)).run();
+      });
+      logAudit(db, ctx.user.id, "tag.deleted", "tag", input.id, row.name);
+      return { ok: true };
+    }),
+
+  /**
+   * Ersetzt die Tags einer Buchung komplett (Ersetzen-Semantik — leere
+   * tagIds entfernen alle Tags). Erfordert "edit" auf dem Buchungskonto.
+   */
+  setTransactionTags: authedQuery
+    .input(
+      z.object({
+        transactionId: z.number().int().positive(),
+        tagIds: z.array(z.number().int().positive()).max(50),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const txRow = await db.query.transactions.findFirst({
+        where: eq(transactions.id, input.transactionId),
+      });
+      if (!txRow) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Buchung nicht gefunden.",
+        });
+      }
+      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      const wanted = [...new Set(input.tagIds)];
+      const allTags = await db.select().from(tags);
+      const known = new Map(allTags.map(t => [t.id, t]));
+      if (wanted.some(id => !known.has(id))) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Mindestens ein Tag existiert nicht.",
+        });
+      }
+      db.transaction(tx => {
+        tx.delete(transactionTags)
+          .where(eq(transactionTags.transactionId, input.transactionId))
+          .run();
+        for (const tagId of wanted) {
+          tx.insert(transactionTags)
+            .values({ transactionId: input.transactionId, tagId })
+            .run();
+        }
+      });
+      logAudit(
+        db,
+        ctx.user.id,
+        "transaction.tags",
+        "transaction",
+        input.transactionId,
+        wanted.length > 0
+          ? wanted.map(id => known.get(id)?.name ?? "").join(", ")
+          : "Alle Tags entfernt"
+      );
+      return { ok: true };
+    }),
+
   /* ------------------------------- Transaktionen ------------------------------ */
 
   listTransactions: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
-    const [allTxs, splits, attachments] = await Promise.all([
+    const [allTxs, splits, attachments, tagRows, allTags] = await Promise.all([
       db
         .select()
         .from(transactions)
@@ -900,6 +1125,8 @@ export const financeRouter = createRouter({
           sizeBytes: transactionAttachments.sizeBytes,
         })
         .from(transactionAttachments),
+      db.select().from(transactionTags),
+      db.select().from(tags),
     ]);
     // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
     const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
@@ -928,10 +1155,23 @@ export const financeRouter = createRouter({
       });
       attsByTx.set(a.transactionId, list);
     }
+    const tagById = new Map(allTags.map(t => [t.id, t]));
+    const tagsByTx = new Map<
+      number,
+      { id: number; name: string; color: string }[]
+    >();
+    for (const r of tagRows) {
+      const tag = tagById.get(r.tagId);
+      if (!tag) continue;
+      const list = tagsByTx.get(r.transactionId) ?? [];
+      list.push({ id: tag.id, name: tag.name, color: tag.color });
+      tagsByTx.set(r.transactionId, list);
+    }
     return txs.map(t => ({
       ...t,
       splits: byTx.get(t.id) ?? [],
       attachments: attsByTx.get(t.id) ?? [],
+      tags: tagsByTx.get(t.id) ?? [],
     }));
   }),
 
@@ -956,11 +1196,13 @@ export const financeRouter = createRouter({
             })
           )
           .optional(),
+        // Optional: Tags der Buchung (mehrere, haushaltsweit)
+        tagIds: z.array(z.number().int().positive()).max(50).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const { splits, ...txData } = input;
+      const { splits, tagIds, ...txData } = input;
       await requireAccountAccess(db, ctx.user, input.accountId, "edit");
       // Bei Umbuchungen muss zumindest das Zielkonto sichtbar sein
       if (input.type === "transfer" && input.toAccountId) {
@@ -986,6 +1228,16 @@ export const financeRouter = createRouter({
           });
         }
       }
+      if (tagIds && tagIds.length > 0) {
+        const allTags = await db.select({ id: tags.id }).from(tags);
+        const known = new Set(allTags.map(t => t.id));
+        if (tagIds.some(id => !known.has(id))) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Mindestens ein Tag existiert nicht.",
+          });
+        }
+      }
       // Budget-Wächter: bei Ausgaben mit Kategorie den Zustand vor dem
       // Insert festhalten, um einen Kipppunkt über 100 % zu erkennen
       const budgetsBefore =
@@ -1003,6 +1255,13 @@ export const financeRouter = createRouter({
           for (const s of splits) {
             tx.insert(transactionSplits)
               .values({ transactionId: id, ...s })
+              .run();
+          }
+        }
+        if (id && tagIds && tagIds.length > 0) {
+          for (const tagId of new Set(tagIds)) {
+            tx.insert(transactionTags)
+              .values({ transactionId: id, tagId })
               .run();
           }
         }
@@ -1067,6 +1326,9 @@ export const financeRouter = createRouter({
       db.transaction(tx => {
         tx.delete(transactionSplits)
           .where(eq(transactionSplits.transactionId, input.id))
+          .run();
+        tx.delete(transactionTags)
+          .where(eq(transactionTags.transactionId, input.id))
           .run();
         tx.delete(transactions).where(eq(transactions.id, input.id)).run();
       });
@@ -1699,6 +1961,8 @@ export const financeRouter = createRouter({
     await deleteAttachmentsForTransactions(db, txIds);
     db.transaction(tx => {
       tx.delete(transactionSplits).where(ne(transactionSplits.id, -1)).run();
+      tx.delete(transactionTags).where(ne(transactionTags.id, -1)).run();
+      tx.delete(tags).where(ne(tags.id, -1)).run();
       tx.delete(transactions).where(ne(transactions.id, -1)).run();
       tx.delete(recurring).where(ne(recurring.id, -1)).run();
       tx.delete(budgets).where(ne(budgets.id, -1)).run();

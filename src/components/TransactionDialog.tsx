@@ -40,7 +40,7 @@ const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application
 /** Dialog zum Erfassen einer neuen Buchung (Einnahme, Ausgabe, Umbuchung) */
 export default function TransactionDialog({ defaultType = 'expense' }: { defaultType?: TxType }) {
   const { user } = useAuth();
-  const { accounts, categories, users, projects, splitTemplates } = useFinanceData();
+  const { accounts, categories, users, projects, splitTemplates, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
@@ -62,6 +62,10 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   // Inline-Bereich für "+ Neue Kategorie" (Muster wie "+ Neuer Typ" im Konto-Dialog)
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  // Gewählte Tags der Buchung + Inline-Bereich für "+ Neuer Tag"
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [newTagOpen, setNewTagOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
   // Inline-Anlage als Unterkategorie der aktuell gewählten Oberkategorie
   const [newCatAsChild, setNewCatAsChild] = useState(false);
   // Gewählte Beleg-Dateien (werden nach dem Speichern der Buchung hochgeladen)
@@ -101,6 +105,25 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const createTag = trpc.finance.createTag.useMutation({
+    onSuccess: async (created) => {
+      toast.success('Tag angelegt.');
+      await utils.finance.listTags.invalidate();
+      // createTag liefert den neuen Tag zurück — direkt auswählen
+      setSelectedTagIds((ids) => [...ids, created.id]);
+      setNewTagName('');
+      setNewTagOpen(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  /** Tag-Auswahl umschalten (mehrere Tags pro Buchung möglich) */
+  const toggleTag = (tagId: number) => {
+    setSelectedTagIds((ids) =>
+      ids.includes(tagId) ? ids.filter((id) => id !== tagId) : [...ids, tagId],
+    );
+  };
 
   const effectiveUserId = userId ? Number(userId) : (user?.id ?? 0);
   const effectiveAccountId = accountId ? Number(accountId) : (accounts[0]?.id ?? 0);
@@ -208,6 +231,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
         amount: cents, categoryId: categoryId ? Number(categoryId) : undefined,
         projectId: projectId ? Number(projectId) : undefined,
         userId: effectiveUserId, date, note, splits,
+        tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
       });
       for (const file of files) {
         const ok = await uploadAttachment(created.id, file);
@@ -220,6 +244,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
       setOpen(false);
       setAmount(''); setNote(''); setCategoryId(''); setSplitEnabled(false); setShares({});
       setProjectId(''); setSaveTplOpen(false); setSaveTplName('');
+      setSelectedTagIds([]); setNewTagOpen(false); setNewTagName('');
       setFiles([]);
       setDate(todayISO());
     } catch (err) {
@@ -505,7 +530,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', detailsOpen && 'rotate-90')} />
-                Details (Person, Notiz, Projekt)
+                Details (Person, Notiz, Projekt, Tags)
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
@@ -542,6 +567,58 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                     </Select>
                   </div>
                 )}
+                <div className="col-span-2 space-y-2">
+                  <Label>Tags</Label>
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {tags.map((tag) => {
+                        const active = selectedTagIds.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => toggleTag(tag.id)}
+                            className={cn(
+                              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors',
+                              active
+                                ? 'border-transparent bg-emerald-600 text-white'
+                                : 'bg-muted/40 text-muted-foreground hover:text-foreground',
+                            )}
+                          >
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {newTagOpen ? (
+                    <div className="flex gap-2">
+                      <Input
+                        autoFocus
+                        placeholder="Name des Tags"
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!newTagName.trim() || createTag.isPending}
+                        onClick={() => createTag.mutate({ name: newTagName.trim() })}
+                      >
+                        Anlegen
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                      onClick={() => setNewTagOpen(true)}
+                    >
+                      <Plus className="h-3 w-3" /> Neuer Tag
+                    </button>
+                  )}
+                </div>
               </div>
             </CollapsibleContent>
           </Collapsible>

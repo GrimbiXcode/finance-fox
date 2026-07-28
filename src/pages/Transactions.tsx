@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Paperclip, Search, Trash2 } from 'lucide-react';
+import { Check, Download, Paperclip, Search, Tag, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -21,17 +24,30 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 export default function Transactions() {
-  const { accounts, categories, transactions, users, projects } = useFinanceData();
+  const { accounts, categories, transactions, users, projects, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [accountFilter, setAccountFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [userFilter, setUserFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
 
   const deleteTx = trpc.finance.deleteTransaction.useMutation({
     onSuccess: () => invalidate(),
   });
+
+  const setTxTags = trpc.finance.setTransactionTags.useMutation({
+    onSuccess: () => invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  /** Tag an einer bestehenden Buchung an-/abwählen (Ersetzen-Semantik serverseitig) */
+  const toggleTag = (tx: (typeof transactions)[number], tagId: number) => {
+    const current = tx.tags.map((t) => t.id);
+    const next = current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId];
+    setTxTags.mutate({ transactionId: tx.id, tagIds: next });
+  };
 
   const utils = trpc.useUtils();
   const [exporting, setExporting] = useState(false);
@@ -63,14 +79,15 @@ export default function Transactions() {
       if (accountFilter !== 'all' && t.accountId !== Number(accountFilter) && t.toAccountId !== Number(accountFilter)) return false;
       if (categoryFilter !== 'all' && t.categoryId !== Number(categoryFilter)) return false;
       if (userFilter !== 'all' && t.userId !== Number(userFilter)) return false;
+      if (tagFilter !== 'all' && !t.tags.some((tag) => tag.id === Number(tagFilter))) return false;
       if (term) {
         const cat = categories.find((c) => c.id === t.categoryId);
-        const haystack = `${t.note} ${cat?.name ?? ''} ${(t.amount / 100).toFixed(2)}`.toLowerCase();
+        const haystack = `${t.note} ${cat?.name ?? ''} ${t.tags.map((tag) => tag.name).join(' ')} ${(t.amount / 100).toFixed(2)}`.toLowerCase();
         if (!haystack.includes(term)) return false;
       }
       return true;
     });
-  }, [transactions, categories, search, typeFilter, accountFilter, categoryFilter, userFilter]);
+  }, [transactions, categories, search, typeFilter, accountFilter, categoryFilter, userFilter, tagFilter]);
 
   const sum = filtered.reduce((acc, t) => {
     if (t.type === 'income') return acc + t.amount;
@@ -100,7 +117,7 @@ export default function Transactions() {
           <CardTitle className="text-base">Filter</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Suchen…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -133,6 +150,13 @@ export default function Transactions() {
               <SelectContent>
                 <SelectItem value="all">Alle Personen</SelectItem>
                 {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={tagFilter} onValueChange={setTagFilter}>
+              <SelectTrigger><SelectValue placeholder="Tag" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Alle Tags</SelectItem>
+                {tags.map((tag) => <SelectItem key={tag.id} value={String(tag.id)}>{tag.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -172,13 +196,19 @@ export default function Transactions() {
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(t.date)}</TableCell>
                     <TableCell>
                       <div className="font-medium">{t.note || (t.type === 'transfer' ? 'Umbuchung' : '—')}</div>
-                      <div className="mt-1 flex gap-1">
+                      <div className="mt-1 flex flex-wrap gap-1">
                         {t.splits.length > 0 && <Badge variant="secondary" className="text-[10px]">geteilt</Badge>}
                         {project && (
                           <Badge variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${project.color}` }}>
                             {project.name}
                           </Badge>
                         )}
+                        {t.tags.map((tag) => (
+                          <Badge key={tag.id} variant="secondary" className="gap-1 text-[10px]">
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                            {tag.name}
+                          </Badge>
+                        ))}
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
@@ -208,6 +238,42 @@ export default function Transactions() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon" title="Tags bearbeiten">
+                              <Tag className={cn(
+                                'h-4 w-4',
+                                t.tags.length > 0 ? 'text-emerald-600' : 'text-muted-foreground',
+                              )} />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-56 p-2" align="end">
+                            {tags.length === 0 ? (
+                              <p className="px-1 py-2 text-xs text-muted-foreground">
+                                Noch keine Tags — in den Einstellungen anlegen.
+                              </p>
+                            ) : (
+                              <div className="space-y-0.5">
+                                {tags.map((tag) => {
+                                  const active = t.tags.some((x) => x.id === tag.id);
+                                  return (
+                                    <button
+                                      key={tag.id}
+                                      type="button"
+                                      disabled={setTxTags.isPending}
+                                      onClick={() => toggleTag(t, tag.id)}
+                                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                                    >
+                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                      <span className="flex-1 text-left">{tag.name}</span>
+                                      {active && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </PopoverContent>
+                        </Popover>
                         <TransactionAttachmentsDialog
                           transactionId={t.id}
                           note={t.note}

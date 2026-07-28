@@ -37,3 +37,20 @@ export const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [
 ];
 
 export const DEFAULT_CURRENCY: CurrencyCode = "EUR";
+
+/* ----------------------------------- Tags ---------------------------------- */
+
+/**
+ * Farbpalette für Tags (wie die Kategorien-Palette in den Einstellungen) —
+ * die Farbe wird serverseitig automatisch vergeben (am seltensten verwendete).
+ */
+export const TAG_COLORS = [
+  "#f43f5e",
+  "#f59e0b",
+  "#3b82f6",
+  "#a855f7",
+  "#ec4899",
+  "#14b8a6",
+  "#94a3b8",
+  "#10b981",
+] as const;

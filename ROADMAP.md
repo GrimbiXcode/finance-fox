@@ -69,13 +69,16 @@ Erfassungsmaske.
 ## 3. Erweiterungsideen (Backlog, unbewertet)
 
 ### A. Transaktionen & Kategorien
-- Tags/Labels zusätzlich zur Kategorie (mehrere pro Buchung), Volltextsuche über Notizen
+- Tags/Labels zusätzlich zur Kategorie (mehrere pro Buchung), Volltextsuche über Notizen ✅
+  (Tags haushaltsweit: `tags`/`transaction_tags`, Verwaltung in den Einstellungen,
+  Auswahl im Buchungsdialog, Filter + Badges + Tag-Suche in der Transaktionsliste;
+  die Notizsuche existierte bereits und durchsucht jetzt auch Tag-Namen)
 - Massenbearbeitung (mehrere Buchungen markieren → Kategorie/Tag ändern)
 - Split-Transaktionen nach Kategorie (eine Buchung, mehrere Kategorien/Beträge)
 - CSV-Import mit Kategorie-Mapping-Regeln (lernende Zuordnung statt nur Name)
 
 ### B. Konten
-- Saldo-Verlaufschart pro Konto (Historie, nicht nur aktueller Stand)
+- ✅ Saldo-Verlaufschart pro Konto (Historie, nicht nur aktueller Stand)
 
 ### C. Budgets
 - Envelope-/Umschlag-Budgetierung als Alternative zur Kategorie-Grenze

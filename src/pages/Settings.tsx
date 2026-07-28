@@ -78,6 +78,9 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "transaction.created": "Buchung erfasst",
   "transaction.deleted": "Buchung gelöscht",
   "transaction.imported": "Buchungen importiert",
+  "transaction.tags": "Tags einer Buchung geändert",
+  "tag.created": "Tag angelegt",
+  "tag.deleted": "Tag gelöscht",
   "budget.saved": "Budget gespeichert",
   "budget.deleted": "Budget gelöscht",
   "recurring.created": "Dauerbuchung angelegt",
@@ -113,6 +116,7 @@ const AUDIT_ENTITY_GROUPS: [string, string, string[]][] = [
   ["account", "Konten", ["account"]],
   ["transaction", "Buchungen", ["transaction"]],
   ["category", "Kategorien", ["category"]],
+  ["tag", "Tags", ["tag"]],
   ["budget", "Budgets", ["budget"]],
   ["recurring", "Dauerbuchungen", ["recurring"]],
   ["goal", "Sparziele", ["goal"]],
@@ -123,12 +127,13 @@ const AUDIT_ENTITY_GROUPS: [string, string, string[]][] = [
 
 export default function Settings() {
   const { user, refresh } = useAuth();
-  const { categories, accountTypes, banks } = useFinanceData();
+  const { categories, accountTypes, banks, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [catName, setCatName] = useState("");
   const [catType, setCatType] = useState<"income" | "expense">("expense");
   // '' = neue Oberkategorie, sonst ID der Oberkategorie für eine Unterkategorie
   const [catParent, setCatParent] = useState("");
+  const [tagName, setTagName] = useState("");
   const [profileName, setProfileName] = useState(user?.name ?? "");
   const [profileColor, setProfileColor] = useState(user?.color ?? "#10b981");
   const [currentPw, setCurrentPw] = useState("");
@@ -157,6 +162,21 @@ export default function Settings() {
   const deleteCategory = trpc.finance.deleteCategory.useMutation({
     onSuccess: () => {
       toast.success("Kategorie gelöscht.");
+      invalidate();
+    },
+    onError: err => toast.error(err.message),
+  });
+  const createTag = trpc.finance.createTag.useMutation({
+    onSuccess: () => {
+      toast.success("Tag angelegt.");
+      invalidate();
+      setTagName("");
+    },
+    onError: err => toast.error(err.message),
+  });
+  const deleteTag = trpc.finance.deleteTag.useMutation({
+    onSuccess: () => {
+      toast.success("Tag gelöscht.");
       invalidate();
     },
     onError: err => toast.error(err.message),
@@ -823,6 +843,67 @@ export default function Settings() {
                     CAT_COLORS[categories.length % CAT_COLORS.length],
                   parentId: parent?.id,
                 });
+              }}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tags</CardTitle>
+          <CardDescription>
+            {tags.length} Tags — haushaltsweite Labels für Buchungen
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map(tag => (
+              <Badge
+                key={tag.id}
+                variant="secondary"
+                className="gap-1.5 py-1 pl-2 pr-1"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: tag.color }}
+                />
+                {tag.name}
+                <button
+                  type="button"
+                  className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                  onClick={() => deleteTag.mutate({ id: tag.id })}
+                  title="Löschen (Zuordnungen zu Buchungen werden entfernt)"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+            {tags.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Noch keine Tags angelegt.
+              </p>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Beim Löschen eines Tags werden seine Zuordnungen zu Buchungen
+            entfernt — die Buchungen bleiben erhalten.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="min-w-40 flex-1"
+              placeholder="Neuer Tag…"
+              value={tagName}
+              onChange={e => setTagName(e.target.value)}
+            />
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!tagName.trim()) return;
+                // Die Farbe vergibt der Server automatisch aus der Palette
+                createTag.mutate({ name: tagName.trim() });
               }}
             >
               <Plus className="h-4 w-4" />

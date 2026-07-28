@@ -22,7 +22,7 @@ const GOAL_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#63
 export interface DialogGoal {
   id: number;
   name: string;
-  targetAmount: number;
+  targetAmount: number | null; // null = offenes Ziel ohne Zielbetrag
   color: string;
   deadline: string | null;
 }
@@ -44,7 +44,7 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
   const isEdit = !!goal;
   const [name, setName] = useState(goal?.name ?? '');
   const [target, setTarget] = useState(
-    goal ? (goal.targetAmount / 100).toFixed(2).replace('.', ',') : '',
+    goal?.targetAmount != null ? (goal.targetAmount / 100).toFixed(2).replace('.', ',') : '',
   );
   const [color, setColor] = useState(goal?.color ?? GOAL_COLORS[0]);
   const [deadline, setDeadline] = useState(goal?.deadline ?? '');
@@ -63,9 +63,14 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
   });
 
   const submit = () => {
-    const targetCents = parseEuro(target);
-    if (!name.trim() || targetCents <= 0) {
-      toast.error('Name und Zielbetrag angeben.');
+    // Leerer Zielbetrag = offenes Ziel (null); sonst muss der Betrag > 0 sein
+    const targetCents = target.trim() === '' ? null : parseEuro(target);
+    if (!name.trim()) {
+      toast.error('Name angeben.');
+      return;
+    }
+    if (targetCents !== null && targetCents <= 0) {
+      toast.error('Zielbetrag größer 0 angeben oder leer lassen.');
       return;
     }
     if (isEdit && goal) {
@@ -104,6 +109,9 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
         <div className="space-y-2">
           <Label>Zielbetrag ({currencySymbol()})</Label>
           <Input inputMode="decimal" placeholder={amountPlaceholder} value={target} onChange={(e) => setTarget(e.target.value)} />
+          <p className="text-xs text-muted-foreground">
+            Leer lassen für ein offenes Ziel — dann zählt nur der angesparte Betrag.
+          </p>
         </div>
         <div className="space-y-2">
           <Label>Farbe</Label>

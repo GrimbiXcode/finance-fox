@@ -188,6 +188,18 @@ Wichtige Konventionen:
   Anlegen/Bearbeiten/Löschen laufen über `src/components/GoalDialog.tsx`
   (Muster AccountDialog, Löschen nur in der Gefahrenzone des Edit-Dialogs
   mit AlertDialog-Bestätigung). Tests: `api/goalSources.test.ts`.
+- **Offene Sparziele (ohne Zielbetrag)**: `savings_goals.target_amount` ist
+  nullable — NULL = offenes Ziel, der Fortschritt zeigt dann nur den
+  angesparten Betrag. `createGoal`/`updateGoal` nehmen `targetAmount`
+  nullish entgegen (gesetzt weiterhin positiv); `listGoals` liefert
+  `percent: null`, Meilenstein-Benachrichtigungen und ETA/remaining in
+  `forecast.goalForecast` entfallen (Guards an den
+  computeGoalProgress-Aufrufern bzw. in `notifyGoalMilestones`).
+  Bestands-DBs: guardierte Tabellen-Neuerstellung in `ensureSchema`
+  (PRAGMA notnull-Flag, NOT NULL lässt sich per ALTER nicht entfernen).
+  UI: GoalDialog (Zielbetrag leer = offen), Zielkarte mit „offenes
+  Ziel"-Badge statt Balken/Prozent/Prognose, Forecasts-Seite ohne
+  ETA-Anzeige. Tests: `api/openGoals.test.ts`.
 - **Sparziel-Beiträge (Alt-Bestand)**: Tabelle `goal_contributions`
   (goalId, userId, amount in Cent positiv, note, createdAt) — seit
   Sparziele 2.0 schreibgeschützt (keine neuen Beiträge mehr möglich, siehe
@@ -273,6 +285,19 @@ Wichtige Konventionen:
   Dialog (`src/components/TransactionHistoryDialog.tsx`, deutsches
   Feldnamen-Mapping, formatCents/formatDate, Kommentar kursiv).
   Tests: `api/transactionEdit.test.ts`.
+- **Buchungen stornieren**: `transactions.stornoOfId` (die Storno-Buchung
+  zeigt aufs Original; guardiertes ALTER in `ensureSchema`).
+  `finance.reverseTransaction` ({id, note?}, „edit" aufs Buchungskonto)
+  legt eine Gegenbuchung mit heutigem Datum an: Ausgabe → Einnahme,
+  Einnahme → Ausgabe, Umbuchung mit getauschten Konten; Betrag/Kategorie/
+  Projekt/Person/Splits wie im Original, Notiz = note-Input oder
+  „Storno: <Originalnotiz>". Guards: bereits storniert bzw. Storno-Buchung
+  selbst → CONFLICT. Original und Gegenbuchung bleiben sichtbar (Badges
+  „Storniert"/„Storno", abgeschwächt). Damit sich die Aufteilungs-Wirkung
+  exakt aufhebt, zählen in `memberBalances` (src/lib/finance.ts) Einnahmen
+  MIT Splits umgekehrt wie Ausgaben. Audit `transaction.reversed`. Löschen
+  UND Stornieren laufen in der Transaktionsliste über AlertDialoge, die den
+  konkreten Saldo-Effekt erklären. Tests: `api/transactionReverse.test.ts`.
 - **Schnellerfassung**: `src/components/QuickAddDialog.tsx` (Button „Schnell"
   im Layout-Header) bucht eine Ausgabe mit nur Betrag + Notiz; Defaults:
   erstes Konto mit `access === "edit"`, zuletzt verwendete Ausgaben-Kategorie,
@@ -354,6 +379,18 @@ Wichtige Konventionen:
   deaktiviert), Stift-Button nur bei „edit" aufs Konto, Filter-Zeile
   (Typ/Konto/Status) mit Zähler und Karten-/Tabellenansicht. Tests:
   `api/recurringEdit.test.ts`.
+- **Dauerbuchungen mit Enddatum**: `recurring.endDate` (TEXT, nullable,
+  YYYY-MM-DD) = letztes verbuchtes Vorkommen, NULL = kein Ende.
+  `createRecurring`/`updateRecurring` nehmen `endDate` optional entgegen
+  (Update: null = entfernen) und verlangen endDate ≥ wirksame `nextDate`
+  (BAD_REQUEST). Der Cron-Job (`api/lib/recurringJob.ts`) verbucht nur
+  Vorkommen ≤ endDate; `nextDate` bleibt danach auf dem ersten Vorkommen
+  jenseits des Enddatums stehen (kein endloses Vorspulen). Ablauf
+  (endDate < heute) = „archiviert": Badge statt Aktiv/Pausiert, abgeschwächt
+  dargestellt, ans Ende sortiert (aktive nach nextDate zuerst), eigener
+  Status-Filterwert; Pausieren/Bearbeiten bleibt möglich (späteres Enddatum
+  „reaktiviert"). Logik in `src/lib/recurring.ts` (`isRecurringArchived`,
+  `sortRecurring`). Tests: `api/recurringEndDate.test.ts`.
 - **Kategorien-Hierarchie**: `categories.parentId` NULL = Oberkategorie, sonst
   Verweis auf die Oberkategorie — genau EINE Ebene (Unterkategorien dürfen
   keine Kinder haben, wird in `finance.createCategory` geprüft). Unter-

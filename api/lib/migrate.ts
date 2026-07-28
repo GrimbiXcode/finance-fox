@@ -93,6 +93,7 @@ export function ensureSchema() {
       date TEXT NOT NULL,
       note TEXT NOT NULL DEFAULT '',
       recurring_id INTEGER,
+      storno_of_id INTEGER,
       created_at INTEGER NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS tx_date_idx ON transactions (date)`,
@@ -156,13 +157,14 @@ export function ensureSchema() {
       note TEXT NOT NULL DEFAULT '',
       interval TEXT NOT NULL,
       next_date TEXT NOT NULL,
+      end_date TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS savings_goals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      target_amount INTEGER NOT NULL,
+      target_amount INTEGER,
       saved_amount INTEGER NOT NULL DEFAULT 0,
       color TEXT NOT NULL,
       deadline TEXT
@@ -236,6 +238,10 @@ export function ensureSchema() {
   if (!recurringCols.some(col => col[1] === "to_account_id")) {
     db.run("ALTER TABLE recurring ADD COLUMN to_account_id INTEGER" as never);
   }
+  // Dauerbuchungen: optionales Enddatum nachrüsten (NULL = kein Ende)
+  if (!recurringCols.some(col => col[1] === "end_date")) {
+    db.run("ALTER TABLE recurring ADD COLUMN end_date TEXT" as never);
+  }
   // Kategorien-Hierarchie: parent_id für Unterkategorien nachrüsten
   const categoryCols = raw.prepare("PRAGMA table_info(categories)").raw().all();
   if (!categoryCols.some(col => col[1] === "parent_id")) {
@@ -245,6 +251,10 @@ export function ensureSchema() {
   const txCols = raw.prepare("PRAGMA table_info(transactions)").raw().all();
   if (!txCols.some(col => col[1] === "project_id")) {
     db.run("ALTER TABLE transactions ADD COLUMN project_id INTEGER" as never);
+  }
+  // Storno: Verweis der Storno-Buchung auf das Original nachrüsten
+  if (!txCols.some(col => col[1] === "storno_of_id")) {
+    db.run("ALTER TABLE transactions ADD COLUMN storno_of_id INTEGER" as never);
   }
   // Budgets: Zeitraum (Monat/Jahr), Rollover und Anker-Datum nachrüsten.
   // Bestandsbudgets bleiben Monatsbudgets ohne Rollover (created_at NULL =
@@ -262,6 +272,39 @@ export function ensureSchema() {
   }
   if (!budgetCols.some(col => col[1] === "created_at")) {
     db.run("ALTER TABLE budgets ADD COLUMN created_at INTEGER" as never);
+  }
+  // Offene Sparziele: target_amount wird nullable (NULL = ohne Zielbetrag).
+  // NOT NULL lässt sich per ALTER nicht entfernen — Bestands-Tabellen daher
+  // neu aufbauen und Daten kopieren (idempotent über das notnull-Flag,
+  // PRAGMA table_info: col[1] = Name, col[3] = notnull).
+  const goalCols = raw.prepare("PRAGMA table_info(savings_goals)").raw().all();
+  const targetCol = goalCols.find(col => col[1] === "target_amount");
+  if (targetCol && targetCol[3] === 1) {
+    db.run("BEGIN" as never);
+    try {
+      db.run(
+        `CREATE TABLE savings_goals_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          target_amount INTEGER,
+          saved_amount INTEGER NOT NULL DEFAULT 0,
+          color TEXT NOT NULL,
+          deadline TEXT
+        )` as never
+      );
+      db.run(
+        `INSERT INTO savings_goals_new
+           (id, name, target_amount, saved_amount, color, deadline)
+         SELECT id, name, target_amount, saved_amount, color, deadline
+           FROM savings_goals` as never
+      );
+      db.run("DROP TABLE savings_goals" as never);
+      db.run("ALTER TABLE savings_goals_new RENAME TO savings_goals" as never);
+      db.run("COMMIT" as never);
+    } catch (err) {
+      db.run("ROLLBACK" as never);
+      throw err;
+    }
   }
 
   // Builtin-Kontotypen seeden — nur fehlende Keys ergänzen, bestehende

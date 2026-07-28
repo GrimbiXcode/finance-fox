@@ -29,8 +29,9 @@ export async function runRecurringJob(): Promise<number> {
     if (!r.active) continue;
     let next = r.nextDate;
     const due: string[] = [];
-    // Sicherheitsgrenze: max. 500 Nachbuchungen pro Dauerbuchung
-    while (next <= today && due.length < 500) {
+    // Sicherheitsgrenze: max. 500 Nachbuchungen pro Dauerbuchung.
+    // Enddatum: nur Vorkommen bis einschließlich endDate werden verbucht.
+    while (next <= today && (!r.endDate || next <= r.endDate) && due.length < 500) {
       due.push(next);
       next = advanceDate(next, r.interval);
     }
@@ -57,6 +58,10 @@ export async function runRecurringJob(): Promise<number> {
           createdAt: new Date(),
         }).run();
       }
+      // nextDate steht nach dem letzten Lauf auf dem ersten Vorkommen, das
+      // NICHT mehr gebucht wird — bei Enddatum ist das das erste Vorkommen
+      // jenseits von endDate. Es wird nicht weiter vorgespult (die Schleife
+      // oben trifft dann sofort die Enddatum-Bedingung und bucht nichts).
       tx.update(recurring).set({ nextDate: next }).where(eq(recurring.id, r.id)).run();
     });
     created += due.length;

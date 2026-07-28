@@ -180,16 +180,26 @@ export function expensesByRootCategory(
   return map;
 }
 
-/** Netto-Salden zwischen Personen aus geteilten Ausgaben */
+/**
+ * Netto-Salden zwischen Personen aus geteilten Buchungen.
+ * Geteilte Ausgaben: Zahler +Betrag, Split-Partner −Anteil.
+ * Einnahmen MIT Splits zählen umgekehrt (Zahler −Betrag, Split-Partner
+ * +Anteil) — so hebt eine Storno-Buchung (Ausgabe → Einnahme mit denselben
+ * Splits, siehe finance.reverseTransaction) die ursprüngliche
+ * Aufteilungs-Wirkung exakt auf.
+ */
 export function memberBalances(txs: TxLike[], userIds: number[]): Map<number, number> {
   const net = new Map<number, number>();
   for (const id of userIds) net.set(id, 0);
   for (const t of txs) {
-    if (t.type !== 'expense' || t.splits.length === 0) continue;
+    if (t.splits.length === 0) continue;
+    if (t.type !== 'expense' && t.type !== 'income') continue;
+    // Vorzeichen: Ausgabe wie bisher, Einnahme mit Splits spiegelverkehrt
+    const sign = t.type === 'expense' ? 1 : -1;
     const payer = t as TxLike & { userId: number };
-    net.set(payer.userId, (net.get(payer.userId) ?? 0) + t.amount);
+    net.set(payer.userId, (net.get(payer.userId) ?? 0) + sign * t.amount);
     for (const s of t.splits) {
-      net.set(s.userId, (net.get(s.userId) ?? 0) - s.amount);
+      net.set(s.userId, (net.get(s.userId) ?? 0) - sign * s.amount);
     }
   }
   return net;

@@ -103,14 +103,15 @@ const TX_CHANGE_FIELD_LABELS: Record<string, string> = {
  * wenn der Fortschritt einen Meilenstein von unten überschreitet.
  * Wird mit dem ungefilterten Haushalts-Gesamtfortschritt gefüttert
  * (computeGoalProgress mit user null, siehe api/lib/goalProgress.ts).
+ * Offene Sparziele (targetAmount NULL) haben keine Meilensteine.
  */
 async function notifyGoalMilestones(
   db: ReturnType<typeof getDb>,
-  goal: { name: string; targetAmount: number },
+  goal: { name: string; targetAmount: number | null },
   beforeTotal: number,
   afterTotal: number
 ) {
-  if (goal.targetAmount <= 0) return;
+  if (!goal.targetAmount || goal.targetAmount <= 0) return;
   const beforePct = (beforeTotal / goal.targetAmount) * 100;
   const afterPct = (afterTotal / goal.targetAmount) * 100;
   for (const milestone of [25, 50, 75, 100]) {
@@ -1304,13 +1305,14 @@ export const financeRouter = createRouter({
         .where(inArray(goalSources.accountId, linkedAccountIds));
       const goalTotalsBefore = new Map<
         number,
-        { goal: { name: string; targetAmount: number }; total: number }
+        { goal: { name: string; targetAmount: number | null }; total: number }
       >();
       for (const goalId of new Set(linkedSources.map(s => s.goalId))) {
         const goal = await db.query.savingsGoals.findFirst({
           where: eq(savingsGoals.id, goalId),
         });
-        if (goal) {
+        // Offene Ziele (ohne Zielbetrag) haben keine Meilensteine
+        if (goal && goal.targetAmount !== null) {
           goalTotalsBefore.set(goalId, {
             goal,
             total: (await computeGoalProgress(db, null, goal)).total,
@@ -1810,6 +1812,110 @@ export const financeRouter = createRouter({
       return { ok: true };
     }),
 
+  /**
+   * Buchung stornieren: legt eine Gegenbuchung mit heutigem Datum an, die
+   * den Saldo-Effekt des Originals exakt aufhebt (Ausgabe → Einnahme,
+   * Einnahme → Ausgabe, Umbuchung mit getauschten Konten; Splits werden
+   * übernommen, die Aufteilungs-Wirkung hebt sich dadurch ebenfalls auf —
+   * siehe memberBalances in src/lib/finance.ts). Original und Gegenbuchung
+   * bleiben sichtbar (über storno_of_id verknüpft) und werden nicht
+   * gelöscht. Erfordert „edit" auf dem Buchungskonto.
+   */
+  reverseTransaction: authedQuery
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        note: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const txRow = await db.query.transactions.findFirst({
+        where: eq(transactions.id, input.id),
+      });
+      if (!txRow) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Buchung nicht gefunden.",
+        });
+      }
+      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      if (txRow.stornoOfId !== null) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Eine Storno-Buchung kann nicht erneut storniert werden.",
+        });
+      }
+      const existing = await db.query.transactions.findFirst({
+        where: eq(transactions.stornoOfId, input.id),
+      });
+      if (existing) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Diese Buchung wurde bereits storniert.",
+        });
+      }
+      const originalSplits = await db
+        .select()
+        .from(transactionSplits)
+        .where(eq(transactionSplits.transactionId, input.id));
+      // Gegenbuchung: Art umkehren, bei Umbuchungen die Konten tauschen;
+      // Betrag/Kategorie/Projekt/Person bleiben wie im Original
+      const reversal =
+        txRow.type === "transfer"
+          ? {
+              type: "transfer" as const,
+              accountId: txRow.toAccountId ?? txRow.accountId,
+              toAccountId: txRow.accountId,
+            }
+          : {
+              type: (txRow.type === "expense" ? "income" : "expense") as
+                | "income"
+                | "expense",
+              accountId: txRow.accountId,
+              toAccountId: null,
+            };
+      const txId = db.transaction(tx => {
+        const inserted = tx
+          .insert(transactions)
+          .values({
+            ...reversal,
+            amount: txRow.amount,
+            categoryId: txRow.categoryId,
+            userId: txRow.userId,
+            projectId: txRow.projectId,
+            // Storno ist eine neue Buchung — Datum ist heute
+            date: new Date().toISOString().slice(0, 10),
+            note:
+              input.note ??
+              (txRow.note ? `Storno: ${txRow.note}` : "Storno"),
+            stornoOfId: input.id,
+            createdAt: new Date(),
+          })
+          .returning({ id: transactions.id })
+          .all();
+        const id = inserted[0]?.id;
+        // Splits übernehmen, damit sich die Aufteilungs-Wirkung aufhebt
+        if (id) {
+          for (const s of originalSplits) {
+            tx.insert(transactionSplits)
+              .values({ transactionId: id, userId: s.userId, amount: s.amount })
+              .run();
+          }
+        }
+        return id;
+      });
+      logAudit(
+        db,
+        ctx.user.id,
+        "transaction.reversed",
+        "transaction",
+        input.id,
+        `Storno von: ${txDetail(txRow)}`
+      );
+      return { id: txId };
+    }),
+
   /* --------------------------------- Budgets --------------------------------- */
 
   listBudgets: authedQuery.query(() => getDb().select().from(budgets)),
@@ -1908,11 +2014,19 @@ export const financeRouter = createRouter({
         note: z.string().default(""),
         interval: z.enum(["weekly", "monthly", "yearly"]),
         nextDate: isoDate,
+        // Optionales Enddatum (letztes verbuchtes Vorkommen, YYYY-MM-DD)
+        endDate: isoDate.optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
       await requireAccountAccess(db, ctx.user, input.accountId, "edit");
+      if (input.endDate && input.endDate < input.nextDate) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Das Enddatum darf nicht vor der nächsten Fälligkeit liegen.",
+        });
+      }
       if (input.type === "transfer") {
         if (!input.toAccountId) {
           throw new TRPCError({
@@ -1961,6 +2075,8 @@ export const financeRouter = createRouter({
         note: z.string().optional(),
         interval: z.enum(["weekly", "monthly", "yearly"]).optional(),
         nextDate: isoDate.optional(),
+        // Enddatum: undefined = unverändert, null = entfernen
+        endDate: isoDate.nullable().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1998,6 +2114,16 @@ export const financeRouter = createRouter({
         }
       }
 
+      // Enddatum gegen die wirksame nächste Fälligkeit prüfen
+      const nextDate = input.nextDate ?? row.nextDate;
+      const endDate = input.endDate === undefined ? row.endDate : input.endDate;
+      if (endDate && endDate < nextDate) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Das Enddatum darf nicht vor der nächsten Fälligkeit liegen.",
+        });
+      }
+
       await db
         .update(recurring)
         .set({
@@ -2015,7 +2141,10 @@ export const financeRouter = createRouter({
           note: input.note ?? row.note,
           interval: input.interval ?? row.interval,
           // Der Cron-Job verbucht ab dem neuen Termin (nächste Fälligkeit)
-          nextDate: input.nextDate ?? row.nextDate,
+          nextDate,
+          // null entfernt das Enddatum; ein späteres Enddatum „reaktiviert"
+          // eine abgelaufene Dauerbuchung wieder
+          endDate,
         })
         .where(eq(recurring.id, input.id));
       logAudit(
@@ -2095,10 +2224,12 @@ export const financeRouter = createRouter({
         return {
           ...g,
           totalSaved: progress.total,
+          // Prozent nur bei Zielbetrag — offene Ziele (NULL) zeigen nur
+          // den angesparten Betrag
           percent:
-            g.targetAmount > 0
+            g.targetAmount !== null && g.targetAmount > 0
               ? Math.min(100, Math.round((progress.total / g.targetAmount) * 100))
-              : 0,
+              : null,
           sources: progress.sources,
           hasHiddenSources: progress.hasHiddenSources,
         };
@@ -2110,7 +2241,8 @@ export const financeRouter = createRouter({
     .input(
       z.object({
         name: z.string().min(1),
-        targetAmount: z.number().int().positive(),
+        // null/weg gelassen = offenes Sparziel ohne Zielbetrag
+        targetAmount: z.number().int().positive().nullish(),
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         deadline: isoDate.optional(),
       })
@@ -2119,7 +2251,7 @@ export const financeRouter = createRouter({
       const db = getDb();
       const inserted = await db
         .insert(savingsGoals)
-        .values(input)
+        .values({ ...input, targetAmount: input.targetAmount ?? null })
         .returning({ id: savingsGoals.id });
       logAudit(
         db,
@@ -2127,14 +2259,15 @@ export const financeRouter = createRouter({
         "goal.created",
         "goal",
         inserted[0]?.id ?? null,
-        `${input.name} (Ziel ${auditAmount(input.targetAmount)})`
+        `${input.name} (Ziel ${input.targetAmount ? auditAmount(input.targetAmount) : "offen"})`
       );
       return { ok: true };
     }),
 
   /**
    * Stammdaten eines Sparziels ändern (Name, Zielbetrag, Farbe, Stichtag;
-   * deadline null/undefined = Stichtag entfernen). Bewusst KEIN Meilenstein-/
+   * deadline null/undefined = Stichtag entfernen, targetAmount null =
+   * offenes Ziel ohne Zielbetrag). Bewusst KEIN Meilenstein-/
    * Prognose-Trigger: Schwellen prüfen nur die Transaktions- und
    * Quellen-Trigger (createTransaction / addGoalSource).
    */
@@ -2143,7 +2276,7 @@ export const financeRouter = createRouter({
       z.object({
         id: z.number().int().positive(),
         name: z.string().min(1),
-        targetAmount: z.number().int().positive(),
+        targetAmount: z.number().int().positive().nullish(),
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         deadline: isoDate.nullish(),
       })
@@ -2163,7 +2296,7 @@ export const financeRouter = createRouter({
         .update(savingsGoals)
         .set({
           name: input.name,
-          targetAmount: input.targetAmount,
+          targetAmount: input.targetAmount ?? null,
           color: input.color,
           deadline: input.deadline ?? null,
         })
@@ -2174,7 +2307,7 @@ export const financeRouter = createRouter({
         "goal.updated",
         "goal",
         input.id,
-        `${input.name} (Ziel ${auditAmount(input.targetAmount)})`
+        `${input.name} (Ziel ${input.targetAmount ? auditAmount(input.targetAmount) : "offen"})`
       );
       return { ok: true };
     }),
@@ -2247,8 +2380,12 @@ export const financeRouter = createRouter({
           message: "Dieses Konto ist bereits mit dem Sparziel verknüpft.",
         });
       }
-      // Meilenstein-Vergleich auf dem ungefilterten Haushalts-Gesamtwert
-      const beforeTotal = (await computeGoalProgress(db, null, goal)).total;
+      // Meilenstein-Vergleich auf dem ungefilterten Haushalts-Gesamtwert —
+      // nur für Ziele mit Zielbetrag (offene Ziele haben keine Meilensteine)
+      const beforeTotal =
+        goal.targetAmount !== null
+          ? (await computeGoalProgress(db, null, goal)).total
+          : 0;
       const inserted = await db
         .insert(goalSources)
         .values({
@@ -2259,8 +2396,10 @@ export const financeRouter = createRouter({
           createdAt: new Date(),
         })
         .returning({ id: goalSources.id });
-      const afterTotal = (await computeGoalProgress(db, null, goal)).total;
-      await notifyGoalMilestones(db, goal, beforeTotal, afterTotal);
+      if (goal.targetAmount !== null) {
+        const afterTotal = (await computeGoalProgress(db, null, goal)).total;
+        await notifyGoalMilestones(db, goal, beforeTotal, afterTotal);
+      }
       logAudit(
         db,
         ctx.user.id,
@@ -2495,7 +2634,7 @@ export const financeRouter = createRouter({
           .array(
             z.object({
               name: z.string().min(1),
-              targetAmount: z.number().int().positive(),
+              targetAmount: z.number().int().positive().nullish(),
               savedAmount: z.number().int().min(0),
               color: z.string(),
               deadline: isoDate.optional(),

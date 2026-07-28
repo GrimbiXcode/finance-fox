@@ -18,6 +18,7 @@ import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
 import { useAuth } from '@/providers/auth';
 import { amountPlaceholder, currencySymbol, formatCents, formatDate, parseEuro, todayISO } from '@/lib/finance';
+import { isRecurringArchived, sortRecurring } from '@/lib/recurring';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -57,11 +58,12 @@ interface RecurringFormValues {
   note: string;
   interval: Interval;
   nextDate: string;
+  endDate: string; // leer = kein Ende
 }
 
 const emptyForm = (): RecurringFormValues => ({
   type: 'expense', amount: '', accountId: '', toAccountId: '', categoryId: '',
-  userId: '', note: '', interval: 'monthly', nextDate: todayISO(),
+  userId: '', note: '', interval: 'monthly', nextDate: todayISO(), endDate: '',
 });
 
 const formFromRow = (r: RecurringRow): RecurringFormValues => ({
@@ -74,6 +76,7 @@ const formFromRow = (r: RecurringRow): RecurringFormValues => ({
   note: r.note,
   interval: r.interval,
   nextDate: r.nextDate,
+  endDate: r.endDate ?? '',
 });
 
 /**
@@ -189,6 +192,13 @@ function RecurringForm({
           </div>
         </div>
         <div className="space-y-2">
+          <Label>Enddatum (optional)</Label>
+          <Input type="date" value={values.endDate} onChange={(e) => set('endDate', e.target.value)} />
+          <p className="text-xs text-muted-foreground">
+            Leer = läuft unbegrenzt; nach diesem Datum wird nichts mehr gebucht.
+          </p>
+        </div>
+        <div className="space-y-2">
           <Label>Notiz</Label>
           <Input placeholder="z. B. Miete" value={values.note} onChange={(e) => set('note', e.target.value)} />
         </div>
@@ -254,6 +264,9 @@ export default function Recurring() {
     if (v.type === 'transfer' && (!toAccId || toAccId === accId)) {
       toast.error('Zielkonto muss ein anderes Konto sein.'); return null;
     }
+    if (v.endDate && v.endDate < v.nextDate) {
+      toast.error('Das Enddatum darf nicht vor der nächsten Fälligkeit liegen.'); return null;
+    }
     return { cents, accId, toAccId };
   };
 
@@ -266,6 +279,7 @@ export default function Recurring() {
       categoryId: v.type !== 'transfer' && v.categoryId ? Number(v.categoryId) : undefined,
       userId: Number(v.userId) || user?.id || 0,
       note: v.note.trim(), interval: v.interval, nextDate: v.nextDate,
+      endDate: v.endDate || undefined,
     });
   };
 
@@ -284,11 +298,17 @@ export default function Recurring() {
       note: v.note.trim(),
       interval: v.interval,
       nextDate: v.nextDate,
+      // Leeres Feld entfernt das Enddatum (null)
+      endDate: v.endDate ? v.endDate : null,
     });
   };
 
   const accessById = new Map(accounts.map((a) => [a.id, a.access]));
   const canEdit = (r: RecurringRow) => accessById.get(r.accountId) === 'edit';
+
+  const today = todayISO();
+  /** Abgelaufen = Enddatum gesetzt UND vor heute — wird „archiviert" dargestellt */
+  const isArchived = (r: RecurringRow) => isRecurringArchived(r, today);
 
   const filtered = recurring.filter((r) => {
     if (typeFilter !== 'all' && r.type !== typeFilter) return false;
@@ -296,11 +316,16 @@ export default function Recurring() {
       const id = Number(accountFilter);
       if (r.accountId !== id && r.toAccountId !== id) return false;
     }
-    if (statusFilter === 'active' && !r.active) return false;
-    if (statusFilter === 'paused' && r.active) return false;
+    // Archivierte bilden einen eigenen Status (überschreibt aktiv/pausiert)
+    if (statusFilter === 'active' && (isArchived(r) || !r.active)) return false;
+    if (statusFilter === 'paused' && (isArchived(r) || r.active)) return false;
+    if (statusFilter === 'archived' && !isArchived(r)) return false;
     if (userFilter !== 'all' && r.userId !== Number(userFilter)) return false;
     return true;
   });
+
+  // Laufende Dauerbuchungen (nach nächster Fälligkeit) zuerst, archivierte ans Ende
+  const displayed = sortRecurring(filtered, today);
 
   // Clientseitige Sortierung der Tabellenansicht (wirkt auf die gefilterte Liste)
   const { toggleSort, sorted, iconFor, isActive } = useTableSort<RecSortKey, RecurringRow>({
@@ -312,7 +337,7 @@ export default function Recurring() {
     amount: (r) => r.amount,
     interval: (r) => INTERVAL_ORDER[r.interval],
     nextDate: (r) => r.nextDate,
-    status: (r) => (r.active ? 0 : 1), // aktiv vor pausiert
+    status: (r) => (isArchived(r) ? 2 : r.active ? 0 : 1), // aktiv < pausiert < archiviert
   });
 
   /** Sortierbarer Spaltenkopf: Klick schaltet die Sortierung, Pfeil-Icon zeigt sie an */
@@ -390,6 +415,7 @@ export default function Recurring() {
             <SelectItem value="all">Alle Status</SelectItem>
             <SelectItem value="active">Aktiv</SelectItem>
             <SelectItem value="paused">Pausiert</SelectItem>
+            <SelectItem value="archived">Archiviert</SelectItem>
           </SelectContent>
         </Select>
         <Select value={userFilter} onValueChange={setUserFilter}>
@@ -437,13 +463,14 @@ export default function Recurring() {
 
       {view === 'cards' ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((r) => {
+          {displayed.map((r) => {
             const cat = categories.find((c) => c.id === r.categoryId);
             const account = accounts.find((a) => a.id === r.accountId);
             const toAccount = r.toAccountId ? accounts.find((a) => a.id === r.toAccountId) : undefined;
             const owner = users.find((u) => u.id === r.userId);
+            const archived = isArchived(r);
             return (
-              <Card key={r.id} className={cn(!r.active && 'opacity-60')}>
+              <Card key={r.id} className={cn((!r.active || archived) && 'opacity-60')}>
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <div>
@@ -463,8 +490,8 @@ export default function Recurring() {
                         )}
                       </CardDescription>
                     </div>
-                    <Badge variant={r.active ? 'default' : 'secondary'} className={r.active ? 'bg-emerald-600' : ''}>
-                      {r.active ? 'Aktiv' : 'Pausiert'}
+                    <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-emerald-600' : ''}>
+                      {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -480,7 +507,14 @@ export default function Recurring() {
                     <span className="text-sm text-muted-foreground">{intervalLabel[r.interval]}</span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Nächste Fälligkeit: <span className="font-medium text-foreground">{formatDate(r.nextDate)}</span>
+                    {archived ? (
+                      <>Ende: <span className="font-medium text-foreground">{formatDate(r.endDate!)}</span></>
+                    ) : (
+                      <>
+                        Nächste Fälligkeit: <span className="font-medium text-foreground">{formatDate(r.nextDate)}</span>
+                        {r.endDate && <> · endet {formatDate(r.endDate)}</>}
+                      </>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     {canEdit(r) && (
@@ -517,12 +551,13 @@ export default function Recurring() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted(filtered).map((r) => {
+              {sorted(displayed).map((r) => {
                 const cat = categories.find((c) => c.id === r.categoryId);
                 const account = accounts.find((a) => a.id === r.accountId);
                 const toAccount = r.toAccountId ? accounts.find((a) => a.id === r.toAccountId) : undefined;
+                const archived = isArchived(r);
                 return (
-                  <TableRow key={r.id} className={cn(!r.active && 'opacity-60')}>
+                  <TableRow key={r.id} className={cn((!r.active || archived) && 'opacity-60')}>
                     <TableCell>
                       <Badge variant="outline">{typeLabel[r.type]}</Badge>
                     </TableCell>
@@ -566,8 +601,8 @@ export default function Recurring() {
                     <TableCell>{intervalLabel[r.interval]}</TableCell>
                     <TableCell>{formatDate(r.nextDate)}</TableCell>
                     <TableCell>
-                      <Badge variant={r.active ? 'default' : 'secondary'} className={r.active ? 'bg-emerald-600' : ''}>
-                        {r.active ? 'Aktiv' : 'Pausiert'}
+                      <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-emerald-600' : ''}>
+                        {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                       </Badge>
                     </TableCell>
                     <TableCell>

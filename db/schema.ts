@@ -118,6 +118,8 @@ export const transactions = sqliteTable(
     date: text("date").notNull(), // YYYY-MM-DD
     note: text("note").notNull().default(""),
     recurringId: integer("recurring_id"),
+    // Storno: die Storno-Buchung zeigt auf das Original (NULL = kein Storno)
+    stornoOfId: integer("storno_of_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   t => [
@@ -239,6 +241,9 @@ export const recurring = sqliteTable("recurring", {
     enum: ["weekly", "monthly", "yearly"],
   }).notNull(),
   nextDate: text("next_date").notNull(), // YYYY-MM-DD
+  // Optionales Enddatum (YYYY-MM-DD): letztes verbuchtes Vorkommen; NULL =
+  // kein Ende. Abgelaufen (endDate < heute) = „archiviert" in der UI.
+  endDate: text("end_date"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
@@ -246,7 +251,8 @@ export const recurring = sqliteTable("recurring", {
 export const savingsGoals = sqliteTable("savings_goals", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
-  targetAmount: integer("target_amount").notNull(),
+  // NULL = offenes Sparziel ohne Zielbetrag (nur angesparter Betrag)
+  targetAmount: integer("target_amount"),
   savedAmount: integer("saved_amount").notNull().default(0),
   color: text("color").notNull(),
   deadline: text("deadline"), // YYYY-MM-DD

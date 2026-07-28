@@ -271,23 +271,29 @@ export default function Forecasts() {
               <p className="py-4 text-center text-sm text-muted-foreground">Keine Sparziele angelegt.</p>
             )}
             {(goalFc.data ?? []).map((g) => {
-              const pct = g.targetAmount > 0 ? Math.min(100, Math.round((g.total / g.targetAmount) * 100)) : 0;
+              // Offene Ziele (kein Zielbetrag): kein Balken/ETA, nur der Stand
+              const open = g.targetAmount === null;
+              const pct = g.targetAmount ? Math.min(100, Math.round((g.total / g.targetAmount) * 100)) : 0;
               return (
                 <div key={g.goalId} className="space-y-1.5">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{g.name}</span>
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <CalendarClock className="h-3.5 w-3.5" />
-                      {g.remaining === 0
-                        ? <Badge className="bg-emerald-600 text-[10px]">Erreicht</Badge>
-                        : g.etaMonth
-                          ? <span>voraussichtlich <span className="font-medium text-foreground">{formatMonth(g.etaMonth)}</span></span>
-                          : <span>mit aktuellen Dauerbuchungen nicht erreichbar</span>}
+                      {open
+                        ? <Badge variant="secondary" className="text-[10px]">offenes Ziel</Badge>
+                        : g.remaining === 0
+                          ? <Badge className="bg-emerald-600 text-[10px]">Erreicht</Badge>
+                          : g.etaMonth
+                            ? <span>voraussichtlich <span className="font-medium text-foreground">{formatMonth(g.etaMonth)}</span></span>
+                            : <span>mit aktuellen Dauerbuchungen nicht erreichbar</span>}
                     </span>
                   </div>
-                  <Progress value={pct} style={{ ['--progress-color' as string]: g.color }} className="[&>div]:bg-[var(--progress-color)]" />
+                  {!open && (
+                    <Progress value={pct} style={{ ['--progress-color' as string]: g.color }} className="[&>div]:bg-[var(--progress-color)]" />
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    Noch {formatCents(g.remaining)} offen
+                    {open ? `Bisher ${formatCents(g.total)} angespart` : `Noch ${formatCents(g.remaining ?? 0)} offen`}
                     {g.monthlyRate > 0 ? ` · +${formatCents(g.monthlyRate)}/Monat` : ''}
                     {g.deadline ? ` · Stichtag ${new Date(`${g.deadline}T12:00:00`).toLocaleDateString(getUserLocale())}` : ''}
                   </p>

@@ -268,7 +268,8 @@ export const forecastRouter = createRouter({
    * api/lib/goalProgress.ts je Monat angewendet. ETA = erster Monat mit
    * Fortschritt ≥ Zielbetrag (null, wenn in 120 Monaten nicht erreicht);
    * monthlyRate = durchschnittliche monatliche Fortschrittsänderung der
-   * nächsten 3 simulierten Monate.
+   * nächsten 3 simulierten Monate. Offene Ziele (targetAmount NULL) liefern
+   * remaining/etaMonth = null, aber weiterhin total und monthlyRate.
    */
   goalForecast: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
@@ -392,9 +393,11 @@ export const forecastRouter = createRouter({
     return goals.map(g => {
       const totals = totalsByGoal.get(g.id)!;
       const total = totals[0];
-      const remaining = Math.max(0, g.targetAmount - total);
+      // Offene Ziele (targetAmount NULL): kein Rest/ETA, nur der Fortschritt
+      const remaining =
+        g.targetAmount !== null ? Math.max(0, g.targetAmount - total) : null;
       let etaMonth: string | null = null;
-      if (remaining > 0) {
+      if (g.targetAmount !== null && remaining! > 0) {
         for (let i = 1; i <= MAX_MONTHS; i += 1) {
           if (totals[i] >= g.targetAmount) {
             etaMonth = addMonths(currentKey, i);

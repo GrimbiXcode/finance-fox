@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CalendarClock, ChevronDown, ChevronUp, Link2, Pencil, Plus, Trash2 } from 'lucide-react';
 import GoalDialog from '@/components/GoalDialog';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,15 +67,17 @@ function GoalCard({ goal, accounts, banks, forecast }: {
 
   const contribs = contribsQuery.data ?? [];
   const total = goal.totalSaved;
-  const pct = goal.percent;
-  const done = total >= goal.targetAmount;
+  // Offenes Ziel (kein Zielbetrag): kein Prozent/Balken/„Erreicht"/Prognose
+  const open = goal.targetAmount === null;
+  const pct = goal.percent ?? 0;
+  const done = !open && total >= (goal.targetAmount ?? 0);
 
   // Farbe je Quelle: Konto-Quellen nach Index, Bestand grau
   const colorOf = (index: number, kind: 'account' | 'legacy') =>
     kind === 'legacy' ? LEGACY_COLOR : SOURCE_COLORS[index % SOURCE_COLORS.length];
   // Balkenbreiten als Anteil am Zielbetrag (Summe auf 100 % gedeckelt)
   const widthOf = (cents: number) =>
-    goal.targetAmount > 0 ? Math.min(100, (cents / goal.targetAmount) * 100) : 0;
+    goal.targetAmount ? Math.min(100, (cents / goal.targetAmount) * 100) : 0;
 
   // Verknüpfbare Konten: sichtbar und noch nicht mit diesem Ziel verknüpft
   const linkedAccountIds = new Set(
@@ -124,31 +127,39 @@ function GoalCard({ goal, accounts, banks, forecast }: {
       <CardContent className="space-y-3">
         <div className="flex items-baseline justify-between">
           <span className="text-xl font-bold" style={{ color: goal.color }}>{formatCents(total)}</span>
-          <span className="text-sm text-muted-foreground">von {formatCents(goal.targetAmount)}</span>
-        </div>
-        {/* Gestapelter Herkunfts-Balken: ein Segment pro Quelle */}
-        <div className="flex h-2 w-full overflow-hidden rounded-full bg-secondary">
-          {goal.sources.map((s, i) => (
-            s.amount > 0 && (
-              <div
-                key={s.kind === 'account' ? `acc-${s.sourceId}` : 'legacy'}
-                style={{ width: `${widthOf(s.amount)}%`, backgroundColor: colorOf(i, s.kind) }}
-              />
-            )
-          ))}
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">{done ? 'Erreicht! 🎉' : `${pct} %`}</span>
-          {!done && forecast && (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CalendarClock className="h-3.5 w-3.5" />
-              {forecast.etaMonth
-                ? `Voraussichtlich erreicht: ${formatMonth(forecast.etaMonth)}`
-                : 'Mit aktuellen Dauerbuchungen nicht erreichbar'}
-              {forecast.monthlyRate > 0 && ` (+${formatCents(forecast.monthlyRate)}/Monat)`}
-            </span>
+          {open ? (
+            <Badge variant="secondary">offenes Ziel</Badge>
+          ) : (
+            <span className="text-sm text-muted-foreground">von {formatCents(goal.targetAmount ?? 0)}</span>
           )}
         </div>
+        {!open && (
+          <>
+            {/* Gestapelter Herkunfts-Balken: ein Segment pro Quelle */}
+            <div className="flex h-2 w-full overflow-hidden rounded-full bg-secondary">
+              {goal.sources.map((s, i) => (
+                s.amount > 0 && (
+                  <div
+                    key={s.kind === 'account' ? `acc-${s.sourceId}` : 'legacy'}
+                    style={{ width: `${widthOf(s.amount)}%`, backgroundColor: colorOf(i, s.kind) }}
+                  />
+                )
+              ))}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">{done ? 'Erreicht! 🎉' : `${pct} %`}</span>
+              {!done && forecast && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CalendarClock className="h-3.5 w-3.5" />
+                  {forecast.etaMonth
+                    ? `Voraussichtlich erreicht: ${formatMonth(forecast.etaMonth)}`
+                    : 'Mit aktuellen Dauerbuchungen nicht erreichbar'}
+                  {forecast.monthlyRate > 0 && ` (+${formatCents(forecast.monthlyRate)}/Monat)`}
+                </span>
+              )}
+            </div>
+          </>
+        )}
         {goal.hasHiddenSources && (
           <p className="text-xs italic text-muted-foreground">Enthält verborgene Quellen</p>
         )}

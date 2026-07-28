@@ -1,9 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Check, Download, Paperclip, Pencil, Search, Tag, Trash2 } from 'lucide-react';
+import { Check, Download, Paperclip, Pencil, Search, Tag, Trash2, Undo2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -36,6 +41,11 @@ export default function Transactions() {
 
   const deleteTx = trpc.finance.deleteTransaction.useMutation({
     onSuccess: () => invalidate(),
+  });
+
+  const reverseTx = trpc.finance.reverseTransaction.useMutation({
+    onSuccess: () => invalidate(),
+    onError: (err) => toast.error(err.message),
   });
 
   const setTxTags = trpc.finance.setTransactionTags.useMutation({
@@ -100,6 +110,12 @@ export default function Transactions() {
   const accessByAccount = useMemo(
     () => new Map(accounts.map((a) => [a.id, a.access])),
     [accounts],
+  );
+
+  // IDs bereits stornierter Buchungen (es existiert eine Buchung mit stornoOfId = id)
+  const reversedIds = useMemo(
+    () => new Set(transactions.map((t) => t.stornoOfId).filter((id): id is number => id !== null)),
+    [transactions],
   );
 
   return (
@@ -198,12 +214,24 @@ export default function Transactions() {
                 const toAccount = accounts.find((a) => a.id === t.toAccountId);
                 const user = users.find((u) => u.id === t.userId);
                 const project = projects.find((p) => p.id === t.projectId);
+                // Storno: diese Buchung ist eine Gegenbuchung bzw. wurde storniert
+                const isStorno = t.stornoOfId !== null;
+                const isReversed = reversedIds.has(t.id);
+                const noteLabel = t.note || (t.type === 'transfer' ? 'Umbuchung' : 'ohne Notiz');
+                // Art der Gegenbuchung für den Storno-Dialog
+                const reversalLabel =
+                  t.type === 'expense' ? 'Einnahme' : t.type === 'income' ? 'Ausgabe' : 'Umbuchung';
+                // Saldo-Effekt des Löschens auf dem Quellkonto
+                const deleteEffect =
+                  t.type === 'income' ? `−${formatCents(t.amount)}` : `+${formatCents(t.amount)}`;
                 return (
-                  <TableRow key={t.id}>
+                  <TableRow key={t.id} className={cn((isStorno || isReversed) && 'opacity-60')}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(t.date)}</TableCell>
                     <TableCell>
                       <div className="font-medium">{t.note || (t.type === 'transfer' ? 'Umbuchung' : '—')}</div>
                       <div className="mt-1 flex flex-wrap gap-1">
+                        {isStorno && <Badge variant="outline" className="text-[10px]">Storno</Badge>}
+                        {isReversed && <Badge variant="outline" className="text-[10px]">Storniert</Badge>}
                         {t.splits.length > 0 && <Badge variant="secondary" className="text-[10px]">geteilt</Badge>}
                         {t.changeCount > 0 && (
                           <TransactionHistoryDialog
@@ -328,9 +356,69 @@ export default function Transactions() {
                             </Button>
                           }
                         />
-                        <Button variant="ghost" size="icon" onClick={() => deleteTx.mutate({ id: t.id })} title="Löschen">
-                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                        </Button>
+                        {accessByAccount.get(t.accountId) === 'edit' && !isStorno && !isReversed && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" title="Stornieren">
+                                <Undo2 className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Buchung stornieren?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Es wird eine Gegenbuchung erstellt: {reversalLabel} über{' '}
+                                  {formatCents(t.amount)}{' '}
+                                  {t.type === 'transfer'
+                                    ? `von „${toAccount?.name ?? '?'}“ zurück auf „${account?.name ?? '?'}“`
+                                    : `auf „${account?.name ?? '?'}“`}{' '}
+                                  (heutiges Datum). Beide Buchungen bleiben als storniert
+                                  markiert sichtbar, der Saldo gleicht sich aus.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                                <AlertDialogAction
+                                  disabled={reverseTx.isPending}
+                                  onClick={() => reverseTx.mutate({ id: t.id })}
+                                >
+                                  Stornieren
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" title="Löschen">
+                              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Buchung wirklich löschen?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Die Buchung „{noteLabel}“ über {formatCents(t.amount)} vom{' '}
+                                {formatDate(t.date)} wird endgültig gelöscht.{' '}
+                                {t.type === 'transfer'
+                                  ? `Der Saldo von „${account?.name ?? '?'}“ ändert sich um +${formatCents(t.amount)}, der von „${toAccount?.name ?? '?'}“ um −${formatCents(t.amount)}.`
+                                  : `Der Saldo von „${account?.name ?? '?'}“ ändert sich um ${deleteEffect}.`}{' '}
+                                Zugehörige Belege und die Änderungshistorie werden ebenfalls
+                                gelöscht.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                disabled={deleteTx.isPending}
+                                onClick={() => deleteTx.mutate({ id: t.id })}
+                              >
+                                Löschen
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>

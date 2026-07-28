@@ -365,6 +365,8 @@ Wichtige Konventionen:
 - **PWA**: Grundgerüst ohne Service Worker — `public/manifest.webmanifest`
   plus Icons in `public/icons/` (Quell-SVG `icon.svg`, PNGs daraus gerendert),
   eingebunden in `index.html`.
+- **UI-State in `localStorage`**: Darstellungsart der Konten-Seite
+  (Karten/Tabelle) unter dem Key `ff-accounts-view`.
 - **Beleg-Anhänge**: Metadaten in `transaction_attachments`, Dateien mit
   UUID-Dateinamen im Verzeichnis `ATTACHMENTS_DIR` (Default: `<DB-Verzeichnis>/attachments`,
   bei In-Memory-DB `./data/attachments`). Upload/Download/Löschen über die

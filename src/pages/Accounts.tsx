@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Banknote, ChevronDown, ChevronUp, CreditCard, Pencil, PiggyBank, Plus, Wallet } from 'lucide-react';
+import { Banknote, ChevronDown, ChevronUp, CreditCard, LayoutGrid, Pencil, PiggyBank, Plus, Table as TableIcon, Wallet } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AccountDialog from '@/components/AccountDialog';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
@@ -30,6 +31,13 @@ const HISTORY_RANGES = [
 ] as const;
 
 type HistoryMonths = (typeof HISTORY_RANGES)[number]['months'];
+
+type ViewMode = 'cards' | 'table';
+const VIEW_KEY = 'ff-accounts-view';
+
+/** Letzte Darstellungsart aus localStorage lesen (Default: Karten) */
+const readViewMode = (): ViewMode =>
+  localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'cards';
 
 /** Aufklappbarer Saldo-Verlauf eines Kontos (AreaChart, Zeitraum wählbar) */
 function BalanceHistory({ accountId }: { accountId: number }) {
@@ -99,8 +107,14 @@ export default function Accounts() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [bankFilter, setBankFilter] = useState('all');
+  const [view, setView] = useState<ViewMode>(readViewMode);
   const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
+
+  const switchView = (v: ViewMode) => {
+    setView(v);
+    localStorage.setItem(VIEW_KEY, v);
+  };
 
   const filtered = accounts.filter((a) => {
     if (typeFilter !== 'all' && a.type !== typeFilter) return false;
@@ -108,6 +122,8 @@ export default function Accounts() {
     if (bankFilter !== 'all' && bankFilter !== 'none' && a.bankId !== Number(bankFilter)) return false;
     return true;
   });
+  const txCountOf = (id: number) =>
+    transactions.filter((t) => t.accountId === id || t.toAccountId === id).length;
 
   return (
     <div className="space-y-6">
@@ -123,7 +139,7 @@ export default function Accounts() {
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-44"><SelectValue placeholder="Kontotyp" /></SelectTrigger>
           <SelectContent>
@@ -139,6 +155,22 @@ export default function Accounts() {
             {banks.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        <div className="ml-auto flex rounded-lg border bg-muted/40 p-1">
+          <Button
+            variant="ghost" size="icon" title="Kartenansicht"
+            className={cn('h-7 w-7', view === 'cards' && 'bg-background shadow-sm')}
+            onClick={() => switchView('cards')}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost" size="icon" title="Tabellenansicht"
+            className={cn('h-7 w-7', view === 'table' && 'bg-background shadow-sm')}
+            onClick={() => switchView('table')}
+          >
+            <TableIcon className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {accounts.length === 0 && (
@@ -155,10 +187,11 @@ export default function Accounts() {
           </CardContent>
         </Card>
       )}
+      {view === 'cards' ? (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((a) => {
           const Icon = typeIcons[a.type] ?? Wallet;
-          const txCount = transactions.filter((t) => t.accountId === a.id || t.toAccountId === a.id).length;
+          const txCount = txCountOf(a.id);
           return (
             <Card key={a.id}>
               <CardHeader className="flex flex-row items-start justify-between pb-2">
@@ -212,6 +245,84 @@ export default function Accounts() {
           );
         })}
       </div>
+      ) : (
+      <Card className="overflow-x-auto py-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Konto</TableHead>
+              <TableHead>Typ</TableHead>
+              <TableHead>Bank</TableHead>
+              <TableHead>IBAN</TableHead>
+              <TableHead className="text-right">Buchungen</TableHead>
+              <TableHead className="text-right">Anfangsbestand</TableHead>
+              <TableHead className="text-right">Saldo</TableHead>
+              <TableHead className="w-20" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((a) => {
+              const Icon = typeIcons[a.type] ?? Wallet;
+              return [
+                <TableRow key={a.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="font-medium">{a.name}</div>
+                        <div className="flex gap-1">
+                          {a.ownerId !== null && <Badge variant="outline" className="text-[10px]">Privat</Badge>}
+                          {a.access === 'view' && <Badge variant="outline" className="text-[10px]">nur lesend</Badge>}
+                        </div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{typeName.get(a.type) ?? a.type}</TableCell>
+                  <TableCell>{a.bankId !== null ? (bankName.get(a.bankId) ?? 'Unbekannte Bank') : '—'}</TableCell>
+                  <TableCell className="font-mono text-xs">{a.iban ? formatIban(a.iban) : '—'}</TableCell>
+                  <TableCell className="text-right">{txCountOf(a.id)}</TableCell>
+                  <TableCell className="text-right">{formatCents(a.initialBalance)}</TableCell>
+                  <TableCell className={cn('text-right font-bold', a.balance < 0 && 'text-destructive')}>
+                    {formatCents(a.balance)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center">
+                      {a.access === 'edit' && (
+                        <AccountDialog
+                          account={a}
+                          trigger={
+                            <Button variant="ghost" size="icon" title="Konto bearbeiten">
+                              <Pencil className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          }
+                        />
+                      )}
+                      <Button
+                        variant="ghost" size="icon" title="Saldo-Verlauf"
+                        onClick={() => setOpenId(openId === a.id ? null : a.id)}
+                      >
+                        {openId === a.id
+                          ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>,
+                openId === a.id && (
+                  <TableRow key={`${a.id}-verlauf`}>
+                    <TableCell colSpan={8} className="p-0">
+                      <BalanceHistory accountId={a.id} />
+                    </TableCell>
+                  </TableRow>
+                ),
+              ];
+            })}
+          </TableBody>
+        </Table>
+      </Card>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'rec
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AccountDialog from '@/components/AccountDialog';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
@@ -96,21 +97,48 @@ function BalanceHistory({ accountId }: { accountId: number }) {
 export default function Accounts() {
   const { accounts, accountTypes, banks, transactions } = useFinanceData();
   const [openId, setOpenId] = useState<number | null>(null);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [bankFilter, setBankFilter] = useState('all');
   const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
+
+  const filtered = accounts.filter((a) => {
+    if (typeFilter !== 'all' && a.type !== typeFilter) return false;
+    if (bankFilter === 'none' && a.bankId !== null) return false;
+    if (bankFilter !== 'all' && bankFilter !== 'none' && a.bankId !== Number(bankFilter)) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Konten</h1>
-          <p className="text-sm text-muted-foreground">{accounts.length} Konten im Haushalt</p>
+          <p className="text-sm text-muted-foreground">{filtered.length} von {accounts.length} Konten im Haushalt</p>
         </div>
         <AccountDialog
           trigger={
             <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neues Konto</Button>
           }
         />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Kontotyp" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Typen</SelectItem>
+            {accountTypes.map((t) => <SelectItem key={t.key} value={t.key}>{t.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={bankFilter} onValueChange={setBankFilter}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Bank" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Banken</SelectItem>
+            <SelectItem value="none">Ohne Bank</SelectItem>
+            {banks.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
       {accounts.length === 0 && (
@@ -120,8 +148,15 @@ export default function Accounts() {
           </CardContent>
         </Card>
       )}
+      {accounts.length > 0 && filtered.length === 0 && (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            Keine Konten für diese Filterauswahl.
+          </CardContent>
+        </Card>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {accounts.map((a) => {
+        {filtered.map((a) => {
           const Icon = typeIcons[a.type] ?? Wallet;
           const txCount = transactions.filter((t) => t.accountId === a.id || t.toAccountId === a.id).length;
           return (

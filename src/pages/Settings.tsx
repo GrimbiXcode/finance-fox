@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import {
   DatabaseBackup,
   History,
+  Pencil,
   Plus,
   ShieldCheck,
   Smartphone,
@@ -32,6 +33,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -43,6 +52,7 @@ import { CURRENCIES, type CurrencyCode } from "@contracts/types";
 import { useAuth } from "@/providers/auth";
 import { useFinanceData, useInvalidateFinance } from "@/lib/data";
 import { setAppCurrency, getUserLocale } from "@/lib/finance";
+import { cn } from "@/lib/utils";
 import { trpc } from "@/providers/trpc";
 import { toast } from "sonner";
 
@@ -74,6 +84,7 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "account.permission": "Konto-Freigabe geändert",
   "account.reconciled": "Kontoabgleich gebucht",
   "category.created": "Kategorie angelegt",
+  "category.updated": "Kategorie bearbeitet",
   "category.deleted": "Kategorie gelöscht",
   "transaction.created": "Buchung erfasst",
   "transaction.updated": "Buchung bearbeitet",
@@ -85,6 +96,7 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "budget.saved": "Budget gespeichert",
   "budget.deleted": "Budget gelöscht",
   "recurring.created": "Dauerbuchung angelegt",
+  "recurring.updated": "Dauerbuchung bearbeitet",
   "recurring.toggled": "Dauerbuchung umgeschaltet",
   "recurring.deleted": "Dauerbuchung gelöscht",
   "goal.created": "Sparziel angelegt",
@@ -128,6 +140,148 @@ const AUDIT_ENTITY_GROUPS: [string, string, string[]][] = [
   ["settings", "Einstellungen", ["settings", "data"]],
 ];
 
+/** Kategorie, wie sie finance.listCategories liefert (nur die benötigten Felder) */
+type EditCategory = {
+  id: number;
+  name: string;
+  type: "income" | "expense";
+  color: string;
+  parentId: number | null;
+};
+
+/**
+ * Kleiner Dialog zum Bearbeiten einer Kategorie: Name, Farbe und Einordnung
+ * (Ober-/Unterkategorie). Der Typ ist unveränderlich und wird nur angezeigt.
+ */
+function CategoryEditDialog({
+  cat,
+  roots,
+  hasChildren,
+  onClose,
+}: {
+  cat: EditCategory;
+  /** Mögliche Oberkategorien: Oberkategorien desselben Typs ohne die Kategorie selbst */
+  roots: { id: number; name: string }[];
+  /** Oberkategorien mit Unterkategorien können nicht verschoben werden */
+  hasChildren: boolean;
+  onClose: () => void;
+}) {
+  const invalidate = useInvalidateFinance();
+  const [name, setName] = useState(cat.name);
+  const [color, setColor] = useState(cat.color);
+  // "" = Oberkategorie, sonst ID der gewählten Oberkategorie
+  const [parent, setParent] = useState(cat.parentId ? String(cat.parentId) : "");
+
+  const updateCategory = trpc.finance.updateCategory.useMutation({
+    onSuccess: () => {
+      toast.success("Kategorie gespeichert.");
+      invalidate();
+      onClose();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const submit = () => {
+    if (!name.trim()) {
+      toast.error("Bitte einen Namen eingeben.");
+      return;
+    }
+    updateCategory.mutate({
+      id: cat.id,
+      name: name.trim(),
+      color,
+      // undefined = Einordnung unverändert, null = zur Oberkategorie machen
+      parentId:
+        parent === ""
+          ? cat.parentId === null
+            ? undefined
+            : null
+          : Number(parent),
+    });
+  };
+
+  return (
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>Kategorie bearbeiten</DialogTitle>
+        <DialogDescription>
+          Name, Farbe und Einordnung anpassen — der Typ (
+          {cat.type === "expense" ? "Ausgabe" : "Einnahme"}) bleibt unverändert.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-4 py-2">
+        <div className="space-y-2">
+          <Label>Name</Label>
+          <Input value={name} onChange={e => setName(e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Farbe</Label>
+          <div className="flex items-center gap-1.5">
+            {CAT_COLORS.map(c => (
+              <button
+                key={c}
+                type="button"
+                title={c}
+                disabled={parent !== ""}
+                onClick={() => setColor(c)}
+                className={cn(
+                  "h-6 w-6 rounded-full border-2 transition-transform disabled:opacity-40",
+                  color === c
+                    ? "scale-110 border-foreground"
+                    : "border-transparent"
+                )}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          {parent !== "" && (
+            <p className="text-xs text-muted-foreground">
+              Unterkategorien übernehmen die Farbe der Oberkategorie.
+            </p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label>Oberkategorie</Label>
+          <Select
+            value={parent || "none"}
+            onValueChange={v => setParent(v === "none" ? "" : v)}
+            disabled={hasChildren}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Keine (Oberkategorie)</SelectItem>
+              {roots.map(r => (
+                <SelectItem key={r.id} value={String(r.id)}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {hasChildren && (
+            <p className="text-xs text-muted-foreground">
+              Kategorien mit Unterkategorien können nicht verschoben werden.
+            </p>
+          )}
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Abbrechen
+        </Button>
+        <Button
+          className="bg-emerald-600 hover:bg-emerald-700"
+          onClick={submit}
+          disabled={updateCategory.isPending}
+        >
+          Speichern
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
 export default function Settings() {
   const { user, refresh } = useAuth();
   const { categories, accountTypes, banks, tags } = useFinanceData();
@@ -136,6 +290,8 @@ export default function Settings() {
   const [catType, setCatType] = useState<"income" | "expense">("expense");
   // '' = neue Oberkategorie, sonst ID der Oberkategorie für eine Unterkategorie
   const [catParent, setCatParent] = useState("");
+  // Aktuell im Bearbeiten-Dialog geöffnete Kategorie (null = kein Dialog)
+  const [editingCat, setEditingCat] = useState<EditCategory | null>(null);
   const [tagName, setTagName] = useState("");
   const [profileName, setProfileName] = useState(user?.name ?? "");
   const [profileColor, setProfileColor] = useState(user?.color ?? "#10b981");
@@ -758,6 +914,14 @@ export default function Settings() {
                   <button
                     type="button"
                     className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                    onClick={() => setEditingCat(root)}
+                    title="Bearbeiten"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full p-0.5 hover:bg-muted"
                     onClick={() => deleteCategory.mutate({ id: root.id })}
                     title="Löschen"
                   >
@@ -779,6 +943,14 @@ export default function Settings() {
                     <button
                       type="button"
                       className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                      onClick={() => setEditingCat(child)}
+                      title="Bearbeiten"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 hover:bg-muted"
                       onClick={() => deleteCategory.mutate({ id: child.id })}
                       title="Löschen"
                     >
@@ -853,6 +1025,26 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Bearbeiten-Dialog: wird pro Kategorie neu gemountet (Initialwerte) */}
+      <Dialog
+        open={editingCat !== null}
+        onOpenChange={o => {
+          if (!o) setEditingCat(null);
+        }}
+      >
+        {editingCat && (
+          <CategoryEditDialog
+            key={editingCat.id}
+            cat={editingCat}
+            roots={catRoots.filter(
+              c => c.type === editingCat.type && c.id !== editingCat.id
+            )}
+            hasChildren={catChildrenOf(editingCat.id).length > 0}
+            onClose={() => setEditingCat(null)}
+          />
+        )}
+      </Dialog>
 
       <Card>
         <CardHeader>

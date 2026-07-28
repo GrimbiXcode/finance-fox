@@ -49,7 +49,11 @@ import {
 import { deleteAttachmentsForTransactions } from "./lib/attachments";
 import { parseCamt053 } from "./lib/camt";
 import { computeBudgetStatuses } from "./lib/budgets";
-import { computeGoalProgress } from "./lib/goalProgress";
+import {
+  availableForAccount,
+  commitmentOf,
+  computeGoalProgress,
+} from "./lib/goalProgress";
 import { getNotifyConfig, isHttpUrl, sendNotification } from "./lib/notify";
 import {
   ensureAccountTypeExists,
@@ -809,6 +813,124 @@ export const financeRouter = createRouter({
         "category.created",
         "category",
         inserted[0]?.id ?? null,
+        input.name
+      );
+      return { ok: true };
+    }),
+
+  /**
+   * Kategorie umbenennen/umfärben/verschieben — der Typ ist unveränderlich
+   * (dafür löschen + neu anlegen). parentId: undefined = unverändert,
+   * null = zur Oberkategorie machen, Zahl = unter diese Oberkategorie hängen.
+   */
+  updateCategory: authedQuery
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        name: z.string().trim().min(1),
+        color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        parentId: z.number().int().positive().nullish(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const cat = await db.query.categories.findFirst({
+        where: eq(categories.id, input.id),
+      });
+      if (!cat) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Kategorie nicht gefunden.",
+        });
+      }
+      // Namens-Duplikat (case-insensitiv) unter den übrigen Kategorien
+      const all = await db
+        .select({ id: categories.id, name: categories.name })
+        .from(categories);
+      if (
+        all.some(
+          c => c.id !== input.id && c.name.toLowerCase() === input.name.toLowerCase()
+        )
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Eine Kategorie mit diesem Namen existiert bereits.",
+        });
+      }
+      let color = input.color;
+      let parentId = cat.parentId;
+      // Nur prüfen, wenn sich die Einordnung tatsächlich ändert
+      if (input.parentId !== undefined && input.parentId !== cat.parentId) {
+        const children = await db
+          .select({ id: categories.id })
+          .from(categories)
+          .where(eq(categories.parentId, input.id));
+        if (input.parentId === null) {
+          // Zur Oberkategorie machen — nur ohne eigene Unterkategorien
+          // (rein defensiv: Oberkategorien haben per Definition keine Kinder,
+          // die Guard schützt vor inkonsistenten Bestandsdaten)
+          if (children.length > 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Die Kategorie hat noch Unterkategorien und kann nicht zur Oberkategorie gemacht werden.",
+            });
+          }
+          parentId = null;
+        } else {
+          // Unter eine andere Oberkategorie hängen — Validierung wie createCategory
+          if (input.parentId === input.id) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Eine Kategorie kann nicht ihre eigene Oberkategorie sein.",
+            });
+          }
+          const parent = await db.query.categories.findFirst({
+            where: eq(categories.id, input.parentId),
+          });
+          if (!parent) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Oberkategorie nicht gefunden.",
+            });
+          }
+          if (parent.parentId !== null) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Unterkategorien können keine weiteren Unterkategorien haben.",
+            });
+          }
+          if (parent.type !== cat.type) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Die Unterkategorie muss denselben Typ wie die Oberkategorie haben.",
+            });
+          }
+          // Kategorie mit eigenen Unterkategorien würde sonst eine zweite Ebene erzeugen
+          if (children.length > 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Die Kategorie hat noch Unterkategorien und kann nicht verschoben werden.",
+            });
+          }
+          parentId = parent.id;
+          // Unterkategorien erben die Farbe der Oberkategorie
+          color = parent.color;
+        }
+      }
+      await db
+        .update(categories)
+        .set({ name: input.name, color, parentId })
+        .where(eq(categories.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "category.updated",
+        "category",
+        input.id,
         input.name
       );
       return { ok: true };
@@ -2313,6 +2435,19 @@ export const financeRouter = createRouter({
     }),
 
   /**
+   * Verfügbarer Anteil eines Kontos für neue Sparziel-Quellen
+   * (Anteils-Exklusivität): Saldo, Summe der bestehenden Verpflichtungen,
+   * freier Rest und ob eine exklusive full-Quelle existiert.
+   */
+  goalSourceAvailability: authedQuery
+    .input(z.object({ accountId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      await requireAccountAccess(db, ctx.user, input.accountId, "view");
+      return availableForAccount(db, input.accountId);
+    }),
+
+  /**
    * Verknüpft ein Konto als Fortschrittsquelle mit einem Sparziel.
    * Maximal eine Quelle pro Konto und Ziel; das Konto muss für den Nutzer
    * mindestens sichtbar sein.
@@ -2379,6 +2514,34 @@ export const financeRouter = createRouter({
           code: "CONFLICT",
           message: "Dieses Konto ist bereits mit dem Sparziel verknüpft.",
         });
+      }
+      // Anteils-Exklusivität: die Summe der Verpflichtungen aller Quellen
+      // des Kontos (zielübergreifend) darf max(0, Saldo) nicht übersteigen;
+      // full ist exklusiv (blockiert bzw. verlangt ein quellenfreies Konto)
+      const availability = await availableForAccount(db, input.accountId);
+      if (availability.hasFullSource) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Das Konto „${account.name}“ ist bereits vollständig verplant — weitere Verknüpfungen sind nicht möglich.`,
+        });
+      }
+      if (input.mode === "full" && availability.committedTotal > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Das Konto „${account.name}“ ist bereits teilweise verplant — „Ganzes Konto“ ist nur ohne andere Verknüpfungen möglich.`,
+        });
+      }
+      if (input.mode !== "full") {
+        const commitment = commitmentOf(
+          { mode: input.mode, value: input.value! },
+          availability.balance
+        );
+        if (commitment > availability.available) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Nur noch ${auditAmount(availability.available)} verfügbar — der Kontostand ist bereits anderweitig verplant.`,
+          });
+        }
       }
       // Meilenstein-Vergleich auf dem ungefilterten Haushalts-Gesamtwert —
       // nur für Ziele mit Zielbetrag (offene Ziele haben keine Meilensteine)

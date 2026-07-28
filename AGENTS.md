@@ -188,6 +188,20 @@ Wichtige Konventionen:
   Anlegen/Bearbeiten/Löschen laufen über `src/components/GoalDialog.tsx`
   (Muster AccountDialog, Löschen nur in der Gefahrenzone des Edit-Dialogs
   mit AlertDialog-Bestätigung). Tests: `api/goalSources.test.ts`.
+- **Anteils-Exklusivität der Sparziel-Quellen**: ein Kontobetrag darf nicht
+  doppelt verplant werden — die Summe der Verpflichtungen (commitment:
+  full → max(0, Saldo), absolute → value ungekappt, percent →
+  round(max(0, Saldo) × value/100)) aller `goal_sources` eines Kontos
+  (zielübergreifend) darf max(0, Saldo) nicht übersteigen; full ist
+  zusätzlich exklusiv (nur auf quellenfreien Konten, blockiert jede
+  weitere Quelle). Logik: `commitmentOf`/`availableForAccount` in
+  `api/lib/goalProgress.ts`; geprüft in `finance.addGoalSource`
+  (CONFLICT bei full-Konflikt, sonst BAD_REQUEST „Nur noch X verfügbar"),
+  lesbar über `finance.goalSourceAvailability` ({accountId}, view-Recht) —
+  der Verknüpfen-Dialog in `src/pages/Goals.tsx` zeigt den freien Betrag
+  („Verfügbar: X") nach der Konto-Wahl an. Nachträgliche Saldoänderungen
+  können die Summe über den Saldo heben — gewollt, die Kappung in
+  `sourceAmount` greift dann in der Fortschrittsanzeige.
 - **Offene Sparziele (ohne Zielbetrag)**: `savings_goals.target_amount` ist
   nullable — NULL = offenes Ziel, der Fortschritt zeigt dann nur den
   angesparten Betrag. `createGoal`/`updateGoal` nehmen `targetAmount`
@@ -406,7 +420,10 @@ Wichtige Konventionen:
   `recurring.updated`. UI: gemeinsame Formular-Komponente in
   `src/pages/Recurring.tsx` (Anlegen + Bearbeiten-Dialog, Art-Wahl im Edit
   deaktiviert), Stift-Button nur bei „edit" aufs Konto, Filter-Zeile
-  (Typ/Konto/Status) mit Zähler und Karten-/Tabellenansicht. Tests:
+  (Typ/Konto/Status) mit Zähler und Karten-/Tabellenansicht. Löschen läuft
+  ausschließlich über die Gefahrenzone im Bearbeiten-Dialog (Muster
+  AccountDialog/GoalDialog, AlertDialog-Bestätigung) — auf Karte und
+  Tabellenzeile gibt es keinen Löschen-Button mehr. Tests:
   `api/recurringEdit.test.ts`.
 - **Dauerbuchungen mit Enddatum**: `recurring.endDate` (TEXT, nullable,
   YYYY-MM-DD) = letztes verbuchtes Vorkommen, NULL = kein Ende.
@@ -429,6 +446,18 @@ Wichtige Konventionen:
   Ausgaben per `expensesByRootCategory` (src/lib/finance.ts) auf
   Oberkategorien. CSV-Import matcht Kategorien weiterhin rein per Name —
   bei Namensgleichheit gewinnt die erste passende Kategorie.
+- **Kategorien bearbeiten**: `finance.updateCategory` ({id, name, color,
+  parentId?}) ändert Name/Farbe/Einordnung — der Typ ist unveränderlich.
+  parentId: undefined = unverändert, null = zur Oberkategorie machen,
+  Zahl = unter diese Oberkategorie hängen (Validierung wie createCategory
+  inkl. Selbstreferenz/Typ; Verschieben und Hochstufen nur ohne eigene
+  Unterkategorien, sonst CONFLICT). Namens-Duplikate (case-insensitiv,
+  andere ID) → CONFLICT; beim Verschieben erbt die Kategorie die Farbe der
+  neuen Oberkategorie. Audit `category.updated`. UI: Stift-Button pro
+  Kategorie im Baum der Einstellungen öffnet einen kleinen Edit-Dialog
+  (`CategoryEditDialog` in src/pages/Settings.tsx) mit Name, Farbpalette
+  und Oberkategorie-Select (deaktiviert bei eigenen Unterkategorien).
+  Tests: `api/categoryEdit.test.ts`.
 - **Budgets**: `budgets.period` = `monthly` (Kalendermonat) oder `yearly`
   (Kalenderjahr), `budgets.rollover` (nur bei monthly) überträgt unver-
   brauchtes Budget in Folgemonate, `budgets.createdAt` ist der Rollover-
@@ -460,6 +489,13 @@ Wichtige Konventionen:
   (Karten/Tabelle) unter dem Key `ff-accounts-view`, der Dauerbuchungen-Seite
   unter `ff-recurring-view`; eingeklappte Seitenleiste unter
   `ff-sidebar-collapsed`.
+- **Dialog-Layouts (responsive)**: Die Bearbeiten-Dialoge (AccountDialog,
+  TransactionDialog, GoalDialog, Dauerbuchung in Recurring.tsx,
+  CategoryEditDialog in Settings.tsx) nutzen `max-h-[90vh] overflow-y-auto`,
+  auf Desktop `sm:max-w-2xl` (kleine Dialoge wie GoalDialog/CategoryEditDialog
+  `sm:max-w-lg`). Zusammengehörige Felder stehen zweispaltig per
+  `grid gap-4 sm:grid-cols-2` (mobil einspaltig gestapelt); lange Bereiche
+  (Splits, Tags, Freigaben, Kontoabgleich, Gefahrenzone) bleiben vollbreit.
 - **Beleg-Anhänge**: Metadaten in `transaction_attachments`, Dateien mit
   UUID-Dateinamen im Verzeichnis `ATTACHMENTS_DIR` (Default: `<DB-Verzeichnis>/attachments`,
   bei In-Memory-DB `./data/attachments`). Upload/Download/Löschen über die

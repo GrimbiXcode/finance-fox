@@ -35,6 +35,60 @@ export function sourceAmount(
 }
 
 /**
+ * Verpflichtung (commitment) einer Quelle = ihr aktuell berechneter
+ * Beitrag: full → aktueller Saldo (max 0), absolute → value (ungekappt),
+ * percent → round(max(0, Saldo) × value/100). Anders als sourceAmount
+ * wird absolute hier NICHT auf den Saldo gekappt — der verplante Anteil
+ * zählt, nicht der aktuell wirksame.
+ */
+export function commitmentOf(
+  source: { mode: GoalSourceMode; value: number | null },
+  balance: number
+): number {
+  if (source.mode === "absolute") return source.value ?? 0;
+  return sourceAmount(source.mode, source.value, balance);
+}
+
+export interface AccountAvailability {
+  balance: number;
+  committedTotal: number;
+  available: number;
+  hasFullSource: boolean;
+}
+
+/**
+ * Verfügbarer Anteil eines Kontos für weitere Sparziel-Quellen
+ * (Anteils-Exklusivität): committedTotal = Summe der Verpflichtungen
+ * ALLER Quellen des Kontos (zielübergreifend), available =
+ * max(0, Saldo) − committedTotal (mindestens 0). hasFullSource meldet
+ * eine bestehende full-Quelle — die ist exklusiv und blockiert jede
+ * weitere Quelle. excludeSourceId blendet eine bestehende Quelle aus
+ * (z. B. für eine erneute Verknüpfung nach dem Lösen).
+ */
+export async function availableForAccount(
+  db: Db,
+  accountId: number,
+  excludeSourceId?: number
+): Promise<AccountAvailability> {
+  const [sources, balances] = await Promise.all([
+    db.select().from(goalSources).where(eq(goalSources.accountId, accountId)),
+    accountBalances(db, [accountId]),
+  ]);
+  const balance = balances.get(accountId) ?? 0;
+  const relevant = sources.filter(s => s.id !== excludeSourceId);
+  const committedTotal = relevant.reduce(
+    (sum, s) => sum + commitmentOf(s, balance),
+    0
+  );
+  return {
+    balance,
+    committedTotal,
+    available: Math.max(0, Math.max(0, balance) - committedTotal),
+    hasFullSource: relevant.some(s => s.mode === "full"),
+  };
+}
+
+/**
  * Kontostände wie in listAccounts: Anfangsbestand + Einnahmen − Ausgaben,
  * Umbuchungen quell-/zielseitig. Liefert nur die angefragten Konten.
  */

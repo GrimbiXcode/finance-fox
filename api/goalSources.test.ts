@@ -2,7 +2,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRouter } from "./router";
 import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
-import { computeGoalProgress } from "./lib/goalProgress";
+import {
+  availableForAccount,
+  commitmentOf,
+  computeGoalProgress,
+} from "./lib/goalProgress";
 import {
   accounts,
   goalContributions,
@@ -254,12 +258,15 @@ describe("Fortschrittsformel", () => {
       mode: "absolute",
       value: 30000,
     });
-    // Kappung: Anteil größer als der Saldo → Saldo zählt
-    await caller.finance.addGoalSource({
+    // Kappung: Anteil größer als der Saldo → Saldo zählt (direkt in die DB
+    // geschrieben — die Anteils-Exklusivität verhindert das über die API;
+    // die Kappung greift z. B. bei nachträglich gesunkenem Saldo)
+    await getDb().insert(goalSources).values({
       goalId,
       accountId: cappedAcc,
       mode: "absolute",
       value: 150000,
+      createdAt: new Date(),
     });
     // Rundung: 999 × 50 % = 499,5 → 500
     await caller.finance.addGoalSource({
@@ -593,5 +600,208 @@ describe("Kaskaden", () => {
 
   it("Tabelle goal_sources existiert nach ensureSchema", async () => {
     await expect(getDb().select().from(goalSources)).resolves.toBeDefined();
+  });
+});
+
+
+describe("Anteils-Exklusivität", () => {
+  it("rechnet die Verpflichtung je Modus (commitmentOf)", () => {
+    // full → aktueller Saldo (max 0)
+    expect(commitmentOf({ mode: "full", value: null }, 50000)).toBe(50000);
+    expect(commitmentOf({ mode: "full", value: null }, -1000)).toBe(0);
+    // absolute → value (ungekappt, auch oberhalb des Saldos)
+    expect(commitmentOf({ mode: "absolute", value: 30000 }, 10000)).toBe(30000);
+    // percent → round(max(0, Saldo) × value/100)
+    expect(commitmentOf({ mode: "percent", value: 50 }, 999)).toBe(500);
+    expect(commitmentOf({ mode: "percent", value: 100 }, 12345)).toBe(12345);
+    expect(commitmentOf({ mode: "percent", value: 25 }, -500)).toBe(0);
+  });
+
+  it("lehnt absolute oberhalb des verfügbaren Rests mit Betragsangabe ab", async () => {
+    const accountId = await createAccount("Exklusiv-Abs", 100000);
+    const goalA = await createGoalDb("Topf A", 500000);
+    const goalB = await createGoalDb("Topf B", 500000);
+    const caller = callerFor(admin);
+
+    await caller.finance.addGoalSource({
+      goalId: goalA,
+      accountId,
+      mode: "absolute",
+      value: 60000,
+    });
+    // 600,00 verplant → nur noch 400,00 frei
+    await expect(
+      caller.finance.addGoalSource({
+        goalId: goalB,
+        accountId,
+        mode: "absolute",
+        value: 50000,
+      })
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "Nur noch 400,00 verfügbar — der Kontostand ist bereits anderweitig verplant.",
+    });
+    // Genau der Rest ist erlaubt
+    await caller.finance.addGoalSource({
+      goalId: goalB,
+      accountId,
+      mode: "absolute",
+      value: 40000,
+    });
+  });
+
+  it("prüft bei percent die Verpflichtung gegen den verfügbaren Rest", async () => {
+    const accountId = await createAccount("Exklusiv-Pct", 100000);
+    const goalA = await createGoalDb("Pct A", 500000);
+    const goalB = await createGoalDb("Pct B", 500000);
+    const caller = callerFor(admin);
+
+    await caller.finance.addGoalSource({
+      goalId: goalA,
+      accountId,
+      mode: "absolute",
+      value: 60000,
+    });
+    // 50 % von 100000 = 50000 > 40000 verfügbar
+    await expect(
+      caller.finance.addGoalSource({
+        goalId: goalB,
+        accountId,
+        mode: "percent",
+        value: 50,
+      })
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "Nur noch 400,00 verfügbar — der Kontostand ist bereits anderweitig verplant.",
+    });
+    // 40 % = 40000 = genau der Rest → erlaubt
+    await caller.finance.addGoalSource({
+      goalId: goalB,
+      accountId,
+      mode: "percent",
+      value: 40,
+    });
+  });
+
+  it("erzwingt die full-Exklusivität in beide Richtungen", async () => {
+    const partialAcc = await createAccount("Teilverplant", 100000);
+    const fullAcc = await createAccount("Vollverplant", 100000);
+    const goalA = await createGoalDb("Exklusiv A", 500000);
+    const goalB = await createGoalDb("Exklusiv B", 500000);
+    const goalC = await createGoalDb("Exklusiv C", 500000);
+    const caller = callerFor(admin);
+
+    // Richtung 1: bestehende Teilverknüpfung → full blockiert
+    await caller.finance.addGoalSource({
+      goalId: goalA,
+      accountId: partialAcc,
+      mode: "absolute",
+      value: 10000,
+    });
+    await expect(
+      caller.finance.addGoalSource({
+        goalId: goalB,
+        accountId: partialAcc,
+        mode: "full",
+      })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message:
+        "Das Konto „Teilverplant“ ist bereits teilweise verplant — „Ganzes Konto“ ist nur ohne andere Verknüpfungen möglich.",
+    });
+
+    // Richtung 2: bestehende full-Quelle → jede weitere Quelle blockiert
+    await caller.finance.addGoalSource({
+      goalId: goalA,
+      accountId: fullAcc,
+      mode: "full",
+    });
+    await expect(
+      caller.finance.addGoalSource({
+        goalId: goalC,
+        accountId: fullAcc,
+        mode: "absolute",
+        value: 1000,
+      })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message:
+        "Das Konto „Vollverplant“ ist bereits vollständig verplant — weitere Verknüpfungen sind nicht möglich.",
+    });
+  });
+
+  it("blendet eine Quelle per excludeSourceId aus (Re-Verknüpfung nach Löschen)", async () => {
+    const accountId = await createAccount("Re-Link", 100000);
+    const goalId = await createGoalDb("Re-Link-Ziel", 500000);
+    const caller = callerFor(admin);
+
+    const created = await caller.finance.addGoalSource({
+      goalId,
+      accountId,
+      mode: "absolute",
+      value: 70000,
+    });
+    // Mit Ausschluss der Quelle ist wieder der volle Saldo frei
+    const excluded = await availableForAccount(getDb(), accountId, created.id);
+    expect(excluded.committedTotal).toBe(0);
+    expect(excluded.available).toBe(100000);
+
+    // Nach dem Lösen kann das Konto vollständig neu verknüpft werden
+    await caller.finance.deleteGoalSource({ id: created.id });
+    await caller.finance.addGoalSource({ goalId, accountId, mode: "full" });
+  });
+
+  it("liefert die Verfügbarkeit über goalSourceAvailability", async () => {
+    const accountId = await createAccount("Availability", 100000);
+    const privateId = await createAccount("Availability-Privat", 5000, admin.id);
+    const goalId = await createGoalDb("Availability-Ziel", 500000);
+    const caller = callerFor(admin);
+
+    await caller.finance.addGoalSource({
+      goalId,
+      accountId,
+      mode: "percent",
+      value: 25,
+    });
+    const avail = await caller.finance.goalSourceAvailability({ accountId });
+    expect(avail.balance).toBe(100000);
+    expect(avail.committedTotal).toBe(25000);
+    expect(avail.available).toBe(75000);
+    expect(avail.hasFullSource).toBe(false);
+
+    // Nicht sichtbares Konto → NOT_FOUND
+    await expect(
+      callerFor(member).finance.goalSourceAvailability({
+        accountId: privateId,
+      })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("verknüpft zwei Ziele mit Teilbeträgen innerhalb des Saldos", async () => {
+    const accountId = await createAccount("Geteilt", 100000);
+    const goalA = await createGoalDb("Geteilt A", 500000);
+    const goalB = await createGoalDb("Geteilt B", 500000);
+    const caller = callerFor(admin);
+
+    await caller.finance.addGoalSource({
+      goalId: goalA,
+      accountId,
+      mode: "absolute",
+      value: 40000,
+    });
+    await caller.finance.addGoalSource({
+      goalId: goalB,
+      accountId,
+      mode: "percent",
+      value: 50,
+    });
+    const goals = await caller.finance.listGoals();
+    expect(goals.find(g => g.id === goalA)?.totalSaved).toBe(40000);
+    expect(goals.find(g => g.id === goalB)?.totalSaved).toBe(50000);
+    const avail = await caller.finance.goalSourceAvailability({ accountId });
+    expect(avail.committedTotal).toBe(90000);
+    expect(avail.available).toBe(10000);
   });
 });

@@ -106,12 +106,18 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
           <Label>Name</Label>
           <Input placeholder="z. B. Urlaub, Notgroschen" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
-        <div className="space-y-2">
-          <Label>Zielbetrag ({currencySymbol()})</Label>
-          <Input inputMode="decimal" placeholder={amountPlaceholder} value={target} onChange={(e) => setTarget(e.target.value)} />
-          <p className="text-xs text-muted-foreground">
-            Leer lassen für ein offenes Ziel — dann zählt nur der angesparte Betrag.
-          </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Zielbetrag ({currencySymbol()})</Label>
+            <Input inputMode="decimal" placeholder={amountPlaceholder} value={target} onChange={(e) => setTarget(e.target.value)} />
+            <p className="text-xs text-muted-foreground">
+              Leer lassen für ein offenes Ziel — dann zählt nur der angesparte Betrag.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Stichtag (optional)</Label>
+            <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          </div>
         </div>
         <div className="space-y-2">
           <Label>Farbe</Label>
@@ -130,10 +136,6 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
               />
             ))}
           </div>
-        </div>
-        <div className="space-y-2">
-          <Label>Stichtag (optional)</Label>
-          <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
         </div>
 
         {isEdit && goal && (

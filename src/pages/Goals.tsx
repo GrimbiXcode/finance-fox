@@ -64,10 +64,17 @@ function GoalCard({ goal, accounts, banks, forecast }: {
     onSuccess: () => { toast.success('Verknüpfung entfernt.'); invalidate(); },
     onError: (err) => toast.error(err.message),
   });
+  // Freier Anteil des gewählten Kontos (Anteils-Exklusivität) — nur bei
+  // geöffnetem Dialog und gewähltem Konto abfragen
+  const availability = trpc.finance.goalSourceAvailability.useQuery(
+    { accountId: Number(linkAccount) || 0 },
+    { enabled: linkOpen && linkAccount !== '' },
+  );
 
   const contribs = contribsQuery.data ?? [];
   const total = goal.totalSaved;
-  // Offenes Ziel (kein Zielbetrag): kein Prozent/Balken/„Erreicht"/Prognose
+  // Offenes Ziel (kein Zielbetrag): kein Prozent/„Erreicht"/Prognose,
+  // aber der Herkunfts-Balken zeigt die Zusammensetzung der Gesamtmenge
   const open = goal.targetAmount === null;
   const pct = goal.percent ?? 0;
   const done = !open && total >= (goal.targetAmount ?? 0);
@@ -75,9 +82,12 @@ function GoalCard({ goal, accounts, banks, forecast }: {
   // Farbe je Quelle: Konto-Quellen nach Index, Bestand grau
   const colorOf = (index: number, kind: 'account' | 'legacy') =>
     kind === 'legacy' ? LEGACY_COLOR : SOURCE_COLORS[index % SOURCE_COLORS.length];
-  // Balkenbreiten als Anteil am Zielbetrag (Summe auf 100 % gedeckelt)
+  // Balkenbreiten: mit Zielbetrag als Anteil am Ziel (Summe auf 100 % gedeckelt),
+  // beim offenen Ziel als Anteil an der Gesamtmenge
   const widthOf = (cents: number) =>
-    goal.targetAmount ? Math.min(100, (cents / goal.targetAmount) * 100) : 0;
+    goal.targetAmount
+      ? Math.min(100, (cents / goal.targetAmount) * 100)
+      : total > 0 ? (cents / total) * 100 : 0;
 
   // Verknüpfbare Konten: sichtbar und noch nicht mit diesem Ziel verknüpft
   const linkedAccountIds = new Set(
@@ -133,19 +143,22 @@ function GoalCard({ goal, accounts, banks, forecast }: {
             <span className="text-sm text-muted-foreground">von {formatCents(goal.targetAmount ?? 0)}</span>
           )}
         </div>
+        {/* Gestapelter Herkunfts-Balken: ein Segment pro Quelle; beim offenen
+            Ziel zeigt er die Aufteilung der Gesamtmenge (ohne Prozent/ETA) */}
+        {(open ? total > 0 : true) && (
+          <div className="flex h-2 w-full overflow-hidden rounded-full bg-secondary">
+            {goal.sources.map((s, i) => (
+              s.amount > 0 && (
+                <div
+                  key={s.kind === 'account' ? `acc-${s.sourceId}` : 'legacy'}
+                  style={{ width: `${widthOf(s.amount)}%`, backgroundColor: colorOf(i, s.kind) }}
+                />
+              )
+            ))}
+          </div>
+        )}
         {!open && (
           <>
-            {/* Gestapelter Herkunfts-Balken: ein Segment pro Quelle */}
-            <div className="flex h-2 w-full overflow-hidden rounded-full bg-secondary">
-              {goal.sources.map((s, i) => (
-                s.amount > 0 && (
-                  <div
-                    key={s.kind === 'account' ? `acc-${s.sourceId}` : 'legacy'}
-                    style={{ width: `${widthOf(s.amount)}%`, backgroundColor: colorOf(i, s.kind) }}
-                  />
-                )
-              ))}
-            </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">{done ? 'Erreicht! 🎉' : `${pct} %`}</span>
               {!done && forecast && (
@@ -262,6 +275,17 @@ function GoalCard({ goal, accounts, banks, forecast }: {
                     {linkableAccounts.length === 0 && (
                       <p className="text-xs text-muted-foreground">
                         Alle sichtbaren Konten sind bereits verknüpft.
+                      </p>
+                    )}
+                    {availability.data && (
+                      <p className="text-xs text-muted-foreground">
+                        {availability.data.hasFullSource
+                          ? 'Das Konto ist bereits vollständig verplant.'
+                          : `Verfügbar: ${formatCents(availability.data.available)}${
+                              availability.data.committedTotal > 0
+                                ? ` (bereits verplant: ${formatCents(availability.data.committedTotal)})`
+                                : ''
+                            }`}
                       </p>
                     )}
                   </div>

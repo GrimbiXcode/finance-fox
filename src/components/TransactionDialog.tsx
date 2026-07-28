@@ -380,7 +380,7 @@ export default function TransactionDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Buchung bearbeiten' : 'Neue Buchung'}</DialogTitle>
           <DialogDescription>
@@ -411,7 +411,7 @@ export default function TransactionDialog({
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="amount">Betrag ({currencySymbol()})</Label>
               <Input id="amount" inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -423,7 +423,7 @@ export default function TransactionDialog({
           </div>
 
           {isTransfer ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Von Konto</Label>
                 <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
@@ -444,7 +444,7 @@ export default function TransactionDialog({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Konto</Label>
                 <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
@@ -556,7 +556,7 @@ export default function TransactionDialog({
               </div>
               {splitEnabled && (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     {users.map((u) => (
                       <div key={u.id} className="space-y-1">
                         <Label className="text-xs" style={{ color: u.color }}>{u.name} ({currencySymbol()})</Label>
@@ -613,9 +613,9 @@ export default function TransactionDialog({
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {isEdit && transaction.recurringId !== null && (
-                  <p className="col-span-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 sm:col-span-2 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                     Diese Buchung stammt aus einer Dauerbuchung — die Änderung betrifft nur diese Buchung, nicht die Dauerbuchung.
                   </p>
                 )}
@@ -651,7 +651,7 @@ export default function TransactionDialog({
                     </Select>
                   </div>
                 )}
-                <div className="col-span-2 space-y-2">
+                <div className="space-y-2 sm:col-span-2">
                   <Label>Tags</Label>
                   {tags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
@@ -704,7 +704,7 @@ export default function TransactionDialog({
                   )}
                 </div>
                 {isEdit && (
-                  <div className="col-span-2 space-y-2">
+                  <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="edit-comment">Änderungskommentar (optional)</Label>
                     <Input
                       id="edit-comment"

@@ -164,7 +164,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
   };
 
   return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>{isEdit ? 'Konto bearbeiten' : 'Neues Konto'}</DialogTitle>
         <DialogDescription>
@@ -176,7 +176,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
           <Label>Name</Label>
           <Input placeholder="z. B. Gemeinschaftskonto" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Typ</Label>
             <Select value={type} onValueChange={setType}>
@@ -220,7 +220,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Bank (optional)</Label>
             <Select

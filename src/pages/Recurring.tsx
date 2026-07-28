@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
-  ArrowRight, LayoutGrid, Pause, Pencil, Play, Plus, Table as TableIcon, Trash2, Zap,
+  ArrowRight, LayoutGrid, Pause, Pencil, Play, Plus, Table as TableIcon, Zap,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,10 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -84,7 +88,7 @@ const formFromRow = (r: RecurringRow): RecurringFormValues => ({
  * Art-Wahl deaktiviert (die Art einer Dauerbuchung ist unveränderlich).
  */
 function RecurringForm({
-  initial, editMode, isPending, submitLabel, onCancel, onSubmit,
+  initial, editMode, isPending, submitLabel, onCancel, onSubmit, dangerZone,
 }: {
   initial: RecurringFormValues;
   editMode: boolean;
@@ -92,6 +96,8 @@ function RecurringForm({
   submitLabel: string;
   onCancel: () => void;
   onSubmit: (values: RecurringFormValues) => void;
+  /** Gefahrenzone (Löschen) — nur im Edit-Modus übergeben */
+  dangerZone?: ReactNode;
 }) {
   const { user } = useAuth();
   const { accounts, banks, categories, users } = useFinanceData();
@@ -119,7 +125,7 @@ function RecurringForm({
           {typeButton('income', 'Einnahme', 'bg-emerald-600 hover:bg-emerald-700')}
           {typeButton('transfer', 'Umbuchung', 'bg-sky-600 hover:bg-sky-700')}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Betrag ({currencySymbol()})</Label>
             <Input inputMode="decimal" placeholder={amountPlaceholder} value={values.amount} onChange={(e) => set('amount', e.target.value)} />
@@ -134,7 +140,7 @@ function RecurringForm({
             </Select>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>{values.type === 'transfer' ? 'Von Konto' : 'Konto'}</Label>
             <Select value={values.accountId} onValueChange={(v) => set('accountId', v)}>
@@ -176,7 +182,7 @@ function RecurringForm({
             </div>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Person</Label>
             <Select value={values.userId} onValueChange={(v) => set('userId', v)}>
@@ -202,6 +208,7 @@ function RecurringForm({
           <Label>Notiz</Label>
           <Input placeholder="z. B. Miete" value={values.note} onChange={(e) => set('note', e.target.value)} />
         </div>
+        {dangerZone}
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>Abbrechen</Button>
@@ -242,7 +249,14 @@ export default function Recurring() {
     onError: (err) => toast.error(err.message),
   });
   const toggle = trpc.finance.toggleRecurring.useMutation({ onSuccess: () => invalidate() });
-  const remove = trpc.finance.deleteRecurring.useMutation({ onSuccess: () => invalidate() });
+  const remove = trpc.finance.deleteRecurring.useMutation({
+    onSuccess: () => {
+      toast.success('Dauerbuchung gelöscht.');
+      invalidate();
+      setEditing(null);
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const runNow = trpc.finance.runRecurringNow.useMutation({
     onSuccess: (res) => {
       toast.success(res.created > 0 ? `${res.created} fällige Buchung(en) verbucht.` : 'Keine fälligen Buchungen.');
@@ -377,7 +391,7 @@ export default function Recurring() {
             <DialogTrigger asChild>
               <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader><DialogTitle>Neue wiederkehrende Buchung</DialogTitle></DialogHeader>
               <RecurringForm
                 initial={emptyForm()}
@@ -525,9 +539,6 @@ export default function Recurring() {
                     <Button variant="outline" size="sm" className="flex-1" onClick={() => toggle.mutate({ id: r.id })}>
                       {r.active ? <><Pause className="mr-1.5 h-3.5 w-3.5" /> Pausieren</> : <><Play className="mr-1.5 h-3.5 w-3.5" /> Fortsetzen</>}
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => remove.mutate({ id: r.id })} title="Löschen">
-                      <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -547,7 +558,7 @@ export default function Recurring() {
                 {sortableHead('interval', 'Intervall')}
                 {sortableHead('nextDate', 'Nächster Termin')}
                 {sortableHead('status', 'Status')}
-                <TableHead className="w-28" />
+                <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -617,9 +628,6 @@ export default function Recurring() {
                             ? <Pause className="h-4 w-4 text-muted-foreground" />
                             : <Play className="h-4 w-4 text-muted-foreground" />}
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => remove.mutate({ id: r.id })} title="Löschen">
-                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -631,7 +639,7 @@ export default function Recurring() {
       )}
 
       <Dialog open={editing !== null} onOpenChange={(o) => { if (!o) setEditing(null); }}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader><DialogTitle>Dauerbuchung bearbeiten</DialogTitle></DialogHeader>
           {editing && (
             <RecurringForm
@@ -642,6 +650,40 @@ export default function Recurring() {
               submitLabel="Speichern"
               onCancel={() => setEditing(null)}
               onSubmit={submitEdit}
+              dangerZone={
+                <div className="space-y-3 rounded-lg border border-destructive/50 p-3">
+                  <p className="text-sm font-semibold text-destructive">Gefahrenzone</p>
+                  <p className="text-xs text-muted-foreground">
+                    Die Dauerbuchung wird unwiderruflich gelöscht. Bereits verbuchte
+                    Buchungen bleiben bestehen.
+                  </p>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" disabled={remove.isPending}>
+                        Dauerbuchung endgültig löschen
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Dauerbuchung wirklich löschen?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          „{editing.note || typeLabel[editing.type]}“ wird unwiderruflich
+                          gelöscht. Bereits verbuchte Buchungen bleiben bestehen.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => remove.mutate({ id: editing.id })}
+                        >
+                          Löschen
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              }
             />
           )}
         </DialogContent>

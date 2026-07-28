@@ -83,6 +83,9 @@ Erfassungsmaske.
 
 ### B. Konten
 - ✅ Saldo-Verlaufschart pro Konto (Historie, nicht nur aktueller Stand)
+- Freie Anordnung (Drag & Drop) mit persistierten Positionen für das
+  Geldfluss-Diagramm — als spätere Ergänzung des automatischen
+  Spalten-Layouts vorgemerkt
 
 ### C. Budgets
 - Envelope-/Umschlag-Budgetierung als Alternative zur Kategorie-Grenze

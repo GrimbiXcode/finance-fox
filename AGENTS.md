@@ -310,15 +310,28 @@ Wichtige Konventionen:
   `/geldfluss` (Nav „Geldfluss" nach „Konten") stellt Konten als Knoten und
   Dauerbuchungen als gerichtete Kanten dar (rein frontendseitig aus
   `listAccounts`/`listRecurring`). Die reine Funktion `buildMoneyFlow` in
-  `src/lib/moneyflow.ts` baut den Graphen: Konten auf einer Ellipse um die
-  Mitte (≤ 2 Konten: Horizontalanordnung), Pseudo-Knoten „Einnahmen" links
-  und „Ausgaben" rechts, Beträge auf Monat normalisiert (wöchentlich × 52/12,
-  jährlich ÷ 12, gerundet), Kantenstärke in 3 Stufen relativ zum Maximum,
-  pausierte Dauerbuchungen gestrichelt, gegenläufige Kantenpaare über
-  gegenläufige Kurven-Offsets getrennt. Darstellung in
-  `src/components/MoneyFlowChart.tsx`: SVG-Bezier-Kurven mit Arrowhead-
-  Markern und Label-Badges, darüber absolut positionierte HTML-Knoten
-  (Positionen in Prozent); Hover auf einen Knoten hebt seine Kanten hervor.
+  `src/lib/moneyflow.ts` baut den Graphen im Sankey-Stil: Spalten-Layout
+  (`layoutColumns` — links Einnahmen-Block, Mitte Konten in 1 Spalte bis 6,
+  2 Spalten ab 7, 3 Spalten ab 15, rechts Ausgaben-Block; Y-Positionen
+  gleichmäßig, Container-Höhe wächst mit der Kontenzahl und wird als
+  `heightPx` geliefert, die Seite scrollt). Sortierung zur
+  Kreuzungsminimierung: Hauptfluss (Einnahmen-Empfänger oben,
+  Ausgaben-Zahler unten) plus ein sequenzieller Barycenter-Pass, der
+  Transfer-Partner benachbart zieht. Beträge auf Monat normalisiert
+  (wöchentlich × 52/12, jährlich ÷ 12, gerundet); Linienstärke kontinuierlich
+  proportional zum Betrag (`width`, 2–18 px linear auf das Maximum),
+  pausierte Dauerbuchungen gestrichelt. Die Pseudo-Knoten Einnahmen/Ausgaben
+  sind Blöcke im Konto-Karten-Format mit den Monatssummen
+  (`incomeTotal`/`expenseTotal`). Darstellung in
+  `src/components/MoneyFlowChart.tsx`: SVG-S-Kurven (kubische Bezier,
+  Kontrollpunkte auf halbem Weg; Kanten innerhalb einer Spalte weichen als
+  Bogen zur Seite aus) mit Arrowhead-Markern und Label-Badges auf der Kurve
+  (Position `labelT`: parallele Kanten gleicher Quelle bzw. gleichen Ziels
+  werden entlang der Kurve gestaffelt — Quell-Gruppen Richtung Ziel,
+  Ziel-Gruppen Richtung Quelle, dicke Kanten zentraler; ab 5 Geschwistern
+  kompaktes Badge via `labelCompact`),
+  darüber absolut positionierte HTML-Knoten (Positionen in Prozent);
+  Hover auf einen Knoten hebt seine Kanten hervor.
 - **Szenario-Planung**: `forecast.balance` nimmt optional `incomePct`
   (Skalierung der wiederkehrenden Einnahmen in %, 100 = unverändert, 50–200)
   und `excludeCategoryId` entgegen. Das Szenario wirkt NUR auf zukünftige

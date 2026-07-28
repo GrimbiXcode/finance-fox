@@ -68,7 +68,7 @@ export default function MoneyFlow() {
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-6 border-t-2 border-dashed border-muted-foreground" /> pausiert
               </span>
-              <span>Linienstärke ≈ Betrag pro Monat</span>
+              <span>Linienstärke ∝ Betrag/Monat</span>
             </div>
           </CardContent>
         </Card>

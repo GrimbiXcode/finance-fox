@@ -19,30 +19,41 @@ const EDGE_COLORS = {
   transfer: '#0284c7', // sky-600
 } as const;
 
-const STROKE_WIDTH: Record<1 | 2 | 3, number> = { 1: 1.5, 2: 2.5, 3: 4 };
-
-/** Kontrollpunkt der quadratischen Bezier-Kurve (senkrecht versetzter Mittelpunkt) */
-function controlPoint(a: MoneyFlowNode, b: MoneyFlowNode, curve: number) {
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  return { x: mx - (dy / len) * curve, y: my + (dx / len) * curve };
-}
-
-/** Punkt auf der Kurve bei t = 0,5 (für das Label) */
-function labelPoint(a: MoneyFlowNode, b: MoneyFlowNode, curve: number) {
-  const c = controlPoint(a, b, curve);
+/**
+ * Kubische S-Kurve (Sankey-Stil): Kontrollpunkte auf halbem Weg, horizontale
+ * Tangente an beiden Enden. Kanten innerhalb derselben Spalte weichen als
+ * Bogen zur Seite aus (curve = seitlicher Offset). Liefert Pfad plus eine
+ * Punkt-Funktion für beliebiges t (Label-Position, siehe labelT).
+ */
+function edgeGeometry(a: MoneyFlowNode, b: MoneyFlowNode, curve: number) {
+  let c1: { x: number; y: number };
+  let c2: { x: number; y: number };
+  if (Math.abs(a.x - b.x) < 5) {
+    const cx = a.x + curve;
+    c1 = { x: cx, y: a.y };
+    c2 = { x: cx, y: b.y };
+  } else {
+    const mx = (a.x + b.x) / 2;
+    c1 = { x: mx, y: a.y + curve };
+    c2 = { x: mx, y: b.y + curve };
+  }
   return {
-    x: 0.25 * a.x + 0.5 * c.x + 0.25 * b.x,
-    y: 0.25 * a.y + 0.5 * c.y + 0.25 * b.y,
+    d: `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`,
+    /** Punkt auf der kubischen Bezier-Kurve bei Parameter t (0–1) */
+    point: (t: number) => {
+      const u = 1 - t;
+      return {
+        x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x,
+        y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y,
+      };
+    },
   };
 }
 
 /**
  * Geldfluss-Chart: SVG-Bezier-Kurven im Hintergrund, darüber absolut
  * positionierte HTML-Karten (Positionen in Prozent, siehe buildMoneyFlow).
+ * Die Höhe der Fläche kommt aus dem Spalten-Layout (flow.heightPx).
  */
 export default function MoneyFlowChart() {
   const { accounts, accountTypes, banks, recurring } = useFinanceData();
@@ -57,7 +68,7 @@ export default function MoneyFlowChart() {
     hoverNode === null || from === hoverNode || to === hoverNode;
 
   return (
-    <div className="relative aspect-[4/5] w-full select-none sm:aspect-[4/3] lg:aspect-[16/9]">
+    <div className="relative w-full select-none" style={{ height: `${flow.heightPx}px` }}>
       {/* Kanten-Layer */}
       <svg
         className="absolute inset-0 h-full w-full"
@@ -71,13 +82,14 @@ export default function MoneyFlowChart() {
               key={kind}
               id={`mf-arrow-${kind}`}
               viewBox="0 0 10 10"
-              refX="8"
+              refX="7.5"
               refY="5"
-              markerWidth="5"
-              markerHeight="5"
+              markerWidth="2.6"
+              markerHeight="2.6"
+              markerUnits="userSpaceOnUse"
               orient="auto-start-reverse"
             >
-              <path d="M 0 1 L 9 5 L 0 9 z" fill={color} />
+              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill={color} />
             </marker>
           ))}
         </defs>
@@ -85,35 +97,36 @@ export default function MoneyFlowChart() {
           const a = nodeById.get(e.from);
           const b = nodeById.get(e.to);
           if (!a || !b) return null;
-          const c = controlPoint(a, b, e.curve);
+          const g = edgeGeometry(a, b, e.curve);
           return (
             <path
               key={e.id}
-              d={`M ${a.x} ${a.y} Q ${c.x} ${c.y} ${b.x} ${b.y}`}
+              d={g.d}
               fill="none"
               stroke={EDGE_COLORS[e.kind]}
-              strokeWidth={STROKE_WIDTH[e.strength]}
+              strokeWidth={e.width}
               strokeDasharray={e.paused ? '4 3' : undefined}
               vectorEffect="non-scaling-stroke"
               markerEnd={`url(#mf-arrow-${e.kind})`}
               className="transition-opacity"
-              opacity={edgeVisible(e.from, e.to) ? (e.paused ? 0.45 : 0.8) : 0.08}
+              opacity={edgeVisible(e.from, e.to) ? (e.paused ? 0.4 : 0.7) : 0.08}
             />
           );
         })}
       </svg>
 
-      {/* Kanten-Labels (Betrag pro Monat, mittig auf der Kurve) */}
+      {/* Kanten-Labels (Betrag pro Monat, entlang der Kurve gestaffelt) */}
       {flow.edges.map((e) => {
         const a = nodeById.get(e.from);
         const b = nodeById.get(e.to);
         if (!a || !b) return null;
-        const p = labelPoint(a, b, e.curve);
+        const p = edgeGeometry(a, b, e.curve).point(e.labelT);
         return (
           <div
             key={`label-${e.id}`}
             className={cn(
               'absolute -translate-x-1/2 -translate-y-1/2 rounded-md border bg-background/90 px-1.5 py-0.5 text-[10px] font-medium tabular-nums transition-opacity',
+              e.labelCompact && 'px-1 py-px text-[9px]',
               e.paused && 'text-muted-foreground',
             )}
             style={{
@@ -130,24 +143,44 @@ export default function MoneyFlowChart() {
       {/* Knoten-Layer */}
       {flow.nodes.map((n) => {
         if (n.kind !== 'account') {
+          // Pseudo-Knoten als Block im Konto-Karten-Format (Quelle/Senke)
           const income = n.kind === 'income';
           const Icon = income ? TrendingUp : TrendingDown;
           return (
             <div
               key={n.id}
               className={cn(
-                'absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm transition-opacity',
-                income
-                  ? 'border-emerald-600/30 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
-                  : 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+                'absolute w-32 -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-card p-2.5 shadow-sm transition-all sm:w-40',
+                hoverNode === n.id && 'ring-2 ring-emerald-600/50',
                 hoverNode !== null && hoverNode !== n.id && 'opacity-40',
               )}
               style={{ left: `${n.x}%`, top: `${n.y}%` }}
               onMouseEnter={() => setHoverNode(n.id)}
               onMouseLeave={() => setHoverNode(null)}
             >
-              <Icon className="h-3.5 w-3.5" />
-              {income ? 'Einnahmen' : 'Ausgaben'}
+              <div className="flex items-center gap-2">
+                <div
+                  className={cn(
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+                    income
+                      ? 'bg-emerald-600/10 text-emerald-600'
+                      : 'bg-rose-500/10 text-rose-500',
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold">
+                    {income ? 'Einnahmen' : 'Ausgaben'}
+                  </div>
+                  <div className="truncate text-[10px] text-muted-foreground">
+                    {income ? 'Zuflüsse' : 'Abflüsse'} pro Monat
+                  </div>
+                </div>
+              </div>
+              <div className="mt-1.5 text-sm font-bold tabular-nums">
+                {formatCents(income ? flow.incomeTotal : flow.expenseTotal)}
+              </div>
             </div>
           );
         }

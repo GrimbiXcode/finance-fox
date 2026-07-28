@@ -281,6 +281,19 @@ Wichtige Konventionen:
   Oberkategorie (Unterkategorien aufgerollt, Sichtbarkeitsfilter) die Summen
   von Jahr und Vorjahr; Ausgaben ohne Kategorie als Zeile `categoryId: null`.
   UI: Seite `src/pages/YearReview.tsx` unter `/auswertung` (Nav „Auswertung").
+- **Geldfluss-Visualisierung**: Seite `src/pages/MoneyFlow.tsx` unter
+  `/geldfluss` (Nav „Geldfluss" nach „Konten") stellt Konten als Knoten und
+  Dauerbuchungen als gerichtete Kanten dar (rein frontendseitig aus
+  `listAccounts`/`listRecurring`). Die reine Funktion `buildMoneyFlow` in
+  `src/lib/moneyflow.ts` baut den Graphen: Konten auf einer Ellipse um die
+  Mitte (≤ 2 Konten: Horizontalanordnung), Pseudo-Knoten „Einnahmen" links
+  und „Ausgaben" rechts, Beträge auf Monat normalisiert (wöchentlich × 52/12,
+  jährlich ÷ 12, gerundet), Kantenstärke in 3 Stufen relativ zum Maximum,
+  pausierte Dauerbuchungen gestrichelt, gegenläufige Kantenpaare über
+  gegenläufige Kurven-Offsets getrennt. Darstellung in
+  `src/components/MoneyFlowChart.tsx`: SVG-Bezier-Kurven mit Arrowhead-
+  Markern und Label-Badges, darüber absolut positionierte HTML-Knoten
+  (Positionen in Prozent); Hover auf einen Knoten hebt seine Kanten hervor.
 - **Szenario-Planung**: `forecast.balance` nimmt optional `incomePct`
   (Skalierung der wiederkehrenden Einnahmen in %, 100 = unverändert, 50–200)
   und `excludeCategoryId` entgegen. Das Szenario wirkt NUR auf zukünftige

@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
   Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, GitBranch,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
@@ -18,6 +18,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/transaktionen', label: 'Transaktionen', icon: ArrowLeftRight },
   { to: '/konten', label: 'Konten', icon: Wallet },
+  { to: '/geldfluss', label: 'Geldfluss', icon: GitBranch },
   { to: '/budgets', label: 'Budgets', icon: Target },
   { to: '/aufteilung', label: 'Aufteilung', icon: Users },
   { to: '/wiederkehrend', label: 'Wiederkehrend', icon: Repeat },

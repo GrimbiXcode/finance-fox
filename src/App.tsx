@@ -6,6 +6,7 @@ import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
 import Transactions from '@/pages/Transactions'
 import Accounts from '@/pages/Accounts'
+import MoneyFlow from '@/pages/MoneyFlow'
 import Budgets from '@/pages/Budgets'
 import Splitting from '@/pages/Splitting'
 import Recurring from '@/pages/Recurring'
@@ -48,6 +49,7 @@ function Root() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/transaktionen" element={<Transactions />} />
         <Route path="/konten" element={<Accounts />} />
+        <Route path="/geldfluss" element={<MoneyFlow />} />
         <Route path="/budgets" element={<Budgets />} />
         <Route path="/aufteilung" element={<Splitting />} />
         <Route path="/wiederkehrend" element={<Recurring />} />

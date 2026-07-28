@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronRight, Paperclip, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +23,23 @@ import { toast } from 'sonner';
 
 type TxType = 'income' | 'expense' | 'transfer';
 
+/** Buchung aus listTransactions, die im Edit-Modus bearbeitet wird */
+export type EditableTransaction = {
+  id: number;
+  type: TxType;
+  accountId: number;
+  toAccountId: number | null;
+  amount: number;
+  categoryId: number | null;
+  userId: number;
+  projectId: number | null;
+  date: string;
+  note: string;
+  recurringId: number | null;
+  splits: { userId: number; amount: number }[];
+  tags: { id: number; name: string; color: string }[];
+};
+
 // Farbpalette wie in der Kategorien-Verwaltung (Einstellungen)
 const CAT_COLORS = ['#f43f5e', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#94a3b8', '#10b981'];
 
@@ -37,33 +54,55 @@ const shareFormatter = new Intl.NumberFormat(getUserLocale(), {
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf';
 
-/** Dialog zum Erfassen einer neuen Buchung (Einnahme, Ausgabe, Umbuchung) */
-export default function TransactionDialog({ defaultType = 'expense' }: { defaultType?: TxType }) {
+/**
+ * Dialog zum Erfassen einer neuen Buchung (Einnahme, Ausgabe, Umbuchung).
+ * Mit `transaction`-Prop Edit-Modus: befüllt alle Felder, die Art-Wahl ist
+ * deaktiviert (Buchungsart ist unveränderlich) und Speichern ruft
+ * updateTransaction mit optionalem Änderungskommentar auf. Belege werden im
+ * Edit-Modus nicht angeboten (dafür gibt es den Belege-Dialog).
+ */
+export default function TransactionDialog({
+  defaultType = 'expense',
+  transaction,
+  trigger,
+}: {
+  defaultType?: TxType;
+  transaction?: EditableTransaction;
+  trigger?: ReactNode;
+}) {
   const { user } = useAuth();
   const { accounts, categories, users, projects, splitTemplates, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
+  const isEdit = transaction !== undefined;
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<TxType>(defaultType);
-  const [amount, setAmount] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [toAccountId, setToAccountId] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [userId, setUserId] = useState('');
-  const [projectId, setProjectId] = useState(''); // '' = Haushalt
-  const [date, setDate] = useState(todayISO());
-  const [note, setNote] = useState('');
-  const [splitEnabled, setSplitEnabled] = useState(false);
-  const [shares, setShares] = useState<Record<number, string>>({});
+  const [type, setType] = useState<TxType>(transaction?.type ?? defaultType);
+  const [amount, setAmount] = useState(transaction ? shareFormatter.format(transaction.amount / 100) : '');
+  const [accountId, setAccountId] = useState(transaction ? String(transaction.accountId) : '');
+  const [toAccountId, setToAccountId] = useState(transaction?.toAccountId ? String(transaction.toAccountId) : '');
+  const [categoryId, setCategoryId] = useState(transaction?.categoryId ? String(transaction.categoryId) : '');
+  const [userId, setUserId] = useState(transaction ? String(transaction.userId) : '');
+  const [projectId, setProjectId] = useState(transaction?.projectId ? String(transaction.projectId) : ''); // '' = Haushalt
+  const [date, setDate] = useState(transaction?.date ?? todayISO());
+  const [note, setNote] = useState(transaction?.note ?? '');
+  const [splitEnabled, setSplitEnabled] = useState((transaction?.splits.length ?? 0) > 0);
+  const [shares, setShares] = useState<Record<number, string>>(() => {
+    const next: Record<number, string> = {};
+    for (const s of transaction?.splits ?? []) next[s.userId] = shareFormatter.format(s.amount / 100);
+    return next;
+  });
+  // Optionaler Kommentar für die Änderungshistorie (nur Edit-Modus)
+  const [comment, setComment] = useState('');
   // Inline-Bereich „Als Vorlage speichern" (aktuelle Anteile als Gewichte)
   const [saveTplOpen, setSaveTplOpen] = useState(false);
   const [saveTplName, setSaveTplName] = useState('');
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  // Im Edit-Modus standardmäßig geöffnet (Kommentarfeld liegt hier)
+  const [detailsOpen, setDetailsOpen] = useState(isEdit);
   // Inline-Bereich für "+ Neue Kategorie" (Muster wie "+ Neuer Typ" im Konto-Dialog)
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   // Gewählte Tags der Buchung + Inline-Bereich für "+ Neuer Tag"
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(transaction?.tags.map((t) => t.id) ?? []);
   const [newTagOpen, setNewTagOpen] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   // Inline-Anlage als Unterkategorie der aktuell gewählten Oberkategorie
@@ -74,6 +113,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   const fileInput = useRef<HTMLInputElement>(null);
 
   const createTx = trpc.finance.createTransaction.useMutation();
+  const updateTx = trpc.finance.updateTransaction.useMutation();
 
   const createTemplate = trpc.finance.createSplitTemplate.useMutation({
     onSuccess: () => {
@@ -220,10 +260,34 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
         return;
       }
       splits = parsed.filter((p) => p.amount > 0);
+    } else if (isEdit && type === 'expense' && transaction.splits.length > 0) {
+      // Bestehende Aufteilung entfernen (Ersetzen-Semantik serverseitig)
+      splits = [];
     }
 
     setSaving(true);
     try {
+      if (isEdit) {
+        // Edit-Modus: partielles Update, Änderungen werden protokolliert
+        await updateTx.mutateAsync({
+          id: transaction.id,
+          amount: cents,
+          date,
+          note,
+          accountId: effectiveAccountId,
+          toAccountId: type === 'transfer' ? effectiveToAccountId : undefined,
+          categoryId: type === 'transfer' ? undefined : categoryId ? Number(categoryId) : null,
+          projectId: projectId ? Number(projectId) : null,
+          userId: effectiveUserId,
+          tagIds: selectedTagIds,
+          splits,
+          comment: comment.trim() ? comment.trim() : undefined,
+        });
+        toast.success('Buchung aktualisiert.');
+        invalidate();
+        setOpen(false);
+        return;
+      }
       // Erst die Buchung speichern, dann die Belege zur neuen ID hochladen
       const created = await createTx.mutateAsync({
         type, accountId: effectiveAccountId,
@@ -310,14 +374,20 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-emerald-600 hover:bg-emerald-700">
-          <Plus className="mr-2 h-4 w-4" /> Neue Buchung
-        </Button>
+        {trigger ?? (
+          <Button className="bg-emerald-600 hover:bg-emerald-700">
+            <Plus className="mr-2 h-4 w-4" /> Neue Buchung
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Neue Buchung</DialogTitle>
-          <DialogDescription>Einnahme, Ausgabe oder Umbuchung zwischen Konten erfassen.</DialogDescription>
+          <DialogTitle>{isEdit ? 'Buchung bearbeiten' : 'Neue Buchung'}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? 'Bestehende Buchung anpassen — jede Änderung wird protokolliert.'
+              : 'Einnahme, Ausgabe oder Umbuchung zwischen Konten erfassen.'}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1">
@@ -325,8 +395,11 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
               <button
                 key={value}
                 type="button"
+                disabled={isEdit}
+                title={isEdit ? 'Die Buchungsart kann nicht geändert werden — bitte löschen und neu anlegen.' : undefined}
                 className={cn(
                   'rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
+                  'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground',
                   type === value && 'bg-background text-foreground shadow-sm',
                   type === value && value === 'expense' && 'text-rose-600 dark:text-rose-400',
                   type === value && value === 'income' && 'text-emerald-600 dark:text-emerald-400',
@@ -535,6 +608,11 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
               <div className="grid grid-cols-2 gap-4">
+                {isEdit && transaction.recurringId !== null && (
+                  <p className="col-span-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    Diese Buchung stammt aus einer Dauerbuchung — die Änderung betrifft nur diese Buchung, nicht die Dauerbuchung.
+                  </p>
+                )}
                 <div className="space-y-2">
                   <Label>{type === 'expense' ? 'Bezahlt von' : 'Person'}</Label>
                   <Select value={String(effectiveUserId || '')} onValueChange={setUserId}>
@@ -619,50 +697,66 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                     </button>
                   )}
                 </div>
+                {isEdit && (
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="edit-comment">Änderungskommentar (optional)</Label>
+                    <Input
+                      id="edit-comment"
+                      placeholder="z. B. Betrag korrigiert"
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Wird zusammen mit den geänderten Feldern im Änderungsverlauf gespeichert.
+                    </p>
+                  </div>
+                )}
               </div>
             </CollapsibleContent>
           </Collapsible>
 
-          <div className="space-y-2">
-            <input
-              ref={fileInput}
-              type="file"
-              accept={ATTACHMENT_ACCEPT}
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                addFiles(e.target.files);
-                e.target.value = ''; // gleiche Datei erneut wählbar machen
-              }}
-            />
-            <button
-              type="button"
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => fileInput.current?.click()}
-            >
-              <Paperclip className="h-3.5 w-3.5" /> Belege hinzufügen
-            </button>
-            {files.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {files.map((file, idx) => (
-                  <span
-                    key={`${file.name}-${idx}`}
-                    className="flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-xs"
-                  >
-                    <span className="max-w-48 truncate">{file.name}</span>
-                    <button
-                      type="button"
-                      title="Datei entfernen"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setFiles((f) => f.filter((_, i) => i !== idx))}
+          {!isEdit && (
+            <div className="space-y-2">
+              <input
+                ref={fileInput}
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addFiles(e.target.files);
+                  e.target.value = ''; // gleiche Datei erneut wählbar machen
+                }}
+              />
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => fileInput.current?.click()}
+              >
+                <Paperclip className="h-3.5 w-3.5" /> Belege hinzufügen
+              </button>
+              {files.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {files.map((file, idx) => (
+                    <span
+                      key={`${file.name}-${idx}`}
+                      className="flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-xs"
                     >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+                      <span className="max-w-48 truncate">{file.name}</span>
+                      <button
+                        type="button"
+                        title="Datei entfernen"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => setFiles((f) => f.filter((_, i) => i !== idx))}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
@@ -671,7 +765,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
             onClick={submit}
             disabled={saving}
           >
-            {saving ? 'Speichern…' : 'Speichern'}
+            {saving ? 'Speichern…' : isEdit ? 'Änderungen speichern' : 'Speichern'}
           </Button>
         </DialogFooter>
       </DialogContent>

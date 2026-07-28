@@ -76,6 +76,7 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "category.created": "Kategorie angelegt",
   "category.deleted": "Kategorie gelöscht",
   "transaction.created": "Buchung erfasst",
+  "transaction.updated": "Buchung bearbeitet",
   "transaction.deleted": "Buchung gelöscht",
   "transaction.imported": "Buchungen importiert",
   "transaction.tags": "Tags einer Buchung geändert",

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -21,6 +21,7 @@ import {
   tags,
   transactions,
   transactionAttachments,
+  transactionChanges,
   transactionSplits,
   transactionTags,
   users,
@@ -72,6 +73,30 @@ const txDetail = (t: {
   `${TYPE_LABELS[t.type]} ${auditAmount(t.amount)} am ${t.date}${t.note ? ` — ${t.note}` : ""}`;
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
+
+/** Ein Feld-Diff-Eintrag der Änderungshistorie (transaction_changes.changes) */
+type ChangeEntry = {
+  field: string;
+  from: string | number | null;
+  to: string | number | null;
+};
+
+/**
+ * Deutsche Feldnamen der Änderungshistorie — hier fürs Audit-Detail;
+ * das Frontend hat sein eigenes Mapping für die Darstellung.
+ */
+const TX_CHANGE_FIELD_LABELS: Record<string, string> = {
+  amount: "Betrag",
+  date: "Datum",
+  note: "Notiz",
+  categoryId: "Kategorie",
+  accountId: "Konto",
+  toAccountId: "Zielkonto",
+  userId: "Person",
+  projectId: "Projekt",
+  tags: "Tags",
+  splits: "Aufteilung",
+};
 
 /**
  * Meilenstein-Benachrichtigung (25/50/75/100 %) für Sparziele — löst aus,
@@ -422,6 +447,9 @@ export const financeRouter = createRouter({
             .run();
           tx.delete(transactionTags)
             .where(eq(transactionTags.transactionId, id))
+            .run();
+          tx.delete(transactionChanges)
+            .where(eq(transactionChanges.transactionId, id))
             .run();
         }
         tx.delete(transactions)
@@ -1116,24 +1144,33 @@ export const financeRouter = createRouter({
   listTransactions: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
-    const [allTxs, splits, attachments, tagRows, allTags] = await Promise.all([
-      db
-        .select()
-        .from(transactions)
-        .orderBy(desc(transactions.date), desc(transactions.id)),
-      db.select().from(transactionSplits),
-      db
-        .select({
-          id: transactionAttachments.id,
-          transactionId: transactionAttachments.transactionId,
-          originalName: transactionAttachments.originalName,
-          mimeType: transactionAttachments.mimeType,
-          sizeBytes: transactionAttachments.sizeBytes,
-        })
-        .from(transactionAttachments),
-      db.select().from(transactionTags),
-      db.select().from(tags),
-    ]);
+    const [allTxs, splits, attachments, tagRows, allTags, changeCounts] =
+      await Promise.all([
+        db
+          .select()
+          .from(transactions)
+          .orderBy(desc(transactions.date), desc(transactions.id)),
+        db.select().from(transactionSplits),
+        db
+          .select({
+            id: transactionAttachments.id,
+            transactionId: transactionAttachments.transactionId,
+            originalName: transactionAttachments.originalName,
+            mimeType: transactionAttachments.mimeType,
+            sizeBytes: transactionAttachments.sizeBytes,
+          })
+          .from(transactionAttachments),
+        db.select().from(transactionTags),
+        db.select().from(tags),
+        // Anzahl Änderungshistorie-Einträge pro Buchung („Bearbeitet"-Indikator)
+        db
+          .select({
+            transactionId: transactionChanges.transactionId,
+            count: count(),
+          })
+          .from(transactionChanges)
+          .groupBy(transactionChanges.transactionId),
+      ]);
     // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
     const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
     const byTx = new Map<number, { userId: number; amount: number }[]>();
@@ -1173,11 +1210,15 @@ export const financeRouter = createRouter({
       list.push({ id: tag.id, name: tag.name, color: tag.color });
       tagsByTx.set(r.transactionId, list);
     }
+    const changeCountByTx = new Map(
+      changeCounts.map(c => [c.transactionId, c.count])
+    );
     return txs.map(t => ({
       ...t,
       splits: byTx.get(t.id) ?? [],
       attachments: attsByTx.get(t.id) ?? [],
       tags: tagsByTx.get(t.id) ?? [],
+      changeCount: changeCountByTx.get(t.id) ?? 0,
     }));
   }),
 
@@ -1349,6 +1390,387 @@ export const financeRouter = createRouter({
       return { id: txId };
     }),
 
+  /**
+   * Buchung bearbeiten (partielle Updates; undefined = unverändert, bei
+   * categoryId/toAccountId/projectId zusätzlich null = entfernen). Die
+   * Buchungsart (type) ist bewusst unveränderlich — dafür löschen + neu
+   * anlegen. Erfordert „edit" auf dem aktuellen Konto; beim Verschieben
+   * (accountId-Wechsel) zusätzlich „edit" auf dem Zielkonto. Splits/Tags
+   * werden ersetzt, wenn sie mitgegeben werden. Jede echte Änderung landet
+   * als Feld-Diff (Referenzen als Namen) samt optionalem Kommentar in
+   * transaction_changes; ohne Änderung wird kein Historien-Eintrag erzeugt.
+   * Budget-Kipp-Prüfung analog createTransaction.
+   */
+  updateTransaction: authedQuery
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        amount: z.number().int().positive().optional(),
+        date: isoDate.optional(),
+        note: z.string().optional(),
+        categoryId: z.number().int().positive().nullable().optional(),
+        accountId: z.number().int().positive().optional(),
+        toAccountId: z.number().int().positive().nullable().optional(),
+        userId: z.number().int().positive().optional(),
+        projectId: z.number().int().positive().nullable().optional(),
+        tagIds: z.array(z.number().int().positive()).max(50).optional(),
+        splits: z
+          .array(
+            z.object({
+              userId: z.number().int().positive(),
+              amount: z.number().int().positive(),
+            })
+          )
+          .optional(),
+        // Optionaler Kommentar für die Änderungshistorie
+        comment: z.string().max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const txRow = await db.query.transactions.findFirst({
+        where: eq(transactions.id, input.id),
+      });
+      if (!txRow) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Buchung nicht gefunden.",
+        });
+      }
+      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      // Verschieben auf ein anderes Konto: „edit" auch dort erforderlich
+      if (input.accountId !== undefined && input.accountId !== txRow.accountId) {
+        await requireAccountAccess(db, ctx.user, input.accountId, "edit");
+      }
+
+      // Effektive neue Werte (undefined = unverändert, null = entfernen)
+      const next = {
+        amount: input.amount ?? txRow.amount,
+        date: input.date ?? txRow.date,
+        note: input.note ?? txRow.note,
+        categoryId:
+          txRow.type === "transfer"
+            ? null
+            : input.categoryId === undefined
+              ? txRow.categoryId
+              : input.categoryId,
+        accountId: input.accountId ?? txRow.accountId,
+        toAccountId:
+          txRow.type === "transfer"
+            ? input.toAccountId === undefined
+              ? txRow.toAccountId
+              : input.toAccountId
+            : null,
+        userId: input.userId ?? txRow.userId,
+        projectId:
+          input.projectId === undefined ? txRow.projectId : input.projectId,
+      };
+
+      // Validierung wie bei createTransaction
+      if (txRow.type === "transfer") {
+        if (!next.toAccountId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Bei Umbuchungen muss ein Zielkonto angegeben werden.",
+          });
+        }
+        if (next.toAccountId === next.accountId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Zielkonto muss ein anderes Konto sein.",
+          });
+        }
+        // Bei geändertem Zielkonto muss dieses zumindest sichtbar sein
+        if (next.toAccountId !== txRow.toAccountId) {
+          await requireAccountAccess(db, ctx.user, next.toAccountId, "view");
+        }
+      }
+      if (next.categoryId) {
+        const cat = await db.query.categories.findFirst({
+          where: eq(categories.id, next.categoryId),
+        });
+        if (!cat) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Die angegebene Kategorie existiert nicht.",
+          });
+        }
+      }
+      if (next.projectId) {
+        const project = await db.query.projects.findFirst({
+          where: eq(projects.id, next.projectId),
+        });
+        if (!project) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Das angegebene Projekt existiert nicht.",
+          });
+        }
+      }
+      if (input.splits !== undefined) {
+        if (txRow.type !== "expense") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Eine Aufteilung ist nur bei Ausgaben möglich.",
+          });
+        }
+        const sum = input.splits.reduce((s, x) => s + x.amount, 0);
+        if (input.splits.length > 0 && sum !== next.amount) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Anteile müssen in Summe dem Betrag entsprechen.",
+          });
+        }
+      }
+      if (input.tagIds && input.tagIds.length > 0) {
+        const allTags = await db.select({ id: tags.id }).from(tags);
+        const known = new Set(allTags.map(t => t.id));
+        if (input.tagIds.some(id => !known.has(id))) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Mindestens ein Tag existiert nicht.",
+          });
+        }
+      }
+
+      // Namen für lesbare Diffs auflösen (Kategorie/Konto/Projekt/Person/Tags)
+      const [allCats, allAccounts, allProjects, allUsers, allTags, oldSplits, oldTagRows] =
+        await Promise.all([
+          db.select().from(categories),
+          db.select().from(accounts),
+          db.select().from(projects),
+          db.select().from(users),
+          db.select().from(tags),
+          db
+            .select()
+            .from(transactionSplits)
+            .where(eq(transactionSplits.transactionId, input.id)),
+          db
+            .select()
+            .from(transactionTags)
+            .where(eq(transactionTags.transactionId, input.id)),
+        ]);
+      const catName = (id: number | null) =>
+        id === null ? null : (allCats.find(c => c.id === id)?.name ?? "?");
+      const accountName = (id: number | null) =>
+        id === null ? null : (allAccounts.find(a => a.id === id)?.name ?? "?");
+      const projectName = (id: number | null) =>
+        id === null ? null : (allProjects.find(p => p.id === id)?.name ?? "?");
+      const userName = (id: number) =>
+        allUsers.find(u => u.id === id)?.name ?? "?";
+
+      // Serverseitiges Feld-Diff — Grundlage der Änderungshistorie
+      const changes: ChangeEntry[] = [];
+      const push = (
+        field: string,
+        from: string | number | null,
+        to: string | number | null
+      ) => {
+        if (from !== to) changes.push({ field, from, to });
+      };
+      push("amount", txRow.amount, next.amount);
+      push("date", txRow.date, next.date);
+      push("note", txRow.note, next.note);
+      push("categoryId", catName(txRow.categoryId), catName(next.categoryId));
+      push(
+        "accountId",
+        accountName(txRow.accountId),
+        accountName(next.accountId)
+      );
+      if (txRow.type === "transfer") {
+        push(
+          "toAccountId",
+          accountName(txRow.toAccountId),
+          accountName(next.toAccountId)
+        );
+      }
+      push("userId", userName(txRow.userId), userName(next.userId));
+      push(
+        "projectId",
+        projectName(txRow.projectId),
+        projectName(next.projectId)
+      );
+
+      // Tags: Ersetzen, wenn mitgegeben — Diff als lesbare Namensliste
+      const wantedTagIds =
+        input.tagIds === undefined ? undefined : [...new Set(input.tagIds)];
+      if (wantedTagIds !== undefined) {
+        const sortIds = (ids: number[]) => [...ids].sort((a, b) => a - b);
+        const oldIds = oldTagRows.map(r => r.tagId);
+        if (
+          JSON.stringify(sortIds(oldIds)) !==
+          JSON.stringify(sortIds(wantedTagIds))
+        ) {
+          const names = (ids: number[]) =>
+            ids
+              .map(id => allTags.find(t => t.id === id)?.name ?? "?")
+              .join(", ") || null;
+          changes.push({
+            field: "tags",
+            from: names(oldIds),
+            to: names(wantedTagIds),
+          });
+        }
+      }
+
+      // Splits: Ersetzen, wenn mitgegeben und geändert — Diff als Kurzform
+      // „Name: 12,34" (Beträge in auditAmount-Schreibweise)
+      let newSplits: { userId: number; amount: number }[] | undefined;
+      if (input.splits !== undefined) {
+        const sortSplits = (list: { userId: number; amount: number }[]) =>
+          [...list].sort((a, b) => a.userId - b.userId || a.amount - b.amount);
+        const oldList = oldSplits.map(s => ({
+          userId: s.userId,
+          amount: s.amount,
+        }));
+        if (
+          JSON.stringify(sortSplits(oldList)) !==
+          JSON.stringify(sortSplits(input.splits))
+        ) {
+          const fmt = (list: { userId: number; amount: number }[]) =>
+            list
+              .map(s => `${userName(s.userId)}: ${auditAmount(s.amount)}`)
+              .join(", ") || null;
+          changes.push({
+            field: "splits",
+            from: fmt(oldList),
+            to: fmt(input.splits),
+          });
+          newSplits = input.splits;
+        }
+      }
+
+      // Budget-Wächter wie bei createTransaction: Zustand vor dem Update
+      // festhalten, um einen Kipppunkt über 100 % zu erkennen
+      const budgetsBefore =
+        txRow.type === "expense" && next.categoryId
+          ? await computeBudgetStatuses(db, ctx.user)
+          : null;
+
+      db.transaction(tx => {
+        tx.update(transactions)
+          .set(next)
+          .where(eq(transactions.id, input.id))
+          .run();
+        if (newSplits !== undefined) {
+          tx.delete(transactionSplits)
+            .where(eq(transactionSplits.transactionId, input.id))
+            .run();
+          for (const s of newSplits) {
+            tx.insert(transactionSplits)
+              .values({ transactionId: input.id, ...s })
+              .run();
+          }
+        }
+        if (wantedTagIds !== undefined) {
+          tx.delete(transactionTags)
+            .where(eq(transactionTags.transactionId, input.id))
+            .run();
+          for (const tagId of wantedTagIds) {
+            tx.insert(transactionTags)
+              .values({ transactionId: input.id, tagId })
+              .run();
+          }
+        }
+        // Historien-Eintrag nur bei echter Änderung (leerer Diff = keiner)
+        if (changes.length > 0) {
+          tx.insert(transactionChanges)
+            .values({
+              transactionId: input.id,
+              userId: ctx.user.id,
+              comment: input.comment?.trim() ?? "",
+              changes: JSON.stringify(changes),
+              createdAt: new Date(),
+            })
+            .run();
+        }
+      });
+
+      if (changes.length > 0) {
+        const fields = changes
+          .map(c => TX_CHANGE_FIELD_LABELS[c.field] ?? c.field)
+          .join(", ");
+        logAudit(
+          db,
+          ctx.user.id,
+          "transaction.updated",
+          "transaction",
+          input.id,
+          `${txDetail({ ...txRow, ...next })} — geändert: ${fields}${input.comment?.trim() ? ` — ${input.comment.trim()}` : ""}`
+        );
+      }
+
+      if (budgetsBefore && next.categoryId) {
+        // Nur Budgets prüfen, die die (neue) Kategorie oder deren
+        // Oberkategorie betreffen — Benachrichtigung beim Kippen von
+        // ≤100 % auf >100 %, danach nicht erneut.
+        const cat = await db.query.categories.findFirst({
+          where: eq(categories.id, next.categoryId),
+        });
+        const budgetsAfter = await computeBudgetStatuses(db, ctx.user);
+        for (const status of budgetsAfter) {
+          const relevant =
+            status.budget.categoryId === next.categoryId ||
+            status.budget.categoryId === cat?.parentId;
+          if (!relevant) continue;
+          const before = budgetsBefore.find(
+            b => b.budget.id === status.budget.id
+          );
+          if (before && before.percent <= 100 && status.percent > 100) {
+            const budgetCat = await db.query.categories.findFirst({
+              where: eq(categories.id, status.budget.categoryId),
+            });
+            await sendNotification(
+              db,
+              "budget",
+              `Budget überschritten: ${budgetCat?.name ?? "Unbekannt"}`,
+              `Das Budget „${budgetCat?.name ?? "Unbekannt"}“ liegt jetzt bei ${status.percent} %.`
+            );
+          }
+        }
+      }
+      return { ok: true };
+    }),
+
+  /**
+   * Änderungshistorie einer Buchung (neueste zuerst), mit Name/Farbe des
+   * ändernden Nutzers. Erfordert „view" auf dem Buchungskonto.
+   */
+  listTransactionChanges: authedQuery
+    .input(z.object({ transactionId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const txRow = await db.query.transactions.findFirst({
+        where: eq(transactions.id, input.transactionId),
+      });
+      if (!txRow) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Buchung nicht gefunden.",
+        });
+      }
+      await requireAccountAccess(db, ctx.user, txRow.accountId, "view");
+      const rows = await db
+        .select({
+          id: transactionChanges.id,
+          transactionId: transactionChanges.transactionId,
+          userId: transactionChanges.userId,
+          comment: transactionChanges.comment,
+          changes: transactionChanges.changes,
+          createdAt: transactionChanges.createdAt,
+          userName: users.name,
+          userColor: users.color,
+        })
+        .from(transactionChanges)
+        .innerJoin(users, eq(transactionChanges.userId, users.id))
+        .where(eq(transactionChanges.transactionId, input.transactionId))
+        .orderBy(desc(transactionChanges.createdAt), desc(transactionChanges.id));
+      return rows.map(r => ({
+        ...r,
+        changes: JSON.parse(r.changes) as ChangeEntry[],
+      }));
+    }),
+
   deleteTransaction: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
@@ -1371,6 +1793,9 @@ export const financeRouter = createRouter({
           .run();
         tx.delete(transactionTags)
           .where(eq(transactionTags.transactionId, input.id))
+          .run();
+        tx.delete(transactionChanges)
+          .where(eq(transactionChanges.transactionId, input.id))
           .run();
         tx.delete(transactions).where(eq(transactions.id, input.id)).run();
       });
@@ -2091,6 +2516,7 @@ export const financeRouter = createRouter({
     db.transaction(tx => {
       tx.delete(transactionSplits).where(ne(transactionSplits.id, -1)).run();
       tx.delete(transactionTags).where(ne(transactionTags.id, -1)).run();
+      tx.delete(transactionChanges).where(ne(transactionChanges.id, -1)).run();
       tx.delete(tags).where(ne(tags.id, -1)).run();
       tx.delete(transactions).where(ne(transactions.id, -1)).run();
       tx.delete(recurring).where(ne(recurring.id, -1)).run();

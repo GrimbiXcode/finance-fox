@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, Download, Paperclip, Search, Tag, Trash2 } from 'lucide-react';
+import { Check, Download, Paperclip, Pencil, Search, Tag, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import TransactionAttachmentsDialog from '@/components/TransactionAttachmentsDialog';
+import TransactionHistoryDialog from '@/components/TransactionHistoryDialog';
 import CsvImportDialog from '@/components/CsvImportDialog';
 import CamtImportDialog from '@/components/CamtImportDialog';
 import { trpc } from '@/providers/trpc';
@@ -94,6 +95,12 @@ export default function Transactions() {
     if (t.type === 'expense') return acc - t.amount;
     return acc;
   }, 0);
+
+  // Zugriffsstufe pro Konto (für den Bearbeiten-Button: nur bei „edit")
+  const accessByAccount = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.access])),
+    [accounts],
+  );
 
   return (
     <div className="space-y-6">
@@ -198,6 +205,21 @@ export default function Transactions() {
                       <div className="font-medium">{t.note || (t.type === 'transfer' ? 'Umbuchung' : '—')}</div>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {t.splits.length > 0 && <Badge variant="secondary" className="text-[10px]">geteilt</Badge>}
+                        {t.changeCount > 0 && (
+                          <TransactionHistoryDialog
+                            transactionId={t.id}
+                            note={t.note}
+                            trigger={
+                              <Badge
+                                variant="secondary"
+                                className="cursor-pointer text-[10px] hover:bg-muted"
+                                title="Änderungsverlauf anzeigen"
+                              >
+                                bearbeitet
+                              </Badge>
+                            }
+                          />
+                        )}
                         {project && (
                           <Badge variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${project.color}` }}>
                             {project.name}
@@ -238,6 +260,20 @@ export default function Transactions() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end">
+                        {accessByAccount.get(t.accountId) === 'edit' && (
+                          // Key erzwingt ein Remount, wenn sich die Buchung
+                          // ändert (Edit → changeCount, Tag-Popover → tags) —
+                          // so befüllen die State-Initialisierer stets aktuell
+                          <TransactionDialog
+                            key={`${t.id}:${t.changeCount}:${t.tags.map((x) => x.id).join(',')}`}
+                            transaction={t}
+                            trigger={
+                              <Button variant="ghost" size="icon" title="Bearbeiten">
+                                <Pencil className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            }
+                          />
+                        )}
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon" title="Tags bearbeiten">

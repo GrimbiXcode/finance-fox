@@ -69,6 +69,10 @@ Erfassungsmaske.
 ## 3. Erweiterungsideen (Backlog, unbewertet)
 
 ### A. Transaktionen & Kategorien
+- ✅ Buchungen bearbeiten mit Änderungshistorie (Stift-Button in der
+  Transaktionsliste, type unveränderlich, optionaler Änderungskommentar,
+  serverseitiges Feld-Diff in `transaction_changes`, „bearbeitet"-Badge
+  öffnet den Änderungsverlauf)
 - Tags/Labels zusätzlich zur Kategorie (mehrere pro Buchung), Volltextsuche über Notizen ✅
   (Tags haushaltsweit: `tags`/`transaction_tags`, Verwaltung in den Einstellungen,
   Auswahl im Buchungsdialog, Filter + Badges + Tag-Suche in der Transaktionsliste;

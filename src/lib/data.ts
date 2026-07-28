@@ -46,6 +46,7 @@ export function useInvalidateFinance() {
     utils.finance.listAccountTypes.invalidate();
     utils.finance.listBanks.invalidate();
     utils.finance.listTransactions.invalidate();
+    utils.finance.listTransactionChanges.invalidate();
     utils.finance.listBudgets.invalidate();
     utils.finance.listBudgetStatus.invalidate();
     utils.finance.listRecurring.invalidate();

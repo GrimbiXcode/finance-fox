@@ -241,6 +241,34 @@ Wichtige Konventionen:
   Tag-Filter + Tag-Popover zum nachträglichen Taggen in der
   Transaktionsliste (Tag-Namen sind Teil des Such-Haystacks), Verwaltung
   als Card „Tags" in den Einstellungen. Tests: `api/tags.test.ts`.
+- **Buchungen bearbeiten (Änderungshistorie)**: `finance.updateTransaction`
+  nimmt partielle Updates entgegen (undefined = unverändert, bei
+  categoryId/toAccountId/projectId zusätzlich null = entfernen; Splits/Tags
+  werden ersetzt, wenn mitgegeben). Die Buchungsart **type ist
+  unveränderlich** (dafür löschen + neu anlegen) und nicht Teil des Inputs.
+  Rechte: „edit" auf dem aktuellen Konto, beim Verschieben (accountId-
+  Wechsel) zusätzlich „edit" auf dem Zielkonto; Validierung wie
+  createTransaction (Splits-Summe = Betrag, Kategorie/Projekt/Tags
+  existieren, Zielkonto ≠ Quellkonto), Budget-Kipp-Prüfung analog
+  createTransaction. Jede echte Änderung landet als Eintrag in
+  `transaction_changes` (transactionId, userId, comment Default '',
+  changes = JSON-Text `[{field, from, to}]` — serverseitiges Feld-Diff mit
+  aufgelösten Namen für Kategorie/Konto/Projekt/Person, Beträge in Cent,
+  Splits/Tags als lesbare Kurzform); ohne Änderung kein Eintrag (ein
+  Kommentar allein erzeugt keinen). Audit `transaction.updated` nur bei
+  echter Änderung. Lesen über `finance.listTransactionChanges`
+  („view"-Recht, absteigend, userName/userColor-Join, changes geparst);
+  `listTransactions` liefert pro Buchung `changeCount` (batched).
+  Kaskaden: deleteTransaction/deleteAccount/resetFinanceData räumen
+  transaction_changes ab. UI: Edit-Modus im TransactionDialog (Prop
+  `transaction`, Art-Wahl deaktiviert mit title-Hinweis,
+  Änderungskommentar-Feld im Details-Bereich, Hinweis bei Dauerbuchungs-
+  Instanzen, Belege nur im Create-Modus), Stift-Button in der
+  Transaktionsliste (nur bei „edit", Remount-Key aus changeCount/tags),
+  „bearbeitet"-Badge bei changeCount > 0 öffnet den Änderungsverlauf-
+  Dialog (`src/components/TransactionHistoryDialog.tsx`, deutsches
+  Feldnamen-Mapping, formatCents/formatDate, Kommentar kursiv).
+  Tests: `api/transactionEdit.test.ts`.
 - **Schnellerfassung**: `src/components/QuickAddDialog.tsx` (Button „Schnell"
   im Layout-Header) bucht eine Ausgabe mit nur Betrag + Notiz; Defaults:
   erstes Konto mit `access === "edit"`, zuletzt verwendete Ausgaben-Kategorie,

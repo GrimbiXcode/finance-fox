@@ -149,6 +149,26 @@ export const transactionSplits = sqliteTable(
   t => [index("split_tx_idx").on(t.transactionId)]
 );
 
+/**
+ * Änderungshistorie einer Buchung („Buchungen bearbeiten"): ein Eintrag pro
+ * updateTransaction-Mutation mit echter Änderung. changes = JSON-Text
+ * [{field, from, to}] — serverseitig erzeugtes Feld-Diff mit aufgelösten
+ * Namen (Kategorie/Konto/Projekt/Person); comment ist optional (Default '').
+ * Die Buchungsart (type) ist bewusst unveränderlich und taucht hier nie auf.
+ */
+export const transactionChanges = sqliteTable(
+  "transaction_changes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    transactionId: integer("transaction_id").notNull(),
+    userId: integer("user_id").notNull(), // wer hat geändert
+    comment: text("comment").notNull().default(""),
+    changes: text("changes").notNull(), // JSON: [{ field, from, to }]
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("tx_change_tx_idx").on(t.transactionId)]
+);
+
 /** Beleg-/Foto-Anhänge einer Buchung; Dateien liegen im Attachments-Verzeichnis */
 export const transactionAttachments = sqliteTable(
   "transaction_attachments",

@@ -104,6 +104,15 @@ export function ensureSchema() {
       amount INTEGER NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS split_tx_idx ON transaction_splits (transaction_id)`,
+    `CREATE TABLE IF NOT EXISTS transaction_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transaction_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      comment TEXT NOT NULL DEFAULT '',
+      changes TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS tx_change_tx_idx ON transaction_changes (transaction_id)`,
     `CREATE TABLE IF NOT EXISTS transaction_attachments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       transaction_id INTEGER NOT NULL,

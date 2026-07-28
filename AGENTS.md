@@ -329,6 +329,18 @@ Wichtige Konventionen:
   Saldo-Prognose sind Transfers zwischen zwei sichtbaren Konten neutral, bei
   nur einer sichtbaren Seite wirken sie als Ab-/Zufluss (nicht in
   `recurringIncome`/`recurringExpense`).
+- **Dauerbuchungen bearbeiten**: `finance.updateRecurring` nimmt partielle
+  Updates entgegen (undefined = unverändert, bei categoryId zusätzlich null =
+  entfernen); die Art **type ist unveränderlich** (dafür löschen + neu
+  anlegen). Validierung wie `createRecurring` (Betrag positiv, isoDate,
+  Transfer: Zielkonto ≠ Quellkonto), Rechte: „edit" auf dem aktuellen Konto,
+  bei Konto-Wechsel „edit" aufs neue, bei Transfer-Zielwechsel „view" aufs
+  Ziel; der Cron-Job verbucht ab dem neuen `nextDate`. Audit
+  `recurring.updated`. UI: gemeinsame Formular-Komponente in
+  `src/pages/Recurring.tsx` (Anlegen + Bearbeiten-Dialog, Art-Wahl im Edit
+  deaktiviert), Stift-Button nur bei „edit" aufs Konto, Filter-Zeile
+  (Typ/Konto/Status) mit Zähler und Karten-/Tabellenansicht. Tests:
+  `api/recurringEdit.test.ts`.
 - **Kategorien-Hierarchie**: `categories.parentId` NULL = Oberkategorie, sonst
   Verweis auf die Oberkategorie — genau EINE Ebene (Unterkategorien dürfen
   keine Kinder haben, wird in `finance.createCategory` geprüft). Unter-
@@ -366,7 +378,8 @@ Wichtige Konventionen:
   plus Icons in `public/icons/` (Quell-SVG `icon.svg`, PNGs daraus gerendert),
   eingebunden in `index.html`.
 - **UI-State in `localStorage`**: Darstellungsart der Konten-Seite
-  (Karten/Tabelle) unter dem Key `ff-accounts-view`.
+  (Karten/Tabelle) unter dem Key `ff-accounts-view`, der Dauerbuchungen-Seite
+  unter `ff-recurring-view`.
 - **Beleg-Anhänge**: Metadaten in `transaction_attachments`, Dateien mit
   UUID-Dateinamen im Verzeichnis `ATTACHMENTS_DIR` (Default: `<DB-Verzeichnis>/attachments`,
   bei In-Memory-DB `./data/attachments`). Upload/Download/Löschen über die

@@ -1948,6 +1948,87 @@ export const financeRouter = createRouter({
       return { ok: true };
     }),
 
+  updateRecurring: authedQuery
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        // type ist bewusst NICHT änderbar (dafür löschen + neu anlegen)
+        accountId: z.number().int().positive().optional(),
+        toAccountId: z.number().int().positive().optional(),
+        amount: z.number().int().positive().optional(),
+        categoryId: z.number().int().positive().nullable().optional(),
+        userId: z.number().int().positive().optional(),
+        note: z.string().optional(),
+        interval: z.enum(["weekly", "monthly", "yearly"]).optional(),
+        nextDate: isoDate.optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.recurring.findFirst({
+        where: eq(recurring.id, input.id),
+      });
+      if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+      await requireAccountAccess(db, ctx.user, row.accountId, "edit");
+
+      const accountId = input.accountId ?? row.accountId;
+      // Bei Konto-Wechsel: „edit" auf dem neuen Konto nötig
+      if (input.accountId !== undefined && input.accountId !== row.accountId) {
+        await requireAccountAccess(db, ctx.user, input.accountId, "edit");
+      }
+
+      let toAccountId = row.toAccountId;
+      if (row.type === "transfer") {
+        if (input.toAccountId !== undefined) {
+          toAccountId = input.toAccountId;
+          // Zielkonto muss zumindest sichtbar sein (wie bei createRecurring)
+          await requireAccountAccess(db, ctx.user, input.toAccountId, "view");
+        }
+        if (!toAccountId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Bei Umbuchungen muss ein Zielkonto angegeben werden.",
+          });
+        }
+        if (toAccountId === accountId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Zielkonto muss ein anderes Konto sein.",
+          });
+        }
+      }
+
+      await db
+        .update(recurring)
+        .set({
+          accountId,
+          toAccountId: row.type === "transfer" ? toAccountId : null,
+          amount: input.amount ?? row.amount,
+          // Kategorie ist bei Umbuchungen irrelevant; null entfernt sie
+          categoryId:
+            row.type === "transfer"
+              ? null
+              : input.categoryId === undefined
+                ? row.categoryId
+                : input.categoryId,
+          userId: input.userId ?? row.userId,
+          note: input.note ?? row.note,
+          interval: input.interval ?? row.interval,
+          // Der Cron-Job verbucht ab dem neuen Termin (nächste Fälligkeit)
+          nextDate: input.nextDate ?? row.nextDate,
+        })
+        .where(eq(recurring.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "recurring.updated",
+        "recurring",
+        input.id,
+        `${row.note || TYPE_LABELS[row.type]}: bearbeitet`
+      );
+      return { ok: true };
+    }),
+
   toggleRecurring: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {

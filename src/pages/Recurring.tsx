@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { ArrowRight, Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
+import {
+  ArrowRight, LayoutGrid, Pause, Pencil, Play, Plus, Table as TableIcon, Trash2, Zap,
+} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
 import { amountPlaceholder, currencySymbol, formatCents, formatDate, parseEuro, todayISO } from '@/lib/finance';
@@ -23,27 +26,194 @@ const intervalLabel: Record<Interval, string> = {
   weekly: 'Wöchentlich', monthly: 'Monatlich', yearly: 'Jährlich',
 };
 type RecType = 'income' | 'expense' | 'transfer';
+const typeLabel: Record<RecType, string> = {
+  expense: 'Ausgabe', income: 'Einnahme', transfer: 'Umbuchung',
+};
+
+type ViewMode = 'cards' | 'table';
+const VIEW_KEY = 'ff-recurring-view';
+
+/** Letzte Darstellungsart aus localStorage lesen (Default: Karten) */
+const readViewMode = (): ViewMode =>
+  localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'cards';
+
+type RecurringRow = ReturnType<typeof useFinanceData>['recurring'][number];
+
+/** Formularwerte als Strings (1:1 an die Input-Felder gebunden) */
+interface RecurringFormValues {
+  type: RecType;
+  amount: string;
+  accountId: string;
+  toAccountId: string;
+  categoryId: string;
+  userId: string;
+  note: string;
+  interval: Interval;
+  nextDate: string;
+}
+
+const emptyForm = (): RecurringFormValues => ({
+  type: 'expense', amount: '', accountId: '', toAccountId: '', categoryId: '',
+  userId: '', note: '', interval: 'monthly', nextDate: todayISO(),
+});
+
+const formFromRow = (r: RecurringRow): RecurringFormValues => ({
+  type: r.type,
+  amount: (r.amount / 100).toString(),
+  accountId: String(r.accountId),
+  toAccountId: r.toAccountId ? String(r.toAccountId) : '',
+  categoryId: r.categoryId ? String(r.categoryId) : '',
+  userId: String(r.userId),
+  note: r.note,
+  interval: r.interval,
+  nextDate: r.nextDate,
+});
+
+/**
+ * Gemeinsames Formular für Anlegen und Bearbeiten — im Edit-Modus ist die
+ * Art-Wahl deaktiviert (die Art einer Dauerbuchung ist unveränderlich).
+ */
+function RecurringForm({
+  initial, editMode, isPending, submitLabel, onCancel, onSubmit,
+}: {
+  initial: RecurringFormValues;
+  editMode: boolean;
+  isPending: boolean;
+  submitLabel: string;
+  onCancel: () => void;
+  onSubmit: (values: RecurringFormValues) => void;
+}) {
+  const { user } = useAuth();
+  const { accounts, categories, users } = useFinanceData();
+  const [values, setValues] = useState(initial);
+  const set = <K extends keyof RecurringFormValues>(key: K, value: RecurringFormValues[K]) =>
+    setValues((prev) => ({ ...prev, [key]: value }));
+  const typeButton = (t: RecType, label: string, activeClass: string) => (
+    <Button
+      type="button"
+      variant={values.type === t ? 'default' : 'outline'}
+      className={values.type === t ? activeClass : ''}
+      disabled={editMode}
+      title={editMode ? 'Die Art kann nicht geändert werden — lösche die Dauerbuchung und lege sie neu an.' : undefined}
+      onClick={() => set('type', t)}
+    >
+      {label}
+    </Button>
+  );
+
+  return (
+    <>
+      <div className="grid gap-4 py-2">
+        <div className="grid grid-cols-3 gap-2">
+          {typeButton('expense', 'Ausgabe', 'bg-rose-600 hover:bg-rose-700')}
+          {typeButton('income', 'Einnahme', 'bg-emerald-600 hover:bg-emerald-700')}
+          {typeButton('transfer', 'Umbuchung', 'bg-sky-600 hover:bg-sky-700')}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Betrag ({currencySymbol()})</Label>
+            <Input inputMode="decimal" placeholder={amountPlaceholder} value={values.amount} onChange={(e) => set('amount', e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Intervall</Label>
+            <Select value={values.interval} onValueChange={(v) => set('interval', v as Interval)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(intervalLabel).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>{values.type === 'transfer' ? 'Von Konto' : 'Konto'}</Label>
+            <Select value={values.accountId} onValueChange={(v) => set('accountId', v)}>
+              <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {values.type === 'transfer' ? (
+            <div className="space-y-2">
+              <Label>Nach Konto</Label>
+              <Select value={values.toAccountId} onValueChange={(v) => set('toAccountId', v)}>
+                <SelectTrigger><SelectValue placeholder="Zielkonto" /></SelectTrigger>
+                <SelectContent>
+                  {accounts.filter((a) => String(a.id) !== values.accountId).map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Kategorie</Label>
+              <Select value={values.categoryId} onValueChange={(v) => set('categoryId', v)}>
+                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+                <SelectContent>
+                  {categories.filter((c) => c.type === values.type).map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Person</Label>
+            <Select value={values.userId} onValueChange={(v) => set('userId', v)}>
+              <SelectTrigger><SelectValue placeholder={user?.name} /></SelectTrigger>
+              <SelectContent>
+                {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Nächste Fälligkeit</Label>
+            <Input type="date" value={values.nextDate} onChange={(e) => set('nextDate', e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Notiz</Label>
+          <Input placeholder="z. B. Miete" value={values.note} onChange={(e) => set('note', e.target.value)} />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>Abbrechen</Button>
+        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSubmit(values)} disabled={isPending}>
+          {submitLabel}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
 
 export default function Recurring() {
   const { user } = useAuth();
   const { accounts, categories, recurring, users } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<RecType>('expense');
-  const [amount, setAmount] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [toAccountId, setToAccountId] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [userId, setUserId] = useState('');
-  const [note, setNote] = useState('');
-  const [interval, setIntervalVal] = useState<Interval>('monthly');
-  const [nextDate, setNextDate] = useState(todayISO());
+  const [editing, setEditing] = useState<RecurringRow | null>(null);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [accountFilter, setAccountFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [view, setView] = useState<ViewMode>(readViewMode);
 
   const createRecurring = trpc.finance.createRecurring.useMutation({
     onSuccess: () => {
       toast.success('Dauerbuchung angelegt — fällige Buchungen erzeugt der Server automatisch.');
       invalidate();
-      setOpen(false); setAmount(''); setNote(''); setToAccountId('');
+      setOpen(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const updateRecurring = trpc.finance.updateRecurring.useMutation({
+    onSuccess: () => {
+      toast.success('Dauerbuchung aktualisiert.');
+      invalidate();
+      setEditing(null);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -56,22 +226,73 @@ export default function Recurring() {
     },
   });
 
-  const submit = () => {
-    const cents = parseEuro(amount);
-    const accId = Number(accountId) || accounts[0]?.id;
-    const toAccId = Number(toAccountId);
-    if (cents <= 0 || !accId) { toast.error('Betrag und Konto angeben.'); return; }
-    if (type === 'transfer' && (!toAccId || toAccId === accId)) {
-      toast.error('Zielkonto muss ein anderes Konto sein.'); return;
+  const switchView = (v: ViewMode) => {
+    setView(v);
+    localStorage.setItem(VIEW_KEY, v);
+  };
+
+  /** Gemeinsame Vorab-Prüfung für Anlegen und Bearbeiten */
+  const validateForm = (v: RecurringFormValues) => {
+    const cents = parseEuro(v.amount);
+    const accId = Number(v.accountId) || accounts[0]?.id;
+    const toAccId = Number(v.toAccountId);
+    if (cents <= 0 || !accId) { toast.error('Betrag und Konto angeben.'); return null; }
+    if (v.type === 'transfer' && (!toAccId || toAccId === accId)) {
+      toast.error('Zielkonto muss ein anderes Konto sein.'); return null;
     }
+    return { cents, accId, toAccId };
+  };
+
+  const submitCreate = (v: RecurringFormValues) => {
+    const parsed = validateForm(v);
+    if (!parsed) return;
     createRecurring.mutate({
-      type, amount: cents, accountId: accId,
-      toAccountId: type === 'transfer' ? toAccId : undefined,
-      categoryId: type !== 'transfer' && categoryId ? Number(categoryId) : undefined,
-      userId: Number(userId) || user?.id || 0,
-      note: note.trim(), interval, nextDate,
+      type: v.type, amount: parsed.cents, accountId: parsed.accId,
+      toAccountId: v.type === 'transfer' ? parsed.toAccId : undefined,
+      categoryId: v.type !== 'transfer' && v.categoryId ? Number(v.categoryId) : undefined,
+      userId: Number(v.userId) || user?.id || 0,
+      note: v.note.trim(), interval: v.interval, nextDate: v.nextDate,
     });
   };
+
+  const submitEdit = (v: RecurringFormValues) => {
+    if (!editing) return;
+    const parsed = validateForm(v);
+    if (!parsed) return;
+    updateRecurring.mutate({
+      id: editing.id,
+      amount: parsed.cents,
+      accountId: parsed.accId,
+      toAccountId: v.type === 'transfer' ? parsed.toAccId : undefined,
+      // Leere Kategorie entfernen (null), Umbuchungen haben keine Kategorie
+      categoryId: v.type !== 'transfer' ? (v.categoryId ? Number(v.categoryId) : null) : undefined,
+      userId: Number(v.userId) || editing.userId,
+      note: v.note.trim(),
+      interval: v.interval,
+      nextDate: v.nextDate,
+    });
+  };
+
+  const accessById = new Map(accounts.map((a) => [a.id, a.access]));
+  const canEdit = (r: RecurringRow) => accessById.get(r.accountId) === 'edit';
+
+  const filtered = recurring.filter((r) => {
+    if (typeFilter !== 'all' && r.type !== typeFilter) return false;
+    if (accountFilter !== 'all') {
+      const id = Number(accountFilter);
+      if (r.accountId !== id && r.toAccountId !== id) return false;
+    }
+    if (statusFilter === 'active' && !r.active) return false;
+    if (statusFilter === 'paused' && r.active) return false;
+    return true;
+  });
+
+  const editButton = (r: RecurringRow) =>
+    canEdit(r) ? (
+      <Button variant="ghost" size="icon" title="Bearbeiten" onClick={() => setEditing(r)}>
+        <Pencil className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+      </Button>
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -92,158 +313,244 @@ export default function Recurring() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Neue wiederkehrende Buchung</DialogTitle></DialogHeader>
-              <div className="grid gap-4 py-2">
-                <div className="grid grid-cols-3 gap-2">
-                  <Button type="button" variant={type === 'expense' ? 'default' : 'outline'} className={type === 'expense' ? 'bg-rose-600 hover:bg-rose-700' : ''} onClick={() => setType('expense')}>Ausgabe</Button>
-                  <Button type="button" variant={type === 'income' ? 'default' : 'outline'} className={type === 'income' ? 'bg-emerald-600 hover:bg-emerald-700' : ''} onClick={() => setType('income')}>Einnahme</Button>
-                  <Button type="button" variant={type === 'transfer' ? 'default' : 'outline'} className={type === 'transfer' ? 'bg-sky-600 hover:bg-sky-700' : ''} onClick={() => setType('transfer')}>Umbuchung</Button>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Betrag ({currencySymbol()})</Label>
-                    <Input inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Intervall</Label>
-                    <Select value={interval} onValueChange={(v) => setIntervalVal(v as Interval)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(intervalLabel).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{type === 'transfer' ? 'Von Konto' : 'Konto'}</Label>
-                    <Select value={accountId} onValueChange={setAccountId}>
-                      <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {type === 'transfer' ? (
-                    <div className="space-y-2">
-                      <Label>Nach Konto</Label>
-                      <Select value={toAccountId} onValueChange={setToAccountId}>
-                        <SelectTrigger><SelectValue placeholder="Zielkonto" /></SelectTrigger>
-                        <SelectContent>
-                          {accounts.filter((a) => String(a.id) !== accountId).map((a) => (
-                            <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Label>Kategorie</Label>
-                      <Select value={categoryId} onValueChange={setCategoryId}>
-                        <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                        <SelectContent>
-                          {categories.filter((c) => c.type === type).map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Person</Label>
-                    <Select value={userId} onValueChange={setUserId}>
-                      <SelectTrigger><SelectValue placeholder={user?.name} /></SelectTrigger>
-                      <SelectContent>
-                        {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Nächste Fälligkeit</Label>
-                    <Input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Notiz</Label>
-                  <Input placeholder="z. B. Miete" value={note} onChange={(e) => setNote(e.target.value)} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={createRecurring.isPending}>Anlegen</Button>
-              </DialogFooter>
+              <RecurringForm
+                initial={emptyForm()}
+                editMode={false}
+                isPending={createRecurring.isPending}
+                submitLabel="Anlegen"
+                onCancel={() => setOpen(false)}
+                onSubmit={submitCreate}
+              />
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {recurring.length === 0 && (
-          <Card className="sm:col-span-2 xl:col-span-3">
-            <CardContent className="py-10 text-center text-muted-foreground">
-              Noch keine Dauerbuchungen angelegt.
-            </CardContent>
-          </Card>
-        )}
-        {recurring.map((r) => {
-          const cat = categories.find((c) => c.id === r.categoryId);
-          const account = accounts.find((a) => a.id === r.accountId);
-          const toAccount = r.toAccountId ? accounts.find((a) => a.id === r.toAccountId) : undefined;
-          const owner = users.find((u) => u.id === r.userId);
-          return (
-            <Card key={r.id} className={cn(!r.active && 'opacity-60')}>
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-base">
-                      {r.note || (r.type === 'transfer' ? 'Umbuchung' : cat?.name) || 'Dauerbuchung'}
-                    </CardTitle>
-                    <CardDescription className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Typ" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Typen</SelectItem>
+            <SelectItem value="expense">Ausgaben</SelectItem>
+            <SelectItem value="income">Einnahmen</SelectItem>
+            <SelectItem value="transfer">Umbuchungen</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={accountFilter} onValueChange={setAccountFilter}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Konto" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Konten</SelectItem>
+            {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Status</SelectItem>
+            <SelectItem value="active">Aktiv</SelectItem>
+            <SelectItem value="paused">Pausiert</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-sm text-muted-foreground">
+          {filtered.length} von {recurring.length} Dauerbuchungen
+        </span>
+        <div className="ml-auto flex rounded-lg border bg-muted/40 p-1">
+          <Button
+            variant="ghost" size="icon" title="Kartenansicht"
+            className={cn('h-7 w-7', view === 'cards' && 'bg-background shadow-sm')}
+            onClick={() => switchView('cards')}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost" size="icon" title="Tabellenansicht"
+            className={cn('h-7 w-7', view === 'table' && 'bg-background shadow-sm')}
+            onClick={() => switchView('table')}
+          >
+            <TableIcon className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {recurring.length === 0 && (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            Noch keine Dauerbuchungen angelegt.
+          </CardContent>
+        </Card>
+      )}
+      {recurring.length > 0 && filtered.length === 0 && (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            Keine Dauerbuchungen für diese Filterauswahl.
+          </CardContent>
+        </Card>
+      )}
+
+      {view === 'cards' ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((r) => {
+            const cat = categories.find((c) => c.id === r.categoryId);
+            const account = accounts.find((a) => a.id === r.accountId);
+            const toAccount = r.toAccountId ? accounts.find((a) => a.id === r.toAccountId) : undefined;
+            const owner = users.find((u) => u.id === r.userId);
+            return (
+              <Card key={r.id} className={cn(!r.active && 'opacity-60')}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-base">
+                        {r.note || (r.type === 'transfer' ? 'Umbuchung' : cat?.name) || 'Dauerbuchung'}
+                      </CardTitle>
+                      <CardDescription className="flex items-center gap-1">
+                        {r.type === 'transfer' ? (
+                          <>
+                            {account?.name ?? '?'}
+                            <ArrowRight className="h-3 w-3" />
+                            {toAccount?.name ?? '?'}
+                            {' · '}{owner?.name}
+                          </>
+                        ) : (
+                          <>{account?.name} · {owner?.name}</>
+                        )}
+                      </CardDescription>
+                    </div>
+                    <Badge variant={r.active ? 'default' : 'secondary'} className={r.active ? 'bg-emerald-600' : ''}>
+                      {r.active ? 'Aktiv' : 'Pausiert'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className={cn(
+                      'text-xl font-bold',
+                      r.type === 'income' && 'text-emerald-600',
+                      r.type === 'expense' && 'text-rose-500',
+                    )}>
+                      {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
+                    </span>
+                    <span className="text-sm text-muted-foreground">{intervalLabel[r.interval]}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Nächste Fälligkeit: <span className="font-medium text-foreground">{formatDate(r.nextDate)}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {canEdit(r) && (
+                      <Button variant="outline" size="sm" onClick={() => setEditing(r)} title="Bearbeiten">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => toggle.mutate({ id: r.id })}>
+                      {r.active ? <><Pause className="mr-1.5 h-3.5 w-3.5" /> Pausieren</> : <><Play className="mr-1.5 h-3.5 w-3.5" /> Fortsetzen</>}
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => remove.mutate({ id: r.id })} title="Löschen">
+                      <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        filtered.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Typ</TableHead>
+                <TableHead>Notiz</TableHead>
+                <TableHead>Von → Nach</TableHead>
+                <TableHead className="text-right">Betrag</TableHead>
+                <TableHead>Intervall</TableHead>
+                <TableHead>Nächster Termin</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-28" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((r) => {
+                const cat = categories.find((c) => c.id === r.categoryId);
+                const account = accounts.find((a) => a.id === r.accountId);
+                const toAccount = r.toAccountId ? accounts.find((a) => a.id === r.toAccountId) : undefined;
+                return (
+                  <TableRow key={r.id} className={cn(!r.active && 'opacity-60')}>
+                    <TableCell>
+                      <Badge variant="outline">{typeLabel[r.type]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{r.note || (r.type === 'transfer' ? 'Umbuchung' : cat?.name) || '—'}</span>
+                        {cat && (
+                          <Badge variant="secondary" className="text-[10px]">{cat.name}</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       {r.type === 'transfer' ? (
-                        <>
+                        <span className="flex items-center gap-1">
                           {account?.name ?? '?'}
                           <ArrowRight className="h-3 w-3" />
                           {toAccount?.name ?? '?'}
-                          {' · '}{owner?.name}
-                        </>
+                        </span>
                       ) : (
-                        <>{account?.name} · {owner?.name}</>
+                        account?.name ?? '?'
                       )}
-                    </CardDescription>
-                  </div>
-                  <Badge variant={r.active ? 'default' : 'secondary'} className={r.active ? 'bg-emerald-600' : ''}>
-                    {r.active ? 'Aktiv' : 'Pausiert'}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-baseline justify-between">
-                  <span className={cn(
-                    'text-xl font-bold',
-                    r.type === 'income' && 'text-emerald-600',
-                    r.type === 'expense' && 'text-rose-500',
-                  )}>
-                    {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
-                  </span>
-                  <span className="text-sm text-muted-foreground">{intervalLabel[r.interval]}</span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Nächste Fälligkeit: <span className="font-medium text-foreground">{formatDate(r.nextDate)}</span>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1" onClick={() => toggle.mutate({ id: r.id })}>
-                    {r.active ? <><Pause className="mr-1.5 h-3.5 w-3.5" /> Pausieren</> : <><Play className="mr-1.5 h-3.5 w-3.5" /> Fortsetzen</>}
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => remove.mutate({ id: r.id })} title="Löschen">
-                    <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                    </TableCell>
+                    <TableCell className={cn(
+                      'text-right font-bold',
+                      r.type === 'income' && 'text-emerald-600',
+                      r.type === 'expense' && 'text-rose-500',
+                    )}>
+                      {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
+                    </TableCell>
+                    <TableCell>{intervalLabel[r.interval]}</TableCell>
+                    <TableCell>{formatDate(r.nextDate)}</TableCell>
+                    <TableCell>
+                      <Badge variant={r.active ? 'default' : 'secondary'} className={r.active ? 'bg-emerald-600' : ''}>
+                        {r.active ? 'Aktiv' : 'Pausiert'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {editButton(r)}
+                        <Button
+                          variant="ghost" size="icon"
+                          title={r.active ? 'Pausieren' : 'Fortsetzen'}
+                          onClick={() => toggle.mutate({ id: r.id })}
+                        >
+                          {r.active
+                            ? <Pause className="h-4 w-4 text-muted-foreground" />
+                            : <Play className="h-4 w-4 text-muted-foreground" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => remove.mutate({ id: r.id })} title="Löschen">
+                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )
+      )}
+
+      <Dialog open={editing !== null} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Dauerbuchung bearbeiten</DialogTitle></DialogHeader>
+          {editing && (
+            <RecurringForm
+              key={editing.id}
+              initial={formFromRow(editing)}
+              editMode
+              isPending={updateRecurring.isPending}
+              submitLabel="Speichern"
+              onCancel={() => setEditing(null)}
+              onSubmit={submitEdit}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -21,6 +21,8 @@ export function ensureSchema() {
       role TEXT NOT NULL DEFAULT 'member',
       color TEXT NOT NULL DEFAULT '#10b981',
       active INTEGER NOT NULL DEFAULT 1,
+      totp_secret TEXT,
+      totp_enabled INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -67,6 +69,18 @@ export function ensureSchema() {
       color TEXT NOT NULL,
       parent_id INTEGER
     )`,
+    `CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS split_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      shares TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       type TEXT NOT NULL,
@@ -75,6 +89,7 @@ export function ensureSchema() {
       amount INTEGER NOT NULL,
       category_id INTEGER,
       user_id INTEGER NOT NULL,
+      project_id INTEGER,
       date TEXT NOT NULL,
       note TEXT NOT NULL DEFAULT '',
       recurring_id INTEGER,
@@ -129,6 +144,26 @@ export function ensureSchema() {
       color TEXT NOT NULL,
       deadline TEXT
     )`,
+    `CREATE TABLE IF NOT EXISTS goal_contributions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS goal_contrib_goal_idx
+      ON goal_contributions (goal_id)`,
+    `CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      action TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id INTEGER,
+      detail TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS audit_created_idx ON audit_log (created_at)`,
     `CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -144,40 +179,55 @@ export function ensureSchema() {
   // (owner_id NULL), das heutige Verhalten ändert sich nicht.
   const raw = (db as unknown as { $client: RawClient }).$client;
   const accountCols = raw.prepare("PRAGMA table_info(accounts)").raw().all();
-  if (!accountCols.some((col) => col[1] === "owner_id")) {
+  if (!accountCols.some(col => col[1] === "owner_id")) {
     db.run("ALTER TABLE accounts ADD COLUMN owner_id INTEGER" as never);
   }
-  if (!accountCols.some((col) => col[1] === "bank_id")) {
+  if (!accountCols.some(col => col[1] === "bank_id")) {
     db.run("ALTER TABLE accounts ADD COLUMN bank_id INTEGER" as never);
   }
-  if (!accountCols.some((col) => col[1] === "iban")) {
+  if (!accountCols.some(col => col[1] === "iban")) {
     db.run("ALTER TABLE accounts ADD COLUMN iban TEXT" as never);
+  }
+  // 2FA/TOTP: Secret und Aktivierungs-Flag an Bestands-DBs nachrüsten
+  const userCols = raw.prepare("PRAGMA table_info(users)").raw().all();
+  if (!userCols.some(col => col[1] === "totp_secret")) {
+    db.run("ALTER TABLE users ADD COLUMN totp_secret TEXT" as never);
+  }
+  if (!userCols.some(col => col[1] === "totp_enabled")) {
+    db.run(
+      "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0" as never
+    );
   }
   // Dauerbuchungen: Zielkonto für wiederkehrende Umbuchungen nachrüsten
   const recurringCols = raw.prepare("PRAGMA table_info(recurring)").raw().all();
-  if (!recurringCols.some((col) => col[1] === "to_account_id")) {
+  if (!recurringCols.some(col => col[1] === "to_account_id")) {
     db.run("ALTER TABLE recurring ADD COLUMN to_account_id INTEGER" as never);
   }
   // Kategorien-Hierarchie: parent_id für Unterkategorien nachrüsten
   const categoryCols = raw.prepare("PRAGMA table_info(categories)").raw().all();
-  if (!categoryCols.some((col) => col[1] === "parent_id")) {
+  if (!categoryCols.some(col => col[1] === "parent_id")) {
     db.run("ALTER TABLE categories ADD COLUMN parent_id INTEGER" as never);
+  }
+  // Projekte: project_id an Buchungen nachrüsten (NULL = laufender Haushalt)
+  const txCols = raw.prepare("PRAGMA table_info(transactions)").raw().all();
+  if (!txCols.some(col => col[1] === "project_id")) {
+    db.run("ALTER TABLE transactions ADD COLUMN project_id INTEGER" as never);
   }
   // Budgets: Zeitraum (Monat/Jahr), Rollover und Anker-Datum nachrüsten.
   // Bestandsbudgets bleiben Monatsbudgets ohne Rollover (created_at NULL =
   // Rollover-Anker am Jahresanfang, siehe api/lib/budgets.ts).
   const budgetCols = raw.prepare("PRAGMA table_info(budgets)").raw().all();
-  if (!budgetCols.some((col) => col[1] === "period")) {
+  if (!budgetCols.some(col => col[1] === "period")) {
     db.run(
-      "ALTER TABLE budgets ADD COLUMN period TEXT NOT NULL DEFAULT 'monthly'" as never,
+      "ALTER TABLE budgets ADD COLUMN period TEXT NOT NULL DEFAULT 'monthly'" as never
     );
   }
-  if (!budgetCols.some((col) => col[1] === "rollover")) {
+  if (!budgetCols.some(col => col[1] === "rollover")) {
     db.run(
-      "ALTER TABLE budgets ADD COLUMN rollover INTEGER NOT NULL DEFAULT 0" as never,
+      "ALTER TABLE budgets ADD COLUMN rollover INTEGER NOT NULL DEFAULT 0" as never
     );
   }
-  if (!budgetCols.some((col) => col[1] === "created_at")) {
+  if (!budgetCols.some(col => col[1] === "created_at")) {
     db.run("ALTER TABLE budgets ADD COLUMN created_at INTEGER" as never);
   }
 
@@ -190,7 +240,7 @@ export function ensureSchema() {
   ] as const) {
     db.run(
       `INSERT OR IGNORE INTO account_types (key, name, builtin)
-       VALUES ('${key}', '${name}', 1)` as never,
+       VALUES ('${key}', '${name}', 1)` as never
     );
   }
 

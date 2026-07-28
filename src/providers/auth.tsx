@@ -7,6 +7,7 @@ export interface SessionUser {
   name: string;
   role: 'admin' | 'member';
   color: string;
+  totpEnabled: boolean;
 }
 
 interface AuthContextValue {

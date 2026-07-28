@@ -16,6 +16,7 @@ import { useAuth } from '@/providers/auth';
 import {
   amountPlaceholder, currencySymbol, formatCents, getUserLocale, parseEuro, todayISO,
 } from '@/lib/finance';
+import { sharesFromWeights, type ShareWeight } from '@contracts/splitShares';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
@@ -39,7 +40,7 @@ const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application
 /** Dialog zum Erfassen einer neuen Buchung (Einnahme, Ausgabe, Umbuchung) */
 export default function TransactionDialog({ defaultType = 'expense' }: { defaultType?: TxType }) {
   const { user } = useAuth();
-  const { accounts, categories, users } = useFinanceData();
+  const { accounts, categories, users, projects, splitTemplates } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
@@ -49,10 +50,14 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   const [toAccountId, setToAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [userId, setUserId] = useState('');
+  const [projectId, setProjectId] = useState(''); // '' = Haushalt
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState('');
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [shares, setShares] = useState<Record<number, string>>({});
+  // Inline-Bereich „Als Vorlage speichern" (aktuelle Anteile als Gewichte)
+  const [saveTplOpen, setSaveTplOpen] = useState(false);
+  const [saveTplName, setSaveTplName] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false);
   // Inline-Bereich für "+ Neue Kategorie" (Muster wie "+ Neuer Typ" im Konto-Dialog)
   const [newCatOpen, setNewCatOpen] = useState(false);
@@ -65,6 +70,16 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   const fileInput = useRef<HTMLInputElement>(null);
 
   const createTx = trpc.finance.createTransaction.useMutation();
+
+  const createTemplate = trpc.finance.createSplitTemplate.useMutation({
+    onSuccess: () => {
+      toast.success('Vorlage gespeichert.');
+      utils.finance.listSplitTemplates.invalidate();
+      setSaveTplName('');
+      setSaveTplOpen(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const createCategory = trpc.finance.createCategory.useMutation({
     onSuccess: async (_data, vars) => {
@@ -191,6 +206,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
         type, accountId: effectiveAccountId,
         toAccountId: type === 'transfer' ? effectiveToAccountId : undefined,
         amount: cents, categoryId: categoryId ? Number(categoryId) : undefined,
+        projectId: projectId ? Number(projectId) : undefined,
         userId: effectiveUserId, date, note, splits,
       });
       for (const file of files) {
@@ -203,6 +219,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
       invalidate();
       setOpen(false);
       setAmount(''); setNote(''); setCategoryId(''); setSplitEnabled(false); setShares({});
+      setProjectId(''); setSaveTplOpen(false); setSaveTplName('');
       setFiles([]);
       setDate(todayISO());
     } catch (err) {
@@ -222,6 +239,45 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
       next[u.id] = shareFormatter.format(share / 100);
     });
     setShares(next);
+  };
+
+  /**
+   * Betrag gewichtet auf Anteile verteilen (Restdifferenz auf dem ersten
+   * Anteil) — Mitglieder ohne Gewicht bekommen 0.
+   */
+  const applyWeights = (weights: ShareWeight[]) => {
+    const cents = parseEuro(amount);
+    if (cents <= 0) { toast.error('Zuerst einen Betrag eingeben.'); return; }
+    const byUser = new Map(sharesFromWeights(cents, weights).map((s) => [s.userId, s.amount]));
+    const next: Record<number, string> = {};
+    for (const u of users) next[u.id] = shareFormatter.format((byUser.get(u.id) ?? 0) / 100);
+    setShares(next);
+  };
+
+  /** Vorlagen-Auswahl: Schnellwahl (60/40, 70/30) oder gespeicherte Vorlage */
+  const applyTemplate = (value: string) => {
+    const other = users.find((u) => u.id !== effectiveUserId);
+    if (value === 'preset-60-40' || value === 'preset-70-30') {
+      if (!other) return;
+      const first = value === 'preset-60-40' ? 60 : 70;
+      applyWeights([
+        { userId: effectiveUserId, weight: first },
+        { userId: other.id, weight: 100 - first },
+      ]);
+      return;
+    }
+    const tpl = splitTemplates.find((t) => `tpl-${t.id}` === value);
+    if (tpl) applyWeights(tpl.shares);
+  };
+
+  /** Aktuell eingegebene Anteile als Gewichte einer neuen Vorlage speichern */
+  const saveAsTemplate = () => {
+    const weights = users
+      .map((u) => ({ userId: u.id, weight: parseEuro(shares[u.id] ?? '') }))
+      .filter((w) => w.weight > 0);
+    if (weights.length === 0) { toast.error('Zuerst Anteile eingeben.'); return; }
+    if (!saveTplName.trim()) { toast.error('Bitte einen Namen für die Vorlage eingeben.'); return; }
+    createTemplate.mutate({ name: saveTplName.trim(), shares: weights });
   };
 
   const isTransfer = type === 'transfer';
@@ -364,7 +420,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
 
           {type === 'expense' && users.length > 1 && (
             <div className="space-y-3 rounded-lg border p-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="split"
@@ -377,23 +433,67 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                   <Label htmlFor="split" className="cursor-pointer">Kosten aufteilen</Label>
                 </div>
                 {splitEnabled && (
-                  <Button type="button" variant="ghost" size="sm" onClick={splitEvenly}>Gleichmäßig</Button>
+                  <div className="flex items-center gap-2">
+                    <Select value="" onValueChange={applyTemplate}>
+                      <SelectTrigger className="h-8 w-36 text-xs">
+                        <SelectValue placeholder="Vorlage…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="preset-60-40">60/40</SelectItem>
+                        <SelectItem value="preset-70-30">70/30</SelectItem>
+                        {splitTemplates.map((t) => (
+                          <SelectItem key={t.id} value={`tpl-${t.id}`}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="ghost" size="sm" onClick={splitEvenly}>Gleichmäßig</Button>
+                  </div>
                 )}
               </div>
               {splitEnabled && (
-                <div className="grid grid-cols-2 gap-3">
-                  {users.map((u) => (
-                    <div key={u.id} className="space-y-1">
-                      <Label className="text-xs" style={{ color: u.color }}>{u.name} ({currencySymbol()})</Label>
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {users.map((u) => (
+                      <div key={u.id} className="space-y-1">
+                        <Label className="text-xs" style={{ color: u.color }}>{u.name} ({currencySymbol()})</Label>
+                        <Input
+                          inputMode="decimal"
+                          placeholder={amountPlaceholder}
+                          value={shares[u.id] ?? ''}
+                          onChange={(e) => setShares((s) => ({ ...s, [u.id]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {saveTplOpen ? (
+                    <div className="flex gap-2">
                       <Input
-                        inputMode="decimal"
-                        placeholder={amountPlaceholder}
-                        value={shares[u.id] ?? ''}
-                        onChange={(e) => setShares((s) => ({ ...s, [u.id]: e.target.value }))}
+                        autoFocus
+                        placeholder="Name der Vorlage"
+                        className="h-8 text-xs"
+                        value={saveTplName}
+                        onChange={(e) => setSaveTplName(e.target.value)}
                       />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={createTemplate.isPending}
+                        onClick={saveAsTemplate}
+                      >
+                        Speichern
+                      </Button>
                     </div>
-                  ))}
-                </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                      onClick={() => setSaveTplOpen(true)}
+                    >
+                      <Plus className="h-3 w-3" /> Als Vorlage speichern
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -405,7 +505,7 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', detailsOpen && 'rotate-90')} />
-                Details (Person, Notiz)
+                Details (Person, Notiz, Projekt)
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
@@ -423,6 +523,25 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                   <Label htmlFor="note">Notiz</Label>
                   <Input id="note" placeholder="z. B. Wocheneinkauf" value={note} onChange={(e) => setNote(e.target.value)} />
                 </div>
+                {projects.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Projekt</Label>
+                    <Select value={projectId || 'household'} onValueChange={(v) => setProjectId(v === 'household' ? '' : v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="household">Haushalt</SelectItem>
+                        {projects.map((p) => (
+                          <SelectItem key={p.id} value={String(p.id)}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+                              {p.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </CollapsibleContent>
           </Collapsible>

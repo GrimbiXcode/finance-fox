@@ -15,12 +15,13 @@ import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import TransactionAttachmentsDialog from '@/components/TransactionAttachmentsDialog';
 import CsvImportDialog from '@/components/CsvImportDialog';
+import CamtImportDialog from '@/components/CamtImportDialog';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 export default function Transactions() {
-  const { accounts, categories, transactions, users } = useFinanceData();
+  const { accounts, categories, transactions, users, projects } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -89,6 +90,7 @@ export default function Transactions() {
             <Download className="mr-2 h-4 w-4" /> {exporting ? 'Exportiere…' : 'CSV exportieren'}
           </Button>
           <CsvImportDialog />
+          <CamtImportDialog />
           <TransactionDialog />
         </div>
       </div>
@@ -164,12 +166,20 @@ export default function Transactions() {
                 const account = accounts.find((a) => a.id === t.accountId);
                 const toAccount = accounts.find((a) => a.id === t.toAccountId);
                 const user = users.find((u) => u.id === t.userId);
+                const project = projects.find((p) => p.id === t.projectId);
                 return (
                   <TableRow key={t.id}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(t.date)}</TableCell>
                     <TableCell>
                       <div className="font-medium">{t.note || (t.type === 'transfer' ? 'Umbuchung' : '—')}</div>
-                      {t.splits.length > 0 && <Badge variant="secondary" className="mt-1 text-[10px]">geteilt</Badge>}
+                      <div className="mt-1 flex gap-1">
+                        {t.splits.length > 0 && <Badge variant="secondary" className="text-[10px]">geteilt</Badge>}
+                        {project && (
+                          <Badge variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${project.color}` }}>
+                            {project.name}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {cat ? (

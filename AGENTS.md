@@ -61,7 +61,7 @@ api/            Backend (Hono + tRPC), Einstieg: api/boot.ts (enthält auch die
   authRouter.ts   Setup-Wizard, Login, Einladungen, Passwort-Reset
   financeRouter.ts  Konten (inkl. Besitz/Sichtbarkeit, Kontotypen, Banken),
                   Transaktionen (inkl. CSV-Export/-Import), Kategorien,
-                  Budgets, Splits, Sparziele
+                  Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele
   forecastRouter.ts Prognosen
   lib/            env.ts, session.ts, migrate.ts (ensureSchema), recurringJob.ts,
                   accountAccess.ts (Sichtbarkeits-/Bearbeitungsrechte für Konten:
@@ -69,15 +69,19 @@ api/            Backend (Hono + tRPC), Einstieg: api/boot.ts (enthält auch die
                   accountTypes.ts (IBAN-Normalisierung/-Validierung, Existenz-
                   prüfung für Kontotyp-Keys und Banken),
                   csv.ts (CSV-Format: Semikolon, Dezimalkomma, RFC-4180-Quoting),
+                  camt.ts (camt.053-Parser: ISO-20022-XML stringbasiert,
+                  namespace-agnostisch, ohne XML-Bibliothek),
                   budgets.ts (Budget-Auswertung: Zeitraum Monat/Jahr, Rollup
                   über Unterkategorien, Rollover-Rechnung — geteilt von
                   finance.listBudgetStatus und forecast.budgetForecast),
                   attachments.ts (Beleg-Dateien außerhalb der DB speichern/
                   löschen, Speicherort ATTACHMENTS_DIR),
                   http.ts, vite.ts (statische Auslieferung in Produktion)
+                  audit.ts (Aktivitäts-/Audit-Log: logAudit, best effort)
   queries/connection.ts  sql.js-DB mit better-sqlite3-kompatiblem Proxy,
                   initDb() / getDb() / markDirty()
-contracts/      Geteilte Typen/Errors zwischen Front- und Backend (@contracts/*)
+contracts/      Geteilte Typen/Errors zwischen Front- und Backend (@contracts/*),
+                splitShares.ts (gewichtete Split-Verteilung sharesFromWeights)
 db/             schema.ts (Drizzle-Tabellen), relations.ts, seed.ts,
                 migrations/ (drizzle-kit), stubs/ (better-sqlite3-Stub fürs Bundle)
 src/            Frontend (React)
@@ -86,7 +90,9 @@ src/            Frontend (React)
   components/     Layout.tsx, TransactionDialog.tsx, AccountDialog.tsx
                   (Anlegen/Bearbeiten/Löschen von Konten inkl. Sichtbarkeits-
                   Freigaben und Gefahrenzone), CsvImportDialog.tsx
-                  (CSV-Import von Transaktionen), TransactionAttachmentsDialog.tsx
+                  (CSV-Import von Transaktionen), CamtImportDialog.tsx
+                  (Import von camt.053-XML-Kontoauszügen),
+                  TransactionAttachmentsDialog.tsx
                   (Belege/Fotos einer Buchung: ansehen, hochladen, löschen),
                   ui/ (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert)
   providers/      trpc.tsx (tRPC + QueryClient), auth.tsx
@@ -113,6 +119,14 @@ Wichtige Konventionen:
   Frontend: `formatCents` / `currencySymbol` in `src/lib/finance.ts` nutzen
   die App-Währung als Default; das Layout lädt sie via
   `finance.getAppSettings` und setzt sie mit `setAppCurrency`.
+- **CAMT.053-Import**: `finance.importCamt` importiert ISO-20022-XML-
+  Kontoauszüge (max 10 MB, `edit`-Recht nötig) auf ein Konto — Gutschriften
+  als Einnahmen, Belastungen als Ausgaben (ohne Kategorie), Notiz aus
+  Gegenpartei + Verwendungszweck. Dubletten-Schutz über die Kombination
+  Konto/Datum/Betrag/Notiz; Rückgabe `{imported, duplicates, errors}` analog
+  zum CSV-Import. Parser in `api/lib/camt.ts` (stringbasiert, namespace-
+  agnostisch, ohne XML-Bibliothek), UI: CamtImportDialog.tsx auf der
+  Transaktionen-Seite.
 - **Benachrichtigungen (opt-in)**: Versand via ntfy und/oder generischem
   Webhook, zentral `sendNotification` in `api/lib/notify.ts` (Konfiguration in
   `app_settings`: `notify_ntfy_url`, `notify_webhook_url`, `notify_events` —
@@ -120,12 +134,55 @@ Wichtige Konventionen:
   `sendTestNotification`). Nur http/https-URLs; Versandfehler werden nur
   geloggt, nie den Hauptflow brechen. Trigger: Budget-Kipppunkt >100 % in
   `finance.createTransaction`, Sammelmeldung am Ende von `runRecurringJob`,
-  Sparziel-Meilensteine (25/50/75/100 %) in `finance.updateGoalSaved`.
+  Sparziel-Meilensteine (25/50/75/100 %) in `finance.updateGoalSaved` und
+  `finance.addGoalContribution`.
 - **Kontoabgleich**: `finance.reconcileAccount` bucht die Differenz zwischen
   Ist- und berechnetem Soll-Saldo (Logik wie `listAccounts`) als Korrektur-
   buchung ohne Kategorie (Einnahme/Ausgabe, erfordert `edit`); bei Differenz 0
   wird nichts gebucht. UI: Sektion „Kontoabgleich" im AccountDialog
   (Bearbeiten-Modus).
+- **Sparziel-Beiträge**: Tabelle `goal_contributions` (goalId, userId, amount
+  in Cent positiv, note, createdAt) — mehrere Beitragszahler pro Sparziel.
+  Gesamtfortschritt = `savings_goals.savedAmount` (Basis, weiterhin manuell
+  via `updateGoalSaved`, Alt-Daten) + Summe der Beiträge; diese Summenlogik
+  steckt in der Goals-Anzeige (`src/pages/Goals.tsx`, gestapelter Balken +
+  Einzel-Fortschritt je Person) und in `forecast.goalForecast`. Endpunkte
+  `finance.addGoalContribution` (userId = aktueller User, löst Meilenstein-
+  Benachrichtigungen auf den Gesamtfortschritt aus) /
+  `listGoalContributions` (mit Name/Farbe des Zahlers) /
+  `deleteGoalContribution` (nur eigener Beitrag oder Admin). `deleteGoal`
+  und `resetFinanceData` löschen Beiträge kaskadierend mit.
+- **2FA/TOTP (opt-in pro Benutzer)**: RFC 6238 (SHA1, 30 s, 6 Stellen) ohne
+  Bibliothek über node:crypto in `api/lib/totp.ts` (Base32, generateSecret,
+  totpCode, verifyTotp mit ±1-Fenster, otpauth-URL). `users.totpSecret`/
+  `totpEnabled`; Endpunkte `auth.setupTotp`/`enableTotp`/`disableTotp`
+  (Deaktivieren nur mit Passwort). Bei aktiviertem TOTP liefert `auth.login`
+  kein Cookie, sondern `{requiresTotp, totpToken}` — kurzlebiger
+  `auth_tokens`-Eintrag mit purpose `totp` (5 Min., einmalig, auch falscher
+  Code verbraucht ihn); `auth.verifyTotpLogin` setzt dann das Session-Cookie.
+  `auth.me` liefert `totpEnabled`. Login-Seite zweistufig (InputOTP),
+  Verwaltung in den Einstellungen (Sektion „Zwei-Faktor-Authentifizierung",
+  QR-Code via `qrcode`-Paket als Data-URL).
+- **Projekte (Kostenaufteilung)**: Tabelle `projects` (Name unique, Farbe);
+  `transactions.projectId` NULL = laufender Haushalt, sonst Projekt-Buchung
+  (z. B. Urlaub). Endpunkte `finance.listProjects`/`createProject`/
+  `deleteProject` — Löschen gesperrt (CONFLICT mit Anzahl), solange Buchungen
+  referenzieren. `createTransaction` nimmt optional `projectId` (Existenz wird
+  geprüft). Die Splitting-Seite filtert Salden, Ausgleichsvorschläge und die
+  Liste geteilter Ausgaben pro Projekt (Chips: Alle / Haushalt / je Projekt);
+  verbuchte Ausgleiche übernehmen das gewählte Projekt. Verwaltung (Anlegen
+  mit Farbpalette, Löschen) in der Sektion „Projekte & Vorlagen" auf der
+  Splitting-Seite; Projekt-Select im Details-Bereich des TransactionDialog.
+- **Aufteilungsvorlagen**: Tabelle `split_templates` (Name unique, `shares`
+  als JSON-Text `[{userId, weight}]`, Gewichte positiv, userIds validiert).
+  Endpunkte `finance.listSplitTemplates`/`createSplitTemplate`/
+  `deleteSplitTemplate`. Die gewichtete Verteilung rechnet
+  `sharesFromWeights` in `contracts/splitShares.ts` (Rundung auf Cent,
+  Restdifferenz auf dem ersten Anteil) — geteilt zwischen Frontend und Tests.
+  UI: Vorlagen-Select im Split-Bereich des TransactionDialog (gespeicherte
+  Vorlagen + Schnellwahl 60/40, 70/30 zwischen aktuellem User und erstem
+  weiteren Mitglied), „Als Vorlage speichern" aus den aktuellen Anteilen;
+  Löschen in der Sektion „Projekte & Vorlagen" auf der Splitting-Seite.
 - **Schnellerfassung**: `src/components/QuickAddDialog.tsx` (Button „Schnell"
   im Layout-Header) bucht eine Ausgabe mit nur Betrag + Notiz; Defaults:
   erstes Konto mit `access === "edit"`, zuletzt verwendete Ausgaben-Kategorie,
@@ -134,6 +191,15 @@ Wichtige Konventionen:
   Oberkategorie (Unterkategorien aufgerollt, Sichtbarkeitsfilter) die Summen
   von Jahr und Vorjahr; Ausgaben ohne Kategorie als Zeile `categoryId: null`.
   UI: Seite `src/pages/YearReview.tsx` unter `/auswertung` (Nav „Auswertung").
+- **Szenario-Planung**: `forecast.balance` nimmt optional `incomePct`
+  (Skalierung der wiederkehrenden Einnahmen in %, 100 = unverändert, 50–200)
+  und `excludeCategoryId` entgegen. Das Szenario wirkt NUR auf zukünftige
+  wiederkehrende Größen: Einnahmen werden skaliert, wiederkehrende Ausgaben
+  der gewählten Oberkategorie inkl. Unterkategorien entfallen; Historie,
+  Ist-Buchungen und variable Durchschnitte bleiben unverändert. Die Antwort
+  enthält die wirksamen Parameter im Feld `scenario`. UI: „Szenario"-Card
+  auf der Prognosen-Seite (Slider + Kategorie-Select, Badge bei aktivem
+  Szenario). Tests: `api/scenario.test.ts`.
 - Path-Aliase: `@/*` → `src/*`, `@contracts/*` → `contracts/*`,
   `@db/*` → `db/*` (in tsconfig und `vite.config.ts` konsistent halten).
 - Der Frontend-Client importiert den Typ `AppRouter` direkt aus
@@ -141,6 +207,22 @@ Wichtige Konventionen:
   sich sofort auf den Client aus.
 - Alle fachlichen Endpunkte nutzen `authedQuery` (Login erforderlich);
   Admin-only über `adminQuery`. Deutsche `TRPCError`-Meldungen.
+- **Aktivitäts-/Audit-Log**: Tabelle `audit_log` (userId NULL = System bzw.
+  Vorgänge vor dem Login, action nach Konvention `<entity>.<verb>` wie
+  `transaction.created`, entity, entityId, kurzes deutsches Detail — niemals
+  Passwörter/Codes/Tokens). Schreiben über `logAudit` aus `api/lib/audit.ts`
+  (best effort, fängt Fehler intern ab; akzeptiert db- wie tx-Handle, damit
+  der Eintrag im selben Transaktionskontext landet). Instrumentiert sind die
+  fachlichen Mutationen in `financeRouter.ts` (Konten, Kategorien, Buchungen
+  inkl. CSV-/CAMT-/Komplett-Import, Budgets, Dauerbuchungen, Sparziele inkl.
+  Beiträge, Projekte, Aufteilungsvorlagen, Kontoabgleich, Reset, Währung,
+  Benachrichtigungs-Einstellungen) und in `authRouter.ts` (Login Erfolg/
+  Fehlschlag, Logout, TOTP-Login/-Verwaltung, Benutzer anlegen/deaktivieren/
+  reaktivieren, Profil, Passwort). Lesen für alle Mitglieder über
+  `finance.listAuditLog` (neueste zuerst, Limit max 500, optionaler
+  entity-Filter, userName/userColor gejoint). UI: Card „Aktivitäten" am Ende
+  der Einstellungen-Seite (deutsches Action-Mapping, Entity-Filter,
+  „Mehr laden"). Tests: `api/auditLog.test.ts`.
 - **Konten-Sichtbarkeit**: `accounts.ownerId` NULL = Gemeinschaftskonto (alle
   dürfen lesen/bearbeiten), sonst privat (Besitzer + Freigaben aus
   `account_permissions`, Admins nur lesend). Zugriffsprüfung immer

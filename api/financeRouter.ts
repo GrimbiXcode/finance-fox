@@ -8,17 +8,22 @@ import {
   accounts,
   accountTypes,
   appSettings,
+  auditLog,
   banks,
   budgets,
   categories,
+  goalContributions,
+  projects,
   recurring,
   savingsGoals,
+  splitTemplates,
   transactions,
   transactionAttachments,
   transactionSplits,
   users,
 } from "@db/schema";
 import { CURRENCY_CODES, DEFAULT_CURRENCY } from "@contracts/types";
+import type { ShareWeight } from "@contracts/splitShares";
 import { runRecurringJob } from "./lib/recurringJob";
 import {
   CSV_HEADER,
@@ -38,6 +43,7 @@ import {
   visibleAccountIds,
 } from "./lib/accountAccess";
 import { deleteAttachmentsForTransactions } from "./lib/attachments";
+import { parseCamt053 } from "./lib/camt";
 import { computeBudgetStatuses } from "./lib/budgets";
 import { getNotifyConfig, isHttpUrl, sendNotification } from "./lib/notify";
 import {
@@ -45,11 +51,49 @@ import {
   ensureBankExists,
   normalizeIban,
 } from "./lib/accountTypes";
+import { auditAmount, logAudit } from "./lib/audit";
 
 /** Einzahl/Mehrzahl für deutsche Fehlermeldungen */
 const kontoAnzahl = (n: number) => (n === 1 ? "1 Konto" : `${n} Konten`);
 
+const buchungAnzahl = (n: number) => (n === 1 ? "1 Buchung" : `${n} Buchungen`);
+
+/** Kurzdetail einer Buchung fürs Audit-Log: Typ, Betrag, Datum, ggf. Notiz */
+const txDetail = (t: {
+  type: keyof typeof TYPE_LABELS;
+  amount: number;
+  date: string;
+  note?: string;
+}) =>
+  `${TYPE_LABELS[t.type]} ${auditAmount(t.amount)} am ${t.date}${t.note ? ` — ${t.note}` : ""}`;
+
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
+
+/**
+ * Meilenstein-Benachrichtigung (25/50/75/100 %) für Sparziele — löst aus,
+ * wenn der Fortschritt einen Meilenstein von unten überschreitet.
+ * Wird mit dem Gesamtfortschritt (Basis savedAmount + Beiträge) gefüttert.
+ */
+async function notifyGoalMilestones(
+  db: ReturnType<typeof getDb>,
+  goal: { name: string; targetAmount: number },
+  beforeTotal: number,
+  afterTotal: number
+) {
+  if (goal.targetAmount <= 0) return;
+  const beforePct = (beforeTotal / goal.targetAmount) * 100;
+  const afterPct = (afterTotal / goal.targetAmount) * 100;
+  for (const milestone of [25, 50, 75, 100]) {
+    if (beforePct < milestone && afterPct >= milestone) {
+      await sendNotification(
+        db,
+        "goal",
+        `Sparziel ${goal.name}: ${milestone} % erreicht`,
+        `Beim Sparziel „${goal.name}“ sind ${milestone} % angespart.`
+      );
+    }
+  }
+}
 
 export const financeRouter = createRouter({
   /* --------------------------------- Konten --------------------------------- */
@@ -137,6 +181,14 @@ export const financeRouter = createRouter({
         note: input.note,
         createdAt: now,
       });
+      logAudit(
+        db,
+        ctx.user.id,
+        "account.reconciled",
+        "account",
+        account.id,
+        `${account.name}: Differenz ${auditAmount(difference)}`
+      );
       return { ok: true, difference };
     }),
 
@@ -157,15 +209,26 @@ export const financeRouter = createRouter({
       const db = getDb();
       await ensureAccountTypeExists(db, input.type);
       await ensureBankExists(db, input.bankId);
-      await db.insert(accounts).values({
-        name: input.name,
-        type: input.type,
-        initialBalance: input.initialBalance,
-        bankId: input.bankId ?? null,
-        iban: normalizeIban(input.iban),
-        ownerId: input.private ? ctx.user.id : null,
-        createdAt: new Date(),
-      });
+      const inserted = await db
+        .insert(accounts)
+        .values({
+          name: input.name,
+          type: input.type,
+          initialBalance: input.initialBalance,
+          bankId: input.bankId ?? null,
+          iban: normalizeIban(input.iban),
+          ownerId: input.private ? ctx.user.id : null,
+          createdAt: new Date(),
+        })
+        .returning({ id: accounts.id });
+      logAudit(
+        db,
+        ctx.user.id,
+        "account.created",
+        "account",
+        inserted[0]?.id ?? null,
+        input.name
+      );
       return { ok: true };
     }),
 
@@ -196,6 +259,14 @@ export const financeRouter = createRouter({
           iban: normalizeIban(input.iban),
         })
         .where(eq(accounts.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "account.updated",
+        "account",
+        input.id,
+        input.name
+      );
       return { ok: true };
     }),
 
@@ -256,6 +327,14 @@ export const financeRouter = createRouter({
           .run();
         tx.delete(accounts).where(eq(accounts.id, input.id)).run();
       });
+      logAudit(
+        db,
+        ctx.user.id,
+        "account.deleted",
+        "account",
+        input.id,
+        account.name
+      );
       return { ok: true };
     }),
 
@@ -315,6 +394,14 @@ export const financeRouter = createRouter({
             .run();
         });
       }
+      logAudit(
+        db,
+        ctx.user.id,
+        "account.privacy",
+        "account",
+        input.id,
+        `${account.name}: ${input.private ? "privat" : "gemeinsam"}`
+      );
       return { ok: true };
     }),
 
@@ -376,6 +463,14 @@ export const financeRouter = createRouter({
             set: { canEdit },
           });
       }
+      logAudit(
+        db,
+        ctx.user.id,
+        "account.permission",
+        "account",
+        input.accountId,
+        `${account.name} → ${target.name}: ${input.level}`
+      );
       return { ok: true };
     }),
 
@@ -418,9 +513,7 @@ export const financeRouter = createRouter({
       const db = getDb();
       const existing = await db.select().from(accountTypes);
       if (
-        existing.some(
-          t => t.name.toLowerCase() === input.name.toLowerCase()
-        )
+        existing.some(t => t.name.toLowerCase() === input.name.toLowerCase())
       ) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -532,7 +625,7 @@ export const financeRouter = createRouter({
         parentId: z.number().int().positive().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
       let color = input.color;
       if (input.parentId !== undefined) {
@@ -563,19 +656,33 @@ export const financeRouter = createRouter({
         // Unterkategorien erben die Farbe der Oberkategorie
         color = parent.color;
       }
-      await db.insert(categories).values({
-        name: input.name,
-        type: input.type,
-        color,
-        parentId: input.parentId ?? null,
-      });
+      const inserted = await db
+        .insert(categories)
+        .values({
+          name: input.name,
+          type: input.type,
+          color,
+          parentId: input.parentId ?? null,
+        })
+        .returning({ id: categories.id });
+      logAudit(
+        db,
+        ctx.user.id,
+        "category.created",
+        "category",
+        inserted[0]?.id ?? null,
+        input.name
+      );
       return { ok: true };
     }),
 
   deleteCategory: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      const cat = await db.query.categories.findFirst({
+        where: eq(categories.id, input.id),
+      });
       const children = await db
         .select({ id: categories.id })
         .from(categories)
@@ -594,6 +701,182 @@ export const financeRouter = createRouter({
         tx.delete(budgets).where(eq(budgets.categoryId, input.id)).run();
         tx.delete(categories).where(eq(categories.id, input.id)).run();
       });
+      logAudit(
+        db,
+        ctx.user.id,
+        "category.deleted",
+        "category",
+        input.id,
+        cat?.name ?? ""
+      );
+      return { ok: true };
+    }),
+
+  /* -------------------------- Projekte & Vorlagen --------------------------- */
+
+  /** Alle Projekte der Kostenaufteilung, alphabetisch nach Name */
+  listProjects: authedQuery.query(() =>
+    getDb().select().from(projects).orderBy(projects.name)
+  ),
+
+  createProject: authedQuery
+    .input(
+      z.object({
+        name: z.string().trim().min(1).max(80),
+        color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const existing = await db.select().from(projects);
+      if (
+        existing.some(p => p.name.toLowerCase() === input.name.toLowerCase())
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Ein Projekt mit diesem Namen existiert bereits.",
+        });
+      }
+      const rows = await db
+        .insert(projects)
+        .values({ ...input, createdAt: new Date() })
+        .returning();
+      logAudit(
+        db,
+        ctx.user.id,
+        "project.created",
+        "project",
+        rows[0].id,
+        input.name
+      );
+      return rows[0];
+    }),
+
+  /** Löschen nur, wenn keine Buchung mehr dem Projekt zugeordnet ist */
+  deleteProject: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.projects.findFirst({
+        where: eq(projects.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Projekt nicht gefunden.",
+        });
+      }
+      const used = await db
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(eq(transactions.projectId, input.id));
+      if (used.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Das Projekt wird noch von ${buchungAnzahl(used.length)} verwendet und kann nicht gelöscht werden.`,
+        });
+      }
+      await db.delete(projects).where(eq(projects.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "project.deleted",
+        "project",
+        input.id,
+        row.name
+      );
+      return { ok: true };
+    }),
+
+  /**
+   * Gespeicherte Aufteilungsvorlagen. shares kommt als geparstes JSON-Array
+   * [{ userId, weight }] zum Client (in der DB liegt es als Text).
+   */
+  listSplitTemplates: authedQuery.query(async () => {
+    const rows = await getDb()
+      .select()
+      .from(splitTemplates)
+      .orderBy(splitTemplates.name);
+    return rows.map(r => ({
+      ...r,
+      shares: JSON.parse(r.shares) as ShareWeight[],
+    }));
+  }),
+
+  createSplitTemplate: authedQuery
+    .input(
+      z.object({
+        name: z.string().trim().min(1).max(80),
+        shares: z
+          .array(
+            z.object({
+              userId: z.number().int().positive(),
+              weight: z.number().positive(),
+            })
+          )
+          .min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const existing = await db.select().from(splitTemplates);
+      if (
+        existing.some(t => t.name.toLowerCase() === input.name.toLowerCase())
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Eine Vorlage mit diesem Namen existiert bereits.",
+        });
+      }
+      const allUsers = await db.select({ id: users.id }).from(users);
+      const known = new Set(allUsers.map(u => u.id));
+      if (input.shares.some(s => !known.has(s.userId))) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Die Vorlage enthält einen unbekannten Benutzer.",
+        });
+      }
+      const rows = await db
+        .insert(splitTemplates)
+        .values({
+          name: input.name,
+          shares: JSON.stringify(input.shares),
+          createdAt: new Date(),
+        })
+        .returning();
+      logAudit(
+        db,
+        ctx.user.id,
+        "splitTemplate.created",
+        "splitTemplate",
+        rows[0].id,
+        input.name
+      );
+      return { ...rows[0], shares: input.shares };
+    }),
+
+  deleteSplitTemplate: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.splitTemplates.findFirst({
+        where: eq(splitTemplates.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Vorlage nicht gefunden.",
+        });
+      }
+      await db.delete(splitTemplates).where(eq(splitTemplates.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "splitTemplate.deleted",
+        "splitTemplate",
+        input.id,
+        row.name
+      );
       return { ok: true };
     }),
 
@@ -628,7 +911,12 @@ export const financeRouter = createRouter({
     }
     const attsByTx = new Map<
       number,
-      { id: number; originalName: string; mimeType: string; sizeBytes: number }[]
+      {
+        id: number;
+        originalName: string;
+        mimeType: string;
+        sizeBytes: number;
+      }[]
     >();
     for (const a of attachments) {
       const list = attsByTx.get(a.transactionId) ?? [];
@@ -656,6 +944,8 @@ export const financeRouter = createRouter({
         amount: z.number().int().positive(),
         categoryId: z.number().int().positive().optional(),
         userId: z.number().int().positive(),
+        // Optional: Zuordnung zu einem Projekt (NULL = laufender Haushalt)
+        projectId: z.number().int().positive().optional(),
         date: isoDate,
         note: z.string().default(""),
         splits: z
@@ -675,6 +965,17 @@ export const financeRouter = createRouter({
       // Bei Umbuchungen muss zumindest das Zielkonto sichtbar sein
       if (input.type === "transfer" && input.toAccountId) {
         await requireAccountAccess(db, ctx.user, input.toAccountId, "view");
+      }
+      if (input.projectId) {
+        const project = await db.query.projects.findFirst({
+          where: eq(projects.id, input.projectId),
+        });
+        if (!project) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Das angegebene Projekt existiert nicht.",
+          });
+        }
       }
       if (splits && splits.length > 0) {
         const sum = splits.reduce((s, x) => s + x.amount, 0);
@@ -707,6 +1008,14 @@ export const financeRouter = createRouter({
         }
         return id;
       });
+      logAudit(
+        db,
+        ctx.user.id,
+        "transaction.created",
+        "transaction",
+        txId ?? null,
+        txDetail(input)
+      );
       if (budgetsBefore && input.categoryId) {
         // Nur Budgets prüfen, die die gebuchte Kategorie (oder deren
         // Oberkategorie) betreffen — Benachrichtigung beim Kippen von
@@ -761,6 +1070,14 @@ export const financeRouter = createRouter({
           .run();
         tx.delete(transactions).where(eq(transactions.id, input.id)).run();
       });
+      logAudit(
+        db,
+        ctx.user.id,
+        "transaction.deleted",
+        "transaction",
+        input.id,
+        txDetail(txRow)
+      );
       return { ok: true };
     }),
 
@@ -788,7 +1105,7 @@ export const financeRouter = createRouter({
         rollover: z.boolean().default(false),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
       const existing = await db.query.budgets.findFirst({
         where: eq(budgets.categoryId, input.categoryId),
@@ -812,13 +1129,26 @@ export const financeRouter = createRouter({
           createdAt: new Date(),
         });
       }
+      const budgetCat = await db.query.categories.findFirst({
+        where: eq(categories.id, input.categoryId),
+      });
+      logAudit(
+        db,
+        ctx.user.id,
+        "budget.saved",
+        "budget",
+        input.categoryId,
+        `${budgetCat?.name ?? "Unbekannt"}: ${auditAmount(input.amount)} ${input.period === "monthly" ? "monatlich" : "jährlich"}${input.rollover ? ", Rollover" : ""}`
+      );
       return { ok: true };
     }),
 
   deleteBudget: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
-      await getDb().delete(budgets).where(eq(budgets.id, input.id));
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      await db.delete(budgets).where(eq(budgets.id, input.id));
+      logAudit(db, ctx.user.id, "budget.deleted", "budget", input.id);
       return { ok: true };
     }),
 
@@ -830,8 +1160,11 @@ export const financeRouter = createRouter({
     const rows = await db.select().from(recurring);
     // Dauer-Umbuchungen bleiben sichtbar, wenn Quell- ODER Zielkonto sichtbar
     // ist (analog zu listTransactions).
-    return rows.filter(r => visible.has(r.accountId)
-      || (r.toAccountId !== null && visible.has(r.toAccountId)));
+    return rows.filter(
+      r =>
+        visible.has(r.accountId) ||
+        (r.toAccountId !== null && visible.has(r.toAccountId))
+    );
   }),
 
   createRecurring: authedQuery
@@ -875,6 +1208,14 @@ export const financeRouter = createRouter({
         active: true,
         createdAt: new Date(),
       });
+      logAudit(
+        db,
+        ctx.user.id,
+        "recurring.created",
+        "recurring",
+        null,
+        `${TYPE_LABELS[input.type]} ${auditAmount(input.amount)}, ${input.interval === "weekly" ? "wöchentlich" : input.interval === "monthly" ? "monatlich" : "jährlich"} ab ${input.nextDate}${input.note ? ` — ${input.note}` : ""}`
+      );
       return { ok: true };
     }),
 
@@ -891,6 +1232,14 @@ export const financeRouter = createRouter({
         .update(recurring)
         .set({ active: !row.active })
         .where(eq(recurring.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "recurring.toggled",
+        "recurring",
+        input.id,
+        `${row.note || TYPE_LABELS[row.type]}: ${row.active ? "pausiert" : "aktiviert"}`
+      );
       return { ok: true };
     }),
 
@@ -904,6 +1253,14 @@ export const financeRouter = createRouter({
       if (!row) throw new TRPCError({ code: "NOT_FOUND" });
       await requireAccountAccess(db, ctx.user, row.accountId, "edit");
       await db.delete(recurring).where(eq(recurring.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "recurring.deleted",
+        "recurring",
+        input.id,
+        `${TYPE_LABELS[row.type]} ${auditAmount(row.amount)}${row.note ? ` — ${row.note}` : ""}`
+      );
       return { ok: true };
     }),
 
@@ -926,8 +1283,20 @@ export const financeRouter = createRouter({
         deadline: isoDate.optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      await getDb().insert(savingsGoals).values(input);
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const inserted = await db
+        .insert(savingsGoals)
+        .values(input)
+        .returning({ id: savingsGoals.id });
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.created",
+        "goal",
+        inserted[0]?.id ?? null,
+        `${input.name} (Ziel ${auditAmount(input.targetAmount)})`
+      );
       return { ok: true };
     }),
 
@@ -938,7 +1307,7 @@ export const financeRouter = createRouter({
         savedAmount: z.number().int().min(0),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
       // Zustand vorher laden, um überschrittene Meilensteine zu erkennen
       const goal = await db.query.savingsGoals.findFirst({
@@ -948,6 +1317,14 @@ export const financeRouter = createRouter({
         .update(savingsGoals)
         .set({ savedAmount: input.savedAmount })
         .where(eq(savingsGoals.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.updated",
+        "goal",
+        input.id,
+        `${goal?.name ?? "Sparziel"}: ${auditAmount(input.savedAmount)} angespart`
+      );
       // Meilenstein-Benachrichtigung (25/50/75/100 %), nur beim Ansteigen
       if (goal && goal.targetAmount > 0) {
         const beforePct = (goal.savedAmount / goal.targetAmount) * 100;
@@ -968,8 +1345,139 @@ export const financeRouter = createRouter({
 
   deleteGoal: authedQuery
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
-      await getDb().delete(savingsGoals).where(eq(savingsGoals.id, input.id));
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const goal = await db.query.savingsGoals.findFirst({
+        where: eq(savingsGoals.id, input.id),
+      });
+      // Beiträge des Ziels mitlöschen (Kaskade)
+      await db
+        .delete(goalContributions)
+        .where(eq(goalContributions.goalId, input.id));
+      await db.delete(savingsGoals).where(eq(savingsGoals.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.deleted",
+        "goal",
+        input.id,
+        goal?.name ?? ""
+      );
+      return { ok: true };
+    }),
+
+  /**
+   * Beitrag eines Mitglieds zu einem Sparziel. Der Gesamtfortschritt eines
+   * Ziels ist savedAmount (Basis, manuell via updateGoalSaved) plus Summe
+   * aller Beiträge — Beiträge lösen wie updateGoalSaved Meilensteine aus.
+   */
+  addGoalContribution: authedQuery
+    .input(
+      z.object({
+        goalId: z.number().int().positive(),
+        amount: z.number().int().positive(),
+        note: z.string().max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const goal = await db.query.savingsGoals.findFirst({
+        where: eq(savingsGoals.id, input.goalId),
+      });
+      if (!goal) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Sparziel nicht gefunden.",
+        });
+      }
+      // Fortschritt vor dem Beitrag (Basis + bisherige Beiträge)
+      const existing = await db
+        .select({ amount: goalContributions.amount })
+        .from(goalContributions)
+        .where(eq(goalContributions.goalId, input.goalId));
+      const beforeTotal =
+        goal.savedAmount + existing.reduce((s, c) => s + c.amount, 0);
+      const inserted = await db
+        .insert(goalContributions)
+        .values({
+          goalId: input.goalId,
+          userId: ctx.user.id,
+          amount: input.amount,
+          note: input.note ?? "",
+          createdAt: new Date(),
+        })
+        .returning({ id: goalContributions.id });
+      await notifyGoalMilestones(
+        db,
+        goal,
+        beforeTotal,
+        beforeTotal + input.amount
+      );
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.contribution.added",
+        "goal",
+        input.goalId,
+        `${auditAmount(input.amount)} für „${goal.name}“`
+      );
+      return { id: inserted[0].id };
+    }),
+
+  /** Beiträge eines Sparziels inkl. Name/Farbe des Beitragszahlers */
+  listGoalContributions: authedQuery
+    .input(z.object({ goalId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = getDb();
+      const rows = await db
+        .select({
+          id: goalContributions.id,
+          goalId: goalContributions.goalId,
+          userId: goalContributions.userId,
+          amount: goalContributions.amount,
+          note: goalContributions.note,
+          createdAt: goalContributions.createdAt,
+          userName: users.name,
+          userColor: users.color,
+        })
+        .from(goalContributions)
+        .innerJoin(users, eq(goalContributions.userId, users.id))
+        .where(eq(goalContributions.goalId, input.goalId))
+        .orderBy(desc(goalContributions.createdAt));
+      return rows;
+    }),
+
+  /** Eigenen Beitrag löschen; Admins dürfen alle Beiträge löschen */
+  deleteGoalContribution: authedQuery
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.goalContributions.findFirst({
+        where: eq(goalContributions.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Beitrag nicht gefunden.",
+        });
+      }
+      if (row.userId !== ctx.user.id && ctx.user.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Nur eigene Beiträge dürfen gelöscht werden.",
+        });
+      }
+      await db
+        .delete(goalContributions)
+        .where(eq(goalContributions.id, input.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "goal.contribution.deleted",
+        "goal",
+        row.goalId,
+        `Beitrag ${auditAmount(row.amount)}`
+      );
       return { ok: true };
     }),
 
@@ -1159,6 +1667,14 @@ export const financeRouter = createRouter({
           tx.insert(savingsGoals).values(g).run();
         }
       });
+      logAudit(
+        db,
+        ctx.user.id,
+        "data.imported",
+        "data",
+        null,
+        `${input.accounts.length} Konten, ${input.categories.length} Kategorien, ${input.transactions.length} Buchungen, ${input.recurring.length} Dauerbuchungen, ${input.goals.length} Sparziele`
+      );
       return { ok: true };
     }),
 
@@ -1174,7 +1690,7 @@ export const financeRouter = createRouter({
   }),
 
   /** Admin: alle Finanzdaten löschen (Neustart) */
-  resetFinanceData: authedQuery.mutation(async () => {
+  resetFinanceData: authedQuery.mutation(async ({ ctx }) => {
     const db = getDb();
     const txIds = (
       await db.select({ id: transactions.id }).from(transactions)
@@ -1186,11 +1702,20 @@ export const financeRouter = createRouter({
       tx.delete(transactions).where(ne(transactions.id, -1)).run();
       tx.delete(recurring).where(ne(recurring.id, -1)).run();
       tx.delete(budgets).where(ne(budgets.id, -1)).run();
+      tx.delete(goalContributions).where(ne(goalContributions.id, -1)).run();
       tx.delete(savingsGoals).where(ne(savingsGoals.id, -1)).run();
       tx.delete(categories).where(ne(categories.id, -1)).run();
       tx.delete(accountPermissions).where(ne(accountPermissions.id, -1)).run();
       tx.delete(accounts).where(ne(accounts.id, -1)).run();
     });
+    logAudit(
+      db,
+      ctx.user.id,
+      "data.reset",
+      "data",
+      null,
+      "Alle Finanzdaten gelöscht"
+    );
     return { ok: true };
   }),
 
@@ -1205,39 +1730,39 @@ export const financeRouter = createRouter({
   exportTransactionsCsv: authedQuery
     .input(z.object({ locale: z.string().max(35).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    const db = getDb();
-    const visible = await visibleAccountIds(db, ctx.user);
-    const [allTxs, accs, cats] = await Promise.all([
-      db.select().from(transactions),
-      db.select().from(accounts),
-      db.select().from(categories),
-    ]);
-    const accountName = new Map(accs.map(a => [a.id, a.name]));
-    const categoryName = new Map(cats.map(c => [c.id, c.name]));
-    const txs = allTxs
-      .filter(t => touchesVisibleAccount(visible, t))
-      .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
-    const separator = csvFieldSeparator(input?.locale);
-    const lines = [
-      CSV_HEADER.map(h => csvEscape(h, separator)).join(separator),
-    ];
-    for (const t of txs) {
-      lines.push(
-        [
-          t.date,
-          TYPE_LABELS[t.type],
-          formatEuroCsv(t.amount, input?.locale),
-          t.categoryId ? (categoryName.get(t.categoryId) ?? "") : "",
-          accountName.get(t.accountId) ?? "",
-          t.toAccountId ? (accountName.get(t.toAccountId) ?? "") : "",
-          t.note,
-        ]
-          .map(v => csvEscape(v, separator))
-          .join(separator)
-      );
-    }
-    return lines.join("\r\n");
-  }),
+      const db = getDb();
+      const visible = await visibleAccountIds(db, ctx.user);
+      const [allTxs, accs, cats] = await Promise.all([
+        db.select().from(transactions),
+        db.select().from(accounts),
+        db.select().from(categories),
+      ]);
+      const accountName = new Map(accs.map(a => [a.id, a.name]));
+      const categoryName = new Map(cats.map(c => [c.id, c.name]));
+      const txs = allTxs
+        .filter(t => touchesVisibleAccount(visible, t))
+        .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+      const separator = csvFieldSeparator(input?.locale);
+      const lines = [
+        CSV_HEADER.map(h => csvEscape(h, separator)).join(separator),
+      ];
+      for (const t of txs) {
+        lines.push(
+          [
+            t.date,
+            TYPE_LABELS[t.type],
+            formatEuroCsv(t.amount, input?.locale),
+            t.categoryId ? (categoryName.get(t.categoryId) ?? "") : "",
+            accountName.get(t.accountId) ?? "",
+            t.toAccountId ? (accountName.get(t.toAccountId) ?? "") : "",
+            t.note,
+          ]
+            .map(v => csvEscape(v, separator))
+            .join(separator)
+        );
+      }
+      return lines.join("\r\n");
+    }),
 
   /**
    * Einfacher CSV-Import auf EIN Konto: nur Einnahmen/Ausgaben werden
@@ -1321,7 +1846,90 @@ export const financeRouter = createRouter({
           for (const r of rows) tx.insert(transactions).values(r).run();
         });
       }
+      logAudit(
+        db,
+        ctx.user.id,
+        "transaction.imported",
+        "transaction",
+        input.accountId,
+        `CSV: ${imported} importiert, ${skipped} übersprungen`
+      );
       return { imported, skipped, errors };
+    }),
+
+  /**
+   * CAMT.053-Import (ISO-20022-XML-Kontoauszug) auf EIN Konto: Gutschriften
+   * werden Einnahmen, Belastungen Ausgaben (jeweils ohne Kategorie), die
+   * Notiz setzt sich aus Gegenpartei und Verwendungszweck zusammen.
+   * Dubletten-Schutz: identische Kombination aus Konto, Datum, Betrag und
+   * Notiz (in der DB oder doppelt in der Datei) wird übersprungen.
+   */
+  importCamt: authedQuery
+    .input(
+      z.object({
+        xml: z.string().max(10 * 1024 * 1024),
+        accountId: z.number().int().positive(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      await requireAccountAccess(db, ctx.user, input.accountId, "edit");
+
+      const parsed = parseCamt053(input.xml);
+
+      // Vorhandene Buchungen des Kontos für den Dubletten-Abgleich
+      const existing = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.accountId, input.accountId));
+      const seen = new Set(
+        existing
+          .filter(t => t.type !== "transfer")
+          .map(t => `${t.date}|${t.amount}|${t.note}`)
+      );
+
+      let imported = 0;
+      let duplicates = 0;
+      const rows: (typeof transactions.$inferInsert)[] = [];
+      const now = new Date();
+
+      for (const e of parsed.entries) {
+        const type = e.amountCents > 0 ? "income" : "expense";
+        const amount = Math.abs(e.amountCents);
+        const note = [e.party, e.note].filter(Boolean).join(" — ");
+        const key = `${e.date}|${amount}|${note}`;
+        if (seen.has(key)) {
+          duplicates++;
+          continue;
+        }
+        seen.add(key);
+        rows.push({
+          type,
+          accountId: input.accountId,
+          amount,
+          categoryId: null,
+          userId: ctx.user.id,
+          date: e.date,
+          note,
+          createdAt: now,
+        });
+        imported++;
+      }
+
+      if (rows.length > 0) {
+        db.transaction(tx => {
+          for (const r of rows) tx.insert(transactions).values(r).run();
+        });
+      }
+      logAudit(
+        db,
+        ctx.user.id,
+        "transaction.imported",
+        "transaction",
+        input.accountId,
+        `CAMT: ${imported} importiert, ${duplicates} Dubletten, ${parsed.errors.length} Fehler`
+      );
+      return { imported, duplicates, errors: parsed.errors };
     }),
 
   /* ---------------------------- App-Einstellungen --------------------------- */
@@ -1342,7 +1950,7 @@ export const financeRouter = createRouter({
   /** Admin: Währung für den gesamten Haushalt festlegen */
   setCurrency: adminQuery
     .input(z.object({ currency: z.enum(CURRENCY_CODES) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
       await db
         .insert(appSettings)
@@ -1351,6 +1959,14 @@ export const financeRouter = createRouter({
           target: appSettings.key,
           set: { value: input.currency },
         });
+      logAudit(
+        db,
+        ctx.user.id,
+        "settings.currency",
+        "settings",
+        null,
+        `Währung: ${input.currency}`
+      );
       return { ok: true };
     }),
 
@@ -1370,7 +1986,7 @@ export const financeRouter = createRouter({
         }),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = getDb();
       const clean = (raw: string | null, label: string): string | null => {
         const v = (raw ?? "").trim();
@@ -1385,7 +2001,10 @@ export const financeRouter = createRouter({
       };
       const entries: [string, string][] = [
         ["notify_ntfy_url", clean(input.ntfyUrl, "Die ntfy-URL") ?? ""],
-        ["notify_webhook_url", clean(input.webhookUrl, "Die Webhook-URL") ?? ""],
+        [
+          "notify_webhook_url",
+          clean(input.webhookUrl, "Die Webhook-URL") ?? "",
+        ],
         ["notify_events", JSON.stringify(input.events)],
       ];
       for (const [key, value] of entries) {
@@ -1394,6 +2013,18 @@ export const financeRouter = createRouter({
           .values({ key, value })
           .onConflictDoUpdate({ target: appSettings.key, set: { value } });
       }
+      const activeEvents = (Object.entries(input.events) as [string, boolean][])
+        .filter(([, on]) => on)
+        .map(([k]) => k)
+        .join(", ");
+      logAudit(
+        db,
+        ctx.user.id,
+        "settings.notify",
+        "settings",
+        null,
+        `Benachrichtigungen: ${activeEvents || "keine Ereignisse"}`
+      );
       return { ok: true };
     }),
 
@@ -1421,6 +2052,42 @@ export const financeRouter = createRouter({
     }
     return { sent };
   }),
+
+  /* -------------------------------- Audit-Log ------------------------------- */
+
+  /**
+   * Aktivitäts-Chronik des Haushalts (neueste zuerst), lesbar für alle
+   * Mitglieder. userId null → Akteur „System“ (z. B. fehlgeschlagener Login).
+   */
+  listAuditLog: authedQuery
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(500).default(100),
+          entity: z.string().max(50).optional(),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = getDb();
+      return db
+        .select({
+          id: auditLog.id,
+          userId: auditLog.userId,
+          action: auditLog.action,
+          entity: auditLog.entity,
+          entityId: auditLog.entityId,
+          detail: auditLog.detail,
+          createdAt: auditLog.createdAt,
+          userName: users.name,
+          userColor: users.color,
+        })
+        .from(auditLog)
+        .leftJoin(users, eq(auditLog.userId, users.id))
+        .where(input?.entity ? eq(auditLog.entity, input.entity) : undefined)
+        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+        .limit(input?.limit ?? 100);
+    }),
 
   /* ------------------------------- Auswertung ------------------------------- */
 

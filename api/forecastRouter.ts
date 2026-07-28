@@ -2,7 +2,8 @@ import { z } from "zod";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
-  accounts, categories, recurring, savingsGoals, transactions,
+  accounts, categories, goalContributions, recurring, savingsGoals,
+  transactions,
 } from "@db/schema";
 import {
   touchesVisibleAccount, visibleAccountIds,
@@ -38,7 +39,18 @@ export const forecastRouter = createRouter({
    * + Durchschnitt der variablen Ausgaben/Einnahmen der letzten 3 Monate.
    */
   balance: authedQuery
-    .input(z.object({ months: z.number().int().min(1).max(36).default(12) }))
+    .input(z.object({
+      months: z.number().int().min(1).max(36).default(12),
+      // Szenario-Planung (optional): wirkt NUR auf zukünftige, wiederkehrende
+      // Größen — Historie, Ist-Buchungen und die variablen Durchschnitte
+      // bleiben unverändert.
+      // incomePct: Skalierung der wiederkehrenden Einnahmen in Prozent
+      // (100 = unverändert, 110 = +10 %).
+      // excludeCategoryId: wiederkehrende Ausgaben dieser Oberkategorie
+      // (inkl. ihrer Unterkategorien) entfallen im Szenario.
+      incomePct: z.number().int().min(50).max(200).optional(),
+      excludeCategoryId: z.number().int().optional(),
+    }))
     .query(async ({ ctx, input }) => {
       const db = getDb();
       const visible = await visibleAccountIds(db, ctx.user);
@@ -54,6 +66,18 @@ export const forecastRouter = createRouter({
       // (s. Projektion unten) und dürfen daher nicht herausgefiltert werden.
       const recs = allRecs.filter((r) => visible.has(r.accountId)
         || (r.toAccountId !== null && visible.has(r.toAccountId)));
+
+      // Wirksame Szenario-Parameter: Einnahmen-Skalierung (100 = aus) und
+      // Menge der ausgeschlossenen Kategorien (Oberkategorie + Unterkategorien)
+      const incomePct = input.incomePct ?? 100;
+      let excludedCatIds: Set<number> | null = null;
+      if (input.excludeCategoryId !== undefined) {
+        const allCats = await db.select().from(categories);
+        excludedCatIds = new Set([input.excludeCategoryId]);
+        for (const c of allCats) {
+          if (c.parentId === input.excludeCategoryId) excludedCatIds.add(c.id);
+        }
+      }
 
       // Startvermögen (Anfangsbestände)
       const base = accs.reduce((s, a) => s + a.initialBalance, 0);
@@ -146,9 +170,14 @@ export const forecastRouter = createRouter({
           }
           while (next <= monthEnd && guard < 1000) {
             if (r.type === "income") {
-              recInc += r.amount;
+              // Szenario: wiederkehrende Einnahmen prozentual skalieren
+              recInc += Math.round((r.amount * incomePct) / 100);
             } else if (r.type === "expense") {
-              recExp += r.amount;
+              // Szenario: Ausgaben der ausgeschlossenen Kategorie entfallen
+              if (excludedCatIds === null || r.categoryId === null
+                || !excludedCatIds.has(r.categoryId)) {
+                recExp += r.amount;
+              }
             } else {
               // Umbuchung: zwischen zwei sichtbaren Konten saldo-neutral
               // (Gesamtsicht). Ist nur eine Seite sichtbar, wirkt sie als
@@ -174,7 +203,18 @@ export const forecastRouter = createRouter({
         });
       }
 
-      return { history, projection, avgVariableIncome: avgVarIncome, avgVariableExpense: avgVarExpense };
+      return {
+        history,
+        projection,
+        avgVariableIncome: avgVarIncome,
+        avgVariableExpense: avgVarExpense,
+        // Wirksame Szenario-Parameter — das Frontend zeigt damit an,
+        // ob ein Szenario aktiv ist
+        scenario: {
+          incomePct,
+          excludeCategoryId: input.excludeCategoryId ?? null,
+        },
+      };
     }),
 
   /**
@@ -223,11 +263,17 @@ export const forecastRouter = createRouter({
   goalForecast: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
-    const [goals, allTxs] = await Promise.all([
+    const [goals, allTxs, allContribs] = await Promise.all([
       db.select().from(savingsGoals),
       db.select().from(transactions),
+      db.select().from(goalContributions),
     ]);
     const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
+    // Gesamtfortschritt = Basis (savedAmount) + Summe der Beiträge je Ziel
+    const contribSum = new Map<number, number>();
+    for (const c of allContribs) {
+      contribSum.set(c.goalId, (contribSum.get(c.goalId) ?? 0) + c.amount);
+    }
     const currentKey = localISO(new Date()).slice(0, 7);
 
     // Durchschnittliche monatliche Sparrate (Einnahmen - Ausgaben, letzte 3 Monate)
@@ -252,7 +298,8 @@ export const forecastRouter = createRouter({
     const monthlySurplus = months > 0 ? Math.round(surplus / months) : 0;
 
     return goals.map((g) => {
-      const remaining = Math.max(0, g.targetAmount - g.savedAmount);
+      const totalSaved = g.savedAmount + (contribSum.get(g.id) ?? 0);
+      const remaining = Math.max(0, g.targetAmount - totalSaved);
       let eta: string | null = null;
       if (remaining === 0) {
         eta = "Erreicht";
@@ -267,7 +314,7 @@ export const forecastRouter = createRouter({
         name: g.name,
         color: g.color,
         targetAmount: g.targetAmount,
-        savedAmount: g.savedAmount,
+        savedAmount: totalSaved,
         deadline: g.deadline,
         remaining,
         monthlySurplus,

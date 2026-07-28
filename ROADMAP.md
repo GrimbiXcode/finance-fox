@@ -113,22 +113,22 @@ sich von selbst. Reihenfolge = empfohlene Umsetzungsreihenfolge.
 6. **Jahresrückblick / Vorjahresvergleich** je Kategorie (im Web, ohne
    PDF — siehe Nicht-Ziele). ✅
 
-### Phase 3 — Haushalts-Skalierung & Sicherheit (danach)
+### Phase 3 — Haushalts-Skalierung & Sicherheit ✅ *vollständig umgesetzt*
 
 1. **"Projekte" in der Kostenaufteilung** (z. B. gemeinsamer Urlaub separat
    von laufenden Haushaltskosten) + Aufteilungsvorlagen (60/40 u. ä.).
-   Der meistgefragte Haushaltsfall nach dem laufenden Splitten.
+   Der meistgefragte Haushaltsfall nach dem laufenden Splitten. ✅
 2. **Mehrere Beitragszahler pro Sparziel** mit Einzel-Fortschritt — passt
-   direkt zum Mehrpersonen-Leitbild.
+   direkt zum Mehrpersonen-Leitbild. ✅
 3. **CAMT.053-Bankimport (Datei-basiert)** als Nachfolger des einfachen
    CSV-Imports: ISO-20022-XML ist der Standard Schweizer (und zunehmend
-   deutscher) Banken, strikt lokal parsebar, keine Drittanbieter.
+   deutscher) Banken, strikt lokal parsebar, keine Drittanbieter. ✅
 4. **2FA/TOTP** für den Login — sinnvoll, sobald die Instanz nicht nur im
-   Heimnetz erreichbar ist.
+   Heimnetz erreichbar ist. ✅
 5. **Aktivitäts-/Audit-Log** ("Wer hat was gebucht/geändert") — klein
-   gehalten: Chronik der fachlichen Mutationen pro Haushalt.
+   gehalten: Chronik der fachlichen Mutationen pro Haushalt. ✅
 6. **Szenario-Planung** in den Prognosen ("Was, wenn Gehalt X% steigt /
-   Ausgabe Y wegfällt") — nützlich, aber klar hinter den Alltagsthemen.
+   Ausgabe Y wegfällt") — nützlich, aber klar hinter den Alltagsthemen. ✅
 
 ### Bewusst zurückgestellt / Nicht-Ziele
 
@@ -162,6 +162,8 @@ Aufwand nicht:
 
 ## 5. Nächste Schritte
 
-Phase 3 als GitHub Issues aufbrechen (ein Issue pro Punkt). Die Punkte sind
-weitgehend unabhängig voneinander; der CAMT.053-Import (Punkt 3) baut auf
-dem bestehenden CSV-Import auf und bietet sich als Einstieg an.
+Alle drei Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
+Backlog (Abschnitt 3) zur Bewertung an — naheliegend: Tags/Labels,
+Massenbearbeitung, Saldo-Verlaufschart pro Konto, CSV-Import mit
+Kategorie-Mapping-Regeln. Diese bei Bedarf als GitHub Issues aufbrechen
+und einzeln priorisieren.

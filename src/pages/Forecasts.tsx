@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { AlertTriangle, CalendarClock, LineChart as LineChartIcon, Target } from 'lucide-react';
+import { AlertTriangle, CalendarClock, FlaskConical, LineChart as LineChartIcon, Target } from 'lucide-react';
 import {
   CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -15,9 +17,47 @@ import { cn } from '@/lib/utils';
 
 export default function Forecasts() {
   const [months, setMonths] = useState('12');
-  const balance = trpc.forecast.balance.useQuery({ months: Number(months) });
+  // Szenario-Planung: Formular-Werte + angewendete Parameter (Query-Input)
+  const [incomePct, setIncomePct] = useState(100);
+  const [excludeCat, setExcludeCat] = useState('none');
+  const [applied, setApplied] = useState<{ incomePct: number; excludeCategoryId: number | null }>({
+    incomePct: 100,
+    excludeCategoryId: null,
+  });
+  const balance = trpc.forecast.balance.useQuery({
+    months: Number(months),
+    ...(applied.incomePct !== 100 ? { incomePct: applied.incomePct } : {}),
+    ...(applied.excludeCategoryId !== null ? { excludeCategoryId: applied.excludeCategoryId } : {}),
+  });
   const budgetFc = trpc.forecast.budgetForecast.useQuery();
   const goalFc = trpc.forecast.goalForecast.useQuery();
+  const categories = trpc.finance.listCategories.useQuery();
+
+  // Auswahl im Szenario: nur Ausgaben-Oberkategorien
+  const rootExpenseCats = (categories.data ?? []).filter((c) => c.type === 'expense' && c.parentId === null);
+
+  const scenarioActive = applied.incomePct !== 100 || applied.excludeCategoryId !== null;
+  const scenarioParts: string[] = [];
+  if (applied.incomePct !== 100) {
+    const diff = applied.incomePct - 100;
+    scenarioParts.push(`Einnahmen ${diff > 0 ? '+' : ''}${diff} %`);
+  }
+  if (applied.excludeCategoryId !== null) {
+    const name = rootExpenseCats.find((c) => c.id === applied.excludeCategoryId)?.name;
+    if (name) scenarioParts.push(`ohne Kategorie „${name}“`);
+  }
+
+  const applyScenario = () => {
+    setApplied({
+      incomePct,
+      excludeCategoryId: excludeCat === 'none' ? null : Number(excludeCat),
+    });
+  };
+  const resetScenario = () => {
+    setIncomePct(100);
+    setExcludeCat('none');
+    setApplied({ incomePct: 100, excludeCategoryId: null });
+  };
 
   const chartData = [
     ...(balance.data?.history ?? []).map((h) => ({
@@ -60,6 +100,65 @@ export default function Forecasts() {
           </SelectContent>
         </Select>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5 text-violet-500" />
+                Szenario
+              </CardTitle>
+              <CardDescription>
+                Was-wäre-wenn: wirkt nur auf künftige Dauerbuchungen — Ist-Werte und Historie bleiben unverändert
+              </CardDescription>
+            </div>
+            {scenarioActive && (
+              <Badge variant="secondary">Szenario: {scenarioParts.join(', ')}</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Einnahmen (Dauerbuchungen)</span>
+                <span className="font-medium">{incomePct} %</span>
+              </div>
+              <Slider
+                value={[incomePct]}
+                onValueChange={(v) => setIncomePct(v[0])}
+                min={50}
+                max={200}
+                step={5}
+              />
+            </div>
+            <div className="space-y-2">
+              <span className="text-sm text-muted-foreground">Ausgabenkategorie weglassen</span>
+              <Select value={excludeCat} onValueChange={setExcludeCat}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Keine</SelectItem>
+                  {rootExpenseCats.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={applyScenario}>Szenario anwenden</Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={resetScenario}
+              disabled={!scenarioActive && incomePct === 100 && excludeCat === 'none'}
+            >
+              Zurücksetzen
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

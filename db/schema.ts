@@ -1,5 +1,9 @@
 import {
-  sqliteTable, text, integer, index, uniqueIndex,
+  sqliteTable,
+  text,
+  integer,
+  index,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 /* ---------------------------------- Auth ---------------------------------- */
@@ -9,9 +13,17 @@ export const users = sqliteTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash"),
-  role: text("role", { enum: ["admin", "member"] }).notNull().default("member"),
+  role: text("role", { enum: ["admin", "member"] })
+    .notNull()
+    .default("member"),
   color: text("color").notNull().default("#10b981"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+  // 2FA/TOTP (opt-in pro Benutzer, siehe api/lib/totp.ts):
+  // Base32-Secret, nur gesetzt während der Einrichtung bzw. wenn aktiviert
+  totpSecret: text("totp_secret"),
+  totpEnabled: integer("totp_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -19,7 +31,8 @@ export const authTokens = sqliteTable("auth_tokens", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id").notNull(),
   token: text("token").notNull().unique(),
-  purpose: text("purpose", { enum: ["invite", "reset"] }).notNull(),
+  // invite/reset = 7 Tage; totp = kurzlebiger Zweitfaktor-Login-Token (5 Min.)
+  purpose: text("purpose", { enum: ["invite", "reset", "totp"] }).notNull(),
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
   usedAt: integer("used_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
@@ -58,14 +71,16 @@ export const accounts = sqliteTable("accounts", {
 });
 
 /** Individuelle Freigaben privater Konten für andere Haushaltsmitglieder */
-export const accountPermissions = sqliteTable("account_permissions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  accountId: integer("account_id").notNull(),
-  userId: integer("user_id").notNull(),
-  canEdit: integer("can_edit", { mode: "boolean" }).notNull().default(false),
-}, (t) => [
-  uniqueIndex("account_perm_unique_idx").on(t.accountId, t.userId),
-]);
+export const accountPermissions = sqliteTable(
+  "account_permissions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull(),
+    userId: integer("user_id").notNull(),
+    canEdit: integer("can_edit", { mode: "boolean" }).notNull().default(false),
+  },
+  t => [uniqueIndex("account_perm_unique_idx").on(t.accountId, t.userId)]
+);
 
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -77,45 +92,78 @@ export const categories = sqliteTable("categories", {
   parentId: integer("parent_id"),
 });
 
-export const transactions = sqliteTable("transactions", {
+/**
+ * Projekte der Kostenaufteilung (z. B. gemeinsamer Urlaub) — Buchungen ohne
+ * Projekt (projectId NULL) gelten als laufender Haushalt.
+ */
+export const projects = sqliteTable("projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  type: text("type", { enum: ["income", "expense", "transfer"] }).notNull(),
-  accountId: integer("account_id").notNull(),
-  toAccountId: integer("to_account_id"),
-  amount: integer("amount").notNull(), // Cent, positiv
-  categoryId: integer("category_id"),
-  userId: integer("user_id").notNull(), // wer hat gebucht/bezahlt
-  date: text("date").notNull(), // YYYY-MM-DD
-  note: text("note").notNull().default(""),
-  recurringId: integer("recurring_id"),
+  name: text("name").notNull().unique(),
+  color: text("color").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-}, (t) => [
-  index("tx_date_idx").on(t.date),
-  index("tx_account_idx").on(t.accountId),
-]);
+});
 
-export const transactionSplits = sqliteTable("transaction_splits", {
+export const transactions = sqliteTable(
+  "transactions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    type: text("type", { enum: ["income", "expense", "transfer"] }).notNull(),
+    accountId: integer("account_id").notNull(),
+    toAccountId: integer("to_account_id"),
+    amount: integer("amount").notNull(), // Cent, positiv
+    categoryId: integer("category_id"),
+    userId: integer("user_id").notNull(), // wer hat gebucht/bezahlt
+    // NULL = laufender Haushalt, sonst Verweis auf ein Projekt
+    projectId: integer("project_id"),
+    date: text("date").notNull(), // YYYY-MM-DD
+    note: text("note").notNull().default(""),
+    recurringId: integer("recurring_id"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [
+    index("tx_date_idx").on(t.date),
+    index("tx_account_idx").on(t.accountId),
+  ]
+);
+
+/**
+ * Gespeicherte Aufteilungsvorlagen für geteilte Ausgaben.
+ * shares = JSON-Array [{ userId, weight }] mit positiven Gewichten —
+ * die Verteilung auf Cent-Beträge rechnet sharesFromWeights (@contracts/splitShares).
+ */
+export const splitTemplates = sqliteTable("split_templates", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  transactionId: integer("transaction_id").notNull(),
-  userId: integer("user_id").notNull(),
-  amount: integer("amount").notNull(), // Cent
-}, (t) => [
-  index("split_tx_idx").on(t.transactionId),
-]);
+  name: text("name").notNull().unique(),
+  shares: text("shares").notNull(), // JSON: [{ userId, weight }]
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const transactionSplits = sqliteTable(
+  "transaction_splits",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    transactionId: integer("transaction_id").notNull(),
+    userId: integer("user_id").notNull(),
+    amount: integer("amount").notNull(), // Cent
+  },
+  t => [index("split_tx_idx").on(t.transactionId)]
+);
 
 /** Beleg-/Foto-Anhänge einer Buchung; Dateien liegen im Attachments-Verzeichnis */
-export const transactionAttachments = sqliteTable("transaction_attachments", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  transactionId: integer("transaction_id").notNull(),
-  // Zufälliger Dateiname im Attachments-Verzeichnis (eindeutig)
-  storedName: text("stored_name").notNull().unique(),
-  originalName: text("original_name").notNull(),
-  mimeType: text("mime_type").notNull(),
-  sizeBytes: integer("size_bytes").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-}, (t) => [
-  index("attachment_tx_idx").on(t.transactionId),
-]);
+export const transactionAttachments = sqliteTable(
+  "transaction_attachments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    transactionId: integer("transaction_id").notNull(),
+    // Zufälliger Dateiname im Attachments-Verzeichnis (eindeutig)
+    storedName: text("stored_name").notNull().unique(),
+    originalName: text("original_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("attachment_tx_idx").on(t.transactionId)]
+);
 
 export const budgets = sqliteTable("budgets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -142,7 +190,9 @@ export const recurring = sqliteTable("recurring", {
   categoryId: integer("category_id"),
   userId: integer("user_id").notNull(),
   note: text("note").notNull().default(""),
-  interval: text("interval", { enum: ["weekly", "monthly", "yearly"] }).notNull(),
+  interval: text("interval", {
+    enum: ["weekly", "monthly", "yearly"],
+  }).notNull(),
   nextDate: text("next_date").notNull(), // YYYY-MM-DD
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
@@ -156,6 +206,47 @@ export const savingsGoals = sqliteTable("savings_goals", {
   color: text("color").notNull(),
   deadline: text("deadline"), // YYYY-MM-DD
 });
+
+/**
+ * Einzelne Beiträge der Haushaltsmitglieder zu einem Sparziel.
+ * Gesamtfortschritt = savings_goals.saved_amount (Basis, manuell
+ * anpassbar, Alt-Daten) + Summe dieser Beiträge.
+ */
+export const goalContributions = sqliteTable(
+  "goal_contributions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    goalId: integer("goal_id").notNull(),
+    userId: integer("user_id").notNull(), // Beitragszahler
+    amount: integer("amount").notNull(), // Cent, positiv
+    note: text("note").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("goal_contrib_goal_idx").on(t.goalId)]
+);
+
+/* -------------------------------- Audit-Log -------------------------------- */
+
+/**
+ * Aktivitäts-/Audit-Log: Chronik der fachlichen Mutationen des Haushalts
+ * („Wer hat was gebucht/geändert"). userId NULL = System bzw. Vorgänge vor
+ * dem Login (z. B. fehlgeschlagene Anmeldung). Details enthalten niemals
+ * Passwörter, Codes oder Tokens.
+ */
+export const auditLog = sqliteTable(
+  "audit_log",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id"),
+    // Konvention: "<entity>.<verb>", z. B. "transaction.created"
+    action: text("action").notNull(),
+    entity: text("entity").notNull(),
+    entityId: integer("entity_id"),
+    detail: text("detail").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("audit_created_idx").on(t.createdAt)]
+);
 
 /* ------------------------------ App-Einstellungen ------------------------- */
 

@@ -10,11 +10,14 @@ export function useFinanceData() {
   const budgets = trpc.finance.listBudgets.useQuery();
   const recurring = trpc.finance.listRecurring.useQuery();
   const goals = trpc.finance.listGoals.useQuery();
+  const projects = trpc.finance.listProjects.useQuery();
+  const splitTemplates = trpc.finance.listSplitTemplates.useQuery();
   const users = trpc.auth.listUsers.useQuery();
 
   const isLoading = accounts.isLoading || accountTypes.isLoading || banks.isLoading
     || categories.isLoading || transactions.isLoading
-    || budgets.isLoading || recurring.isLoading || goals.isLoading || users.isLoading;
+    || budgets.isLoading || recurring.isLoading || goals.isLoading
+    || projects.isLoading || splitTemplates.isLoading || users.isLoading;
 
   return {
     accounts: accounts.data ?? [],
@@ -25,6 +28,8 @@ export function useFinanceData() {
     budgets: budgets.data ?? [],
     recurring: recurring.data ?? [],
     goals: goals.data ?? [],
+    projects: projects.data ?? [],
+    splitTemplates: splitTemplates.data ?? [],
     users: users.data ?? [],
     isLoading,
   };
@@ -42,7 +47,10 @@ export function useInvalidateFinance() {
     utils.finance.listBudgetStatus.invalidate();
     utils.finance.listRecurring.invalidate();
     utils.finance.listGoals.invalidate();
+    utils.finance.listGoalContributions.invalidate();
     utils.finance.listCategories.invalidate();
+    utils.finance.listProjects.invalidate();
+    utils.finance.listSplitTemplates.invalidate();
     utils.finance.getAppSettings.invalidate();
     utils.finance.yearComparison.invalidate();
     utils.forecast.balance.invalidate();

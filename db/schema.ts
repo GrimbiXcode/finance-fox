@@ -72,6 +72,9 @@ export const categories = sqliteTable("categories", {
   name: text("name").notNull(),
   type: text("type", { enum: ["income", "expense"] }).notNull(),
   color: text("color").notNull(),
+  // NULL = Oberkategorie, sonst Verweis auf die Oberkategorie.
+  // Genau eine Hierarchieebene: Unterkategorien haben selbst keine Kinder.
+  parentId: integer("parent_id"),
 });
 
 export const transactions = sqliteTable("transactions", {
@@ -117,7 +120,16 @@ export const transactionAttachments = sqliteTable("transaction_attachments", {
 export const budgets = sqliteTable("budgets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   categoryId: integer("category_id").notNull().unique(),
-  amount: integer("amount").notNull(), // Cent / Monat
+  // Cent pro Zeitraum (Monat bzw. Jahr, je nach period)
+  amount: integer("amount").notNull(),
+  period: text("period", { enum: ["monthly", "yearly"] })
+    .notNull()
+    .default("monthly"),
+  // Rollover (nur bei period "monthly"): unverbrauchtes Budget wird in den
+  // Folgemonat übertragen (Auswertung in api/lib/budgets.ts)
+  rollover: integer("rollover", { mode: "boolean" }).notNull().default(false),
+  // Anker für den Rollover; NULL bei Bestandsbudgets (= Jahresanfang)
+  createdAt: integer("created_at", { mode: "timestamp_ms" }),
 });
 
 export const recurring = sqliteTable("recurring", {

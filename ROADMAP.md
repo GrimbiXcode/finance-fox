@@ -97,30 +97,21 @@ Erfassungsmaske.
 
 ## 4. Priorisierte Roadmap
 
-### Phase 2 — Struktur & proaktiver Alltag (als Nächstes)
+### Phase 2 — Struktur & proaktiver Alltag ✅ *vollständig umgesetzt*
 
 Fokus: bessere Einordnung der Buchungen, flexiblere Budgets, die App meldet
 sich von selbst. Reihenfolge = empfohlene Umsetzungsreihenfolge.
 
-1. **Ober-/Unterkategorien** (z. B. "Wohnen" → "Strom", "Miete").
-   Größter Struktur-Gewinn im Alltag; Voraussetzung für aussagekräftige
-   Auswertungen. Muss in Budgets (Rollup auf Oberkategorie), Charts und
-   CSV-Import (Mapping) mitgedacht werden.
-2. **Budget-Rollover + Jahresbudgets.** Gehört thematisch zu 1: Restbudget
-   in den Folgemonat übernehmen (opt-in pro Budget), zusätzlich Jahres-
-   statt Monatslimit wählbar.
+1. **Ober-/Unterkategorien** (z. B. "Wohnen" → "Strom", "Miete"). ✅
+2. **Budget-Rollover + Jahresbudgets.** ✅
 3. **Benachrichtigungen via ntfy + generischem Webhook** (selbstgehostet,
    opt-in): Budget-Überschreitung, fällige wiederkehrende Buchung,
-   Sparziel-Meilenstein. Bewusst klein gehalten: erst ntfy/Webhook, kein
-   Apprise/SMTP in dieser Phase.
+   Sparziel-Meilenstein. ✅
 4. **Manueller Kontoabgleich** (Ist-Saldo erfassen, Differenz als
-   Korrekturbuchung). Jetzt deutlich wertvoller, da Konten Bank/IBAN
-   haben und CSV-Import existiert.
-5. **Schnellerfassung** (ein Tap → Standardkonto/-kategorie). Mit der PWA
-   ist die App auf dem Handy installiert — Quick-Add ist das fehlende
-   Daily-Driver-Stück (aus dem alten Mobil-Block hochgezogen).
+   Korrekturbuchung). ✅
+5. **Schnellerfassung** (ein Tap → Standardkonto/-kategorie). ✅
 6. **Jahresrückblick / Vorjahresvergleich** je Kategorie (im Web, ohne
-   PDF — siehe Nicht-Ziele).
+   PDF — siehe Nicht-Ziele). ✅
 
 ### Phase 3 — Haushalts-Skalierung & Sicherheit (danach)
 
@@ -171,7 +162,6 @@ Aufwand nicht:
 
 ## 5. Nächste Schritte
 
-Phase 2 als GitHub Issues aufbrechen (ein Issue pro Punkt). Punkt 1
-(Ober-/Unterkategorien) ist der einzige mit größerer Datenmodell-Änderung
-und sollte zuerst angegangen werden, weil Budgets, Auswertungen und
-Import-Regeln darauf aufbauen.
+Phase 3 als GitHub Issues aufbrechen (ein Issue pro Punkt). Die Punkte sind
+weitgehend unabhängig voneinander; der CAMT.053-Import (Punkt 3) baut auf
+dem bestehenden CSV-Import auf und bietet sich als Einstieg an.

@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/select';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
-import { amountPlaceholder, currencySymbol, parseEuro } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, formatCents, parseEuro } from '@/lib/finance';
+import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -44,7 +45,7 @@ export default function AccountDialog({ account, trigger }: { account?: DialogAc
 /** Formular-Inhalt; wird bei jedem Öffnen neu gemountet, damit die Initialwerte stimmen */
 function AccountDialogForm({ account, close }: { account?: DialogAccount; close: () => void }) {
   const { user } = useAuth();
-  const { users, accountTypes, banks } = useFinanceData();
+  const { users, accountTypes, banks, accounts } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const isEdit = !!account;
@@ -62,6 +63,8 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
   const [newTypeName, setNewTypeName] = useState('');
   const [newBankOpen, setNewBankOpen] = useState(false);
   const [newBankName, setNewBankName] = useState('');
+  // Kontoabgleich: eingegebener Ist-Saldo als Text (locale-bewusst geparst)
+  const [actualBalance, setActualBalance] = useState('');
 
   const isPrivateAccount = !!account && account.ownerId !== null;
 
@@ -118,6 +121,23 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
     },
     onError: (err) => toast.error(err.message),
   });
+  const reconcile = trpc.finance.reconcileAccount.useMutation({
+    onSuccess: () => {
+      toast.success('Differenz verbucht.');
+      setActualBalance('');
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Aktuell berechneter Saldo aus listAccounts (Fallback: Anfangsbestand)
+  const liveAccount = account ? accounts.find((a) => a.id === account.id) : undefined;
+  const sollBalance = liveAccount?.balance ?? account?.initialBalance ?? 0;
+  // parseEuro liefert den Betrag ohne Vorzeichen — führendes „-" ehren
+  const parsedActual = parseEuro(actualBalance);
+  const signedActual = actualBalance.trim().startsWith('-') ? -parsedActual : parsedActual;
+  const hasActual = actualBalance.trim() !== '';
+  const difference = signedActual - sollBalance;
 
   // Andere aktive Mitglieder (Besitzer und man selbst ausgeklammert)
   const members = users.filter((u) => u.active && u.id !== account?.ownerId && u.id !== user?.id);
@@ -305,6 +325,43 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {isEdit && account.access === 'edit' && (
+          <div className="space-y-3 rounded-lg border p-3">
+            <p className="text-sm font-semibold">Kontoabgleich</p>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Berechneter Saldo</span>
+              <span className="font-medium">{formatCents(sollBalance)}</span>
+            </div>
+            <div className="space-y-2">
+              <Label>Ist-Saldo ({currencySymbol()})</Label>
+              <Input
+                inputMode="decimal"
+                placeholder={amountPlaceholder}
+                value={actualBalance}
+                onChange={(e) => setActualBalance(e.target.value)}
+              />
+            </div>
+            {hasActual && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Differenz</span>
+                <span className={cn(
+                  'font-medium',
+                  difference > 0 ? 'text-emerald-600' : difference < 0 ? 'text-rose-500' : 'text-muted-foreground',
+                )}>
+                  {difference > 0 ? '+' : ''}{formatCents(difference)}
+                </span>
+              </div>
+            )}
+            <Button
+              variant="outline"
+              disabled={!hasActual || difference === 0 || reconcile.isPending}
+              onClick={() => reconcile.mutate({ accountId: account.id, actualBalance: signedActual })}
+            >
+              Differenz verbuchen
+            </Button>
           </div>
         )}
 

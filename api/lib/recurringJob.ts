@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { recurring, transactions } from "@db/schema";
+import { sendNotification } from "./notify";
 
 function localISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -62,6 +63,13 @@ export async function runRecurringJob(): Promise<number> {
   }
   if (created > 0) {
     console.log(`[Finance Fox] Cron: ${created} wiederkehrende Buchung(en) verbucht.`);
+    // Sammel-Benachrichtigung (Fehler werden in sendNotification nur geloggt)
+    await sendNotification(
+      db,
+      "recurring",
+      "Wiederkehrende Buchungen verbucht",
+      `${created} wiederkehrende Buchung(en) verbucht.`
+    );
   }
   return created;
 }

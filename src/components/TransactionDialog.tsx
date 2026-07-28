@@ -57,6 +57,8 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
   // Inline-Bereich für "+ Neue Kategorie" (Muster wie "+ Neuer Typ" im Konto-Dialog)
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  // Inline-Anlage als Unterkategorie der aktuell gewählten Oberkategorie
+  const [newCatAsChild, setNewCatAsChild] = useState(false);
   // Gewählte Beleg-Dateien (werden nach dem Speichern der Buchung hochgeladen)
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
@@ -71,9 +73,15 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
       // createCategory liefert keine ID zurück — neue Kategorie über Namen finden
       const created = utils.finance.listCategories
         .getData()
-        ?.find((c) => c.name === vars.name && c.type === vars.type);
+        ?.find(
+          (c) =>
+            c.name === vars.name &&
+            c.type === vars.type &&
+            (c.parentId ?? null) === (vars.parentId ?? null),
+        );
       if (created) setCategoryId(String(created.id)); // direkt auswählen
       setNewCatName('');
+      setNewCatAsChild(false);
       setNewCatOpen(false);
     },
     onError: (err) => toast.error(err.message),
@@ -87,6 +95,25 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
     () => categories.filter((c) => (type === 'income' ? c.type === 'income' : c.type === 'expense')),
     [categories, type],
   );
+
+  /**
+   * Gruppierte Reihenfolge für das Kategorie-Select: jede Oberkategorie,
+   * direkt gefolgt von ihren Unterkategorien (in der Anzeige eingerückt).
+   */
+  const groupedCategories = useMemo(() => {
+    const roots = filteredCategories.filter((c) => c.parentId === null);
+    return roots.flatMap((root) => [
+      root,
+      ...filteredCategories.filter((c) => c.parentId === root.id),
+    ]);
+  }, [filteredCategories]);
+
+  // Gewählte Kategorie, falls es eine Oberkategorie ist — dann kann die
+  // Inline-Anlage optional eine Unterkategorie davon anlegen
+  const selectedRoot = useMemo(() => {
+    const sel = categories.find((c) => String(c.id) === categoryId);
+    return sel && sel.parentId === null ? sel : undefined;
+  }, [categories, categoryId]);
 
   /** Palettenfarbe mit der geringsten bisherigen Verwendung wählen */
   const nextCategoryColor = (): string => {
@@ -278,30 +305,49 @@ export default function TransactionDialog({ defaultType = 'expense' }: { default
                 <Select value={categoryId} onValueChange={setCategoryId}>
                   <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                   <SelectContent>
-                    {filteredCategories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                    {groupedCategories.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.parentId ? `\u00A0\u00A0${c.name}` : c.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 {newCatOpen ? (
-                  <div className="flex gap-2">
-                    <Input
-                      autoFocus
-                      placeholder="Name der Kategorie"
-                      value={newCatName}
-                      onChange={(e) => setNewCatName(e.target.value)}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={!newCatName.trim() || createCategory.isPending}
-                      onClick={() =>
-                        createCategory.mutate({
-                          name: newCatName.trim(),
-                          type: type === 'income' ? 'income' : 'expense',
-                          color: nextCategoryColor(),
-                        })}
-                    >
-                      Anlegen
-                    </Button>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        autoFocus
+                        placeholder="Name der Kategorie"
+                        value={newCatName}
+                        onChange={(e) => setNewCatName(e.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!newCatName.trim() || createCategory.isPending}
+                        onClick={() =>
+                          createCategory.mutate({
+                            name: newCatName.trim(),
+                            type: type === 'income' ? 'income' : 'expense',
+                            color: newCatAsChild && selectedRoot ? selectedRoot.color : nextCategoryColor(),
+                            parentId: newCatAsChild && selectedRoot ? selectedRoot.id : undefined,
+                          })}
+                      >
+                        Anlegen
+                      </Button>
+                    </div>
+                    {selectedRoot && (
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="new-cat-child"
+                          checked={newCatAsChild}
+                          onCheckedChange={(checked) => setNewCatAsChild(checked === true)}
+                        />
+                        <Label htmlFor="new-cat-child" className="cursor-pointer text-xs font-normal text-muted-foreground">
+                          Als Unterkategorie von „{selectedRoot.name}“ anlegen
+                        </Label>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <button

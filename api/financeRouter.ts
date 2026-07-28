@@ -38,6 +38,8 @@ import {
   visibleAccountIds,
 } from "./lib/accountAccess";
 import { deleteAttachmentsForTransactions } from "./lib/attachments";
+import { computeBudgetStatuses } from "./lib/budgets";
+import { getNotifyConfig, isHttpUrl, sendNotification } from "./lib/notify";
 import {
   ensureAccountTypeExists,
   ensureBankExists,
@@ -78,6 +80,65 @@ export const financeRouter = createRouter({
       return { ...a, balance };
     });
   }),
+
+  /**
+   * Manueller Kontoabgleich: vergleicht den berechneten Soll-Saldo (gleiche
+   * Logik wie listAccounts) mit dem gemeldeten Ist-Saldo und bucht die
+   * Differenz als Korrekturbuchung (Einnahme/Ausgabe ohne Kategorie).
+   * Bei Differenz 0 wird nichts gebucht. Erfordert "edit" auf dem Konto.
+   */
+  reconcileAccount: authedQuery
+    .input(
+      z.object({
+        accountId: z.number().int().positive(),
+        // Ist-Saldo in Cent (darf negativ sein)
+        actualBalance: z.number().int(),
+        date: isoDate.optional(),
+        note: z.string().default("Kontoabgleich"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const account = await requireAccountAccess(
+        db,
+        ctx.user,
+        input.accountId,
+        "edit"
+      );
+      const txs = await db
+        .select({
+          type: transactions.type,
+          accountId: transactions.accountId,
+          toAccountId: transactions.toAccountId,
+          amount: transactions.amount,
+        })
+        .from(transactions);
+      // Soll-Saldo: gleiche Logik wie in listAccounts
+      let balance = account.initialBalance;
+      for (const t of txs) {
+        if (t.type === "transfer") {
+          if (t.accountId === account.id) balance -= t.amount;
+          if (t.toAccountId === account.id) balance += t.amount;
+        } else if (t.accountId === account.id) {
+          balance += t.type === "income" ? t.amount : -t.amount;
+        }
+      }
+      const difference = input.actualBalance - balance;
+      if (difference === 0) return { ok: true, difference: 0 };
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      await db.insert(transactions).values({
+        type: difference > 0 ? "income" : "expense",
+        accountId: account.id,
+        amount: Math.abs(difference),
+        categoryId: null,
+        userId: ctx.user.id,
+        date: input.date ?? today,
+        note: input.note,
+        createdAt: now,
+      });
+      return { ok: true, difference };
+    }),
 
   createAccount: authedQuery
     .input(
@@ -467,10 +528,47 @@ export const financeRouter = createRouter({
         name: z.string().min(1),
         type: z.enum(["income", "expense"]),
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        // Optional: als Unterkategorie dieser Oberkategorie anlegen
+        parentId: z.number().int().positive().optional(),
       })
     )
     .mutation(async ({ input }) => {
-      await getDb().insert(categories).values(input);
+      const db = getDb();
+      let color = input.color;
+      if (input.parentId !== undefined) {
+        const parent = await db.query.categories.findFirst({
+          where: eq(categories.id, input.parentId),
+        });
+        if (!parent) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Oberkategorie nicht gefunden.",
+          });
+        }
+        // Genau eine Hierarchieebene: keine Unter-Unterkategorien
+        if (parent.parentId !== null) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Unterkategorien können keine weiteren Unterkategorien haben.",
+          });
+        }
+        if (parent.type !== input.type) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Die Unterkategorie muss denselben Typ wie die Oberkategorie haben.",
+          });
+        }
+        // Unterkategorien erben die Farbe der Oberkategorie
+        color = parent.color;
+      }
+      await db.insert(categories).values({
+        name: input.name,
+        type: input.type,
+        color,
+        parentId: input.parentId ?? null,
+      });
       return { ok: true };
     }),
 
@@ -478,6 +576,16 @@ export const financeRouter = createRouter({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       const db = getDb();
+      const children = await db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.parentId, input.id));
+      if (children.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Die Kategorie hat noch ${children.length === 1 ? "1 Unterkategorie" : `${children.length} Unterkategorien`} und kann nicht gelöscht werden.`,
+        });
+      }
       db.transaction(tx => {
         tx.update(transactions)
           .set({ categoryId: null })
@@ -577,6 +685,12 @@ export const financeRouter = createRouter({
           });
         }
       }
+      // Budget-Wächter: bei Ausgaben mit Kategorie den Zustand vor dem
+      // Insert festhalten, um einen Kipppunkt über 100 % zu erkennen
+      const budgetsBefore =
+        input.type === "expense" && input.categoryId
+          ? await computeBudgetStatuses(db, ctx.user)
+          : null;
       const txId = db.transaction(tx => {
         const inserted = tx
           .insert(transactions)
@@ -593,6 +707,35 @@ export const financeRouter = createRouter({
         }
         return id;
       });
+      if (budgetsBefore && input.categoryId) {
+        // Nur Budgets prüfen, die die gebuchte Kategorie (oder deren
+        // Oberkategorie) betreffen — Benachrichtigung beim Kippen von
+        // ≤100 % auf >100 %, danach nicht erneut.
+        const cat = await db.query.categories.findFirst({
+          where: eq(categories.id, input.categoryId),
+        });
+        const budgetsAfter = await computeBudgetStatuses(db, ctx.user);
+        for (const status of budgetsAfter) {
+          const relevant =
+            status.budget.categoryId === input.categoryId ||
+            status.budget.categoryId === cat?.parentId;
+          if (!relevant) continue;
+          const before = budgetsBefore.find(
+            b => b.budget.id === status.budget.id
+          );
+          if (before && before.percent <= 100 && status.percent > 100) {
+            const budgetCat = await db.query.categories.findFirst({
+              where: eq(categories.id, status.budget.categoryId),
+            });
+            await sendNotification(
+              db,
+              "budget",
+              `Budget überschritten: ${budgetCat?.name ?? "Unbekannt"}`,
+              `Das Budget „${budgetCat?.name ?? "Unbekannt"}“ liegt jetzt bei ${status.percent} %.`
+            );
+          }
+        }
+      }
       return { id: txId };
     }),
 
@@ -625,11 +768,24 @@ export const financeRouter = createRouter({
 
   listBudgets: authedQuery.query(() => getDb().select().from(budgets)),
 
+  /**
+   * Aktuelle Auswertung aller Budgets (Zeitraum-Ausgaben inkl. Unter-
+   * kategorien, effektives Limit inkl. Rollover-Übertrag, verbleibend,
+   * Prozent) — gemeinsame Logik aus api/lib/budgets.ts, die auch die
+   * Budget-Prognose nutzt.
+   */
+  listBudgetStatus: authedQuery.query(async ({ ctx }) =>
+    computeBudgetStatuses(getDb(), ctx.user)
+  ),
+
   setBudget: authedQuery
     .input(
       z.object({
         categoryId: z.number().int().positive(),
         amount: z.number().int().positive(),
+        period: z.enum(["monthly", "yearly"]).default("monthly"),
+        // Rollover nur bei period "monthly" relevant (Übertrag in Folgemonate)
+        rollover: z.boolean().default(false),
       })
     )
     .mutation(async ({ input }) => {
@@ -638,12 +794,23 @@ export const financeRouter = createRouter({
         where: eq(budgets.categoryId, input.categoryId),
       });
       if (existing) {
+        // createdAt (Rollover-Anker) bleibt beim Anpassen erhalten
         await db
           .update(budgets)
-          .set({ amount: input.amount })
+          .set({
+            amount: input.amount,
+            period: input.period,
+            rollover: input.rollover,
+          })
           .where(eq(budgets.id, existing.id));
       } else {
-        await db.insert(budgets).values(input);
+        await db.insert(budgets).values({
+          categoryId: input.categoryId,
+          amount: input.amount,
+          period: input.period,
+          rollover: input.rollover,
+          createdAt: new Date(),
+        });
       }
       return { ok: true };
     }),
@@ -772,10 +939,30 @@ export const financeRouter = createRouter({
       })
     )
     .mutation(async ({ input }) => {
-      await getDb()
+      const db = getDb();
+      // Zustand vorher laden, um überschrittene Meilensteine zu erkennen
+      const goal = await db.query.savingsGoals.findFirst({
+        where: eq(savingsGoals.id, input.id),
+      });
+      await db
         .update(savingsGoals)
         .set({ savedAmount: input.savedAmount })
         .where(eq(savingsGoals.id, input.id));
+      // Meilenstein-Benachrichtigung (25/50/75/100 %), nur beim Ansteigen
+      if (goal && goal.targetAmount > 0) {
+        const beforePct = (goal.savedAmount / goal.targetAmount) * 100;
+        const afterPct = (input.savedAmount / goal.targetAmount) * 100;
+        for (const milestone of [25, 50, 75, 100]) {
+          if (beforePct < milestone && afterPct >= milestone) {
+            await sendNotification(
+              db,
+              "goal",
+              `Sparziel ${goal.name}: ${milestone} % erreicht`,
+              `Beim Sparziel „${goal.name}“ sind ${milestone} % angespart.`
+            );
+          }
+        }
+      }
       return { ok: true };
     }),
 
@@ -1071,7 +1258,11 @@ export const financeRouter = createRouter({
       const cats = await db.select().from(categories);
       const catByName = new Map<string, number>();
       for (const c of cats) {
-        catByName.set(`${c.type}:${c.name.toLowerCase()}`, c.id);
+        // Kategorien werden rein per Name gematcht (keine Ober-/Unter-
+        // unterscheidung im CSV) — bei Namensgleichheit gewinnt die erste
+        // passende Kategorie (kleinste ID).
+        const key = `${c.type}:${c.name.toLowerCase()}`;
+        if (!catByName.has(key)) catByName.set(key, c.id);
       }
 
       const errors: string[] = [];
@@ -1161,5 +1352,149 @@ export const financeRouter = createRouter({
           set: { value: input.currency },
         });
       return { ok: true };
+    }),
+
+  /** Admin: Benachrichtigungs-Einstellungen (ntfy/Webhook) lesen */
+  getNotifySettings: adminQuery.query(() => getNotifyConfig(getDb())),
+
+  /** Admin: Benachrichtigungs-Einstellungen speichern (leer = deaktiviert) */
+  setNotifySettings: adminQuery
+    .input(
+      z.object({
+        ntfyUrl: z.string().nullable(),
+        webhookUrl: z.string().nullable(),
+        events: z.object({
+          budget: z.boolean(),
+          recurring: z.boolean(),
+          goal: z.boolean(),
+        }),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      const clean = (raw: string | null, label: string): string | null => {
+        const v = (raw ?? "").trim();
+        if (v === "") return null;
+        if (!isHttpUrl(v)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${label} muss mit http:// oder https:// beginnen.`,
+          });
+        }
+        return v;
+      };
+      const entries: [string, string][] = [
+        ["notify_ntfy_url", clean(input.ntfyUrl, "Die ntfy-URL") ?? ""],
+        ["notify_webhook_url", clean(input.webhookUrl, "Die Webhook-URL") ?? ""],
+        ["notify_events", JSON.stringify(input.events)],
+      ];
+      for (const [key, value] of entries) {
+        await db
+          .insert(appSettings)
+          .values({ key, value })
+          .onConflictDoUpdate({ target: appSettings.key, set: { value } });
+      }
+      return { ok: true };
+    }),
+
+  /** Admin: Testbenachrichtigung über die konfigurierten Kanäle senden */
+  sendTestNotification: adminQuery.mutation(async () => {
+    const db = getDb();
+    const cfg = await getNotifyConfig(db);
+    if (!cfg.ntfyUrl && !cfg.webhookUrl) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Keine Benachrichtigungs-URL konfiguriert.",
+      });
+    }
+    const sent = await sendNotification(
+      db,
+      "test",
+      "Finance Fox: Testbenachrichtigung",
+      "Die Benachrichtigungen sind eingerichtet."
+    );
+    if (sent.length === 0) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Testbenachrichtigung konnte nicht gesendet werden.",
+      });
+    }
+    return { sent };
+  }),
+
+  /* ------------------------------- Auswertung ------------------------------- */
+
+  /**
+   * Jahresvergleich der Ausgaben: pro Ausgaben-Oberkategorie (Unterkategorien
+   * aufgerollt, nur sichtbare Konten) die Summen des Jahres und des Vorjahres
+   * in Cent, absteigend nach der Jahressumme sortiert. Ausgaben ohne
+   * Kategorie erscheinen als eigene Zeile (categoryId null).
+   */
+  yearComparison: authedQuery
+    .input(z.object({ year: z.number().int().min(2000).max(2100) }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const visible = await visibleAccountIds(db, ctx.user);
+      const [allTxs, cats] = await Promise.all([
+        db
+          .select({
+            type: transactions.type,
+            accountId: transactions.accountId,
+            toAccountId: transactions.toAccountId,
+            amount: transactions.amount,
+            categoryId: transactions.categoryId,
+            date: transactions.date,
+          })
+          .from(transactions),
+        db.select().from(categories),
+      ]);
+      const rootOf = new Map(cats.map(c => [c.id, c.parentId ?? c.id]));
+      const yearPrefix = `${input.year}-`;
+      const prevPrefix = `${input.year - 1}-`;
+      // Schlüssel -1 = Ausgaben ohne Kategorie
+      const sums = new Map<number, { current: number; previous: number }>();
+      for (const t of allTxs) {
+        if (t.type !== "expense" || !touchesVisibleAccount(visible, t)) {
+          continue;
+        }
+        const isCurrent = t.date.startsWith(yearPrefix);
+        if (!isCurrent && !t.date.startsWith(prevPrefix)) continue;
+        const rootId =
+          t.categoryId === null
+            ? -1
+            : (rootOf.get(t.categoryId) ?? t.categoryId);
+        const entry = sums.get(rootId) ?? { current: 0, previous: 0 };
+        if (isCurrent) entry.current += t.amount;
+        else entry.previous += t.amount;
+        sums.set(rootId, entry);
+      }
+      const rows: {
+        categoryId: number | null;
+        name: string;
+        color: string;
+        current: number;
+        previous: number;
+      }[] = cats
+        .filter(c => c.type === "expense" && c.parentId === null)
+        .map(c => ({
+          categoryId: c.id,
+          name: c.name,
+          color: c.color,
+          ...(sums.get(c.id) ?? { current: 0, previous: 0 }),
+        }));
+      const uncategorized = sums.get(-1);
+      if (
+        uncategorized &&
+        (uncategorized.current > 0 || uncategorized.previous > 0)
+      ) {
+        rows.push({
+          categoryId: null,
+          name: "Ohne Kategorie",
+          color: "#94a3b8",
+          ...uncategorized,
+        });
+      }
+      rows.sort((a, b) => b.current - a.current);
+      return { year: input.year, prevYear: input.year - 1, rows };
     }),
 });

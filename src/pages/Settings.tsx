@@ -12,6 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { CURRENCIES, type CurrencyCode } from '@contracts/types';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
@@ -28,6 +29,8 @@ export default function Settings() {
   const invalidate = useInvalidateFinance();
   const [catName, setCatName] = useState('');
   const [catType, setCatType] = useState<'income' | 'expense'>('expense');
+  // '' = neue Oberkategorie, sonst ID der Oberkategorie für eine Unterkategorie
+  const [catParent, setCatParent] = useState('');
   const [profileName, setProfileName] = useState(user?.name ?? '');
   const [profileColor, setProfileColor] = useState(user?.color ?? '#10b981');
   const [currentPw, setCurrentPw] = useState('');
@@ -37,12 +40,17 @@ export default function Settings() {
   const [currencyChoice, setCurrencyChoice] = useState<CurrencyCode | null>(null);
   const currency = currencyChoice ?? appSettings.data?.currency ?? 'EUR';
 
+  // Kategorien-Baum: Oberkategorien (parentId null) und deren Unterkategorien
+  const catRoots = categories.filter((c) => c.parentId === null);
+  const catChildrenOf = (id: number) => categories.filter((c) => c.parentId === id);
+
   const createCategory = trpc.finance.createCategory.useMutation({
-    onSuccess: () => { toast.success('Kategorie hinzugefügt.'); invalidate(); setCatName(''); },
+    onSuccess: () => { toast.success('Kategorie hinzugefügt.'); invalidate(); setCatName(''); setCatParent(''); },
     onError: (err) => toast.error(err.message),
   });
   const deleteCategory = trpc.finance.deleteCategory.useMutation({
     onSuccess: () => { toast.success('Kategorie gelöscht.'); invalidate(); },
+    onError: (err) => toast.error(err.message),
   });
   const deleteAccountType = trpc.finance.deleteAccountType.useMutation({
     onSuccess: () => { toast.success('Kontotyp gelöscht.'); invalidate(); },
@@ -70,6 +78,25 @@ export default function Settings() {
       setAppCurrency(vars.currency);
       invalidate();
     },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Benachrichtigungen (nur Admins): null = noch nicht angefasst → Server-Wert
+  const notifySettings = trpc.finance.getNotifySettings.useQuery(undefined, {
+    enabled: user?.role === 'admin',
+  });
+  const [ntfyUrl, setNtfyUrl] = useState<string | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  const [notifyEvents, setNotifyEvents] = useState<{ budget: boolean; recurring: boolean; goal: boolean } | null>(null);
+  const ntfy = ntfyUrl ?? notifySettings.data?.ntfyUrl ?? '';
+  const webhook = webhookUrl ?? notifySettings.data?.webhookUrl ?? '';
+  const events = notifyEvents ?? notifySettings.data?.events ?? { budget: true, recurring: true, goal: true };
+  const saveNotify = trpc.finance.setNotifySettings.useMutation({
+    onSuccess: () => { toast.success('Benachrichtigungen gespeichert.'); invalidate(); notifySettings.refetch(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const testNotify = trpc.finance.sendTestNotification.useMutation({
+    onSuccess: (data) => toast.success(`Testbenachrichtigung gesendet über: ${data.sent.join(', ')}.`),
     onError: (err) => toast.error(err.message),
   });
 
@@ -241,31 +268,134 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {user?.role === 'admin' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Benachrichtigungen</CardTitle>
+            <CardDescription>
+              Optional (opt-in): Finance Fox kann Ereignisse an einen selbstgehosteten
+              ntfy-Server (volle Topic-URL, z.&nbsp;B. <code>https://ntfy.sh/mein-haushalt</code>)
+              und/oder einen generischen Webhook (JSON per POST) melden. Ohne URL bleibt alles lokal.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>ntfy-Topic-URL</Label>
+                <Input
+                  placeholder="https://ntfy.sh/mein-haushalt"
+                  value={ntfy}
+                  onChange={(e) => setNtfyUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Webhook-URL</Label>
+                <Input
+                  placeholder="https://example.org/hook"
+                  value={webhook}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Benachrichtigen bei</Label>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {([
+                  ['budget', 'Budget-Überschreitung'],
+                  ['recurring', 'Wiederkehrende Buchungen'],
+                  ['goal', 'Sparziel-Meilensteine'],
+                ] as const).map(([key, label]) => (
+                  <span key={key} className="flex items-center gap-2 text-sm">
+                    <Switch
+                      checked={events[key]}
+                      onCheckedChange={(checked) => setNotifyEvents({ ...events, [key]: checked })}
+                    />
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                disabled={saveNotify.isPending}
+                onClick={() => saveNotify.mutate({ ntfyUrl: ntfy, webhookUrl: webhook, events })}
+              >
+                Benachrichtigungen speichern
+              </Button>
+              <Button
+                variant="outline"
+                disabled={testNotify.isPending}
+                onClick={() => testNotify.mutate()}
+              >
+                {testNotify.isPending ? 'Sende…' : 'Testbenachrichtigung senden'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Kategorien</CardTitle>
           <CardDescription>{categories.length} Kategorien</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {categories.map((c) => (
-              <Badge key={c.id} variant="secondary" className="gap-1.5 py-1 pl-2 pr-1">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.color }} />
-                {c.name}
-                <button
-                  type="button"
-                  className="ml-1 rounded-full p-0.5 hover:bg-muted"
-                  onClick={() => deleteCategory.mutate({ id: c.id })}
-                  title="Löschen"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </Badge>
+          {/* Baum-Ansicht: Oberkategorien mit eingerückten Unterkategorien */}
+          <div className="space-y-1.5">
+            {catRoots.map((root) => (
+              <div key={root.id} className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="gap-1.5 py-1 pl-2 pr-1">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: root.color }} />
+                  {root.name}
+                  <button
+                    type="button"
+                    className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                    onClick={() => deleteCategory.mutate({ id: root.id })}
+                    title="Löschen"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </Badge>
+                {catChildrenOf(root.id).map((child) => (
+                  <Badge key={child.id} variant="secondary" className="ml-4 gap-1.5 py-1 pl-2 pr-1">
+                    <span className="text-muted-foreground">└</span>
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: child.color }} />
+                    {child.name}
+                    <button
+                      type="button"
+                      className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                      onClick={() => deleteCategory.mutate({ id: child.id })}
+                      title="Löschen"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
             ))}
           </div>
-          <div className="flex gap-2">
-            <Input placeholder="Neue Kategorie…" value={catName} onChange={(e) => setCatName(e.target.value)} />
-            <Select value={catType} onValueChange={(v) => setCatType(v as 'income' | 'expense')}>
+          <div className="flex flex-wrap gap-2">
+            <Input className="min-w-40 flex-1" placeholder="Neue Kategorie…" value={catName} onChange={(e) => setCatName(e.target.value)} />
+            <Select
+              value={catParent || 'none'}
+              onValueChange={(v) => {
+                const parentId = v === 'none' ? '' : v;
+                setCatParent(parentId);
+                // Unterkategorien erben den Typ der Oberkategorie
+                const parent = catRoots.find((c) => String(c.id) === parentId);
+                if (parent) setCatType(parent.type);
+              }}
+            >
+              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Oberkategorie</SelectItem>
+                {catRoots.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>Unter: {c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={catType} onValueChange={(v) => setCatType(v as 'income' | 'expense')} disabled={catParent !== ''}>
               <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="expense">Ausgabe</SelectItem>
@@ -276,9 +406,13 @@ export default function Settings() {
               variant="outline"
               onClick={() => {
                 if (!catName.trim()) return;
+                // Unterkategorien erben Farbe (und Typ) der Oberkategorie —
+                // die Palette wird nur für Oberkategorien automatisch vergeben
+                const parent = catRoots.find((c) => String(c.id) === catParent);
                 createCategory.mutate({
                   name: catName.trim(), type: catType,
-                  color: CAT_COLORS[categories.length % CAT_COLORS.length],
+                  color: parent?.color ?? CAT_COLORS[categories.length % CAT_COLORS.length],
+                  parentId: parent?.id,
                 });
               }}
             >

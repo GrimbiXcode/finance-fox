@@ -2,11 +2,12 @@ import { z } from "zod";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
-  accounts, budgets, categories, recurring, savingsGoals, transactions,
+  accounts, categories, recurring, savingsGoals, transactions,
 } from "@db/schema";
 import {
   touchesVisibleAccount, visibleAccountIds,
 } from "./lib/accountAccess";
+import { computeBudgetStatuses } from "./lib/budgets";
 
 function localISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -176,35 +177,44 @@ export const forecastRouter = createRouter({
       return { history, projection, avgVariableIncome: avgVarIncome, avgVariableExpense: avgVarExpense };
     }),
 
-  /** Budget-Hochrechnung für den laufenden Monat */
+  /**
+   * Budget-Hochrechnung für den laufenden Zeitraum (Monat bzw. Jahr).
+   * Nutzt dieselbe Auswertung wie listBudgetStatus (api/lib/budgets.ts):
+   * Ausgaben inkl. Unterkategorien, effektives Limit inkl. Rollover.
+   */
   budgetForecast: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
-    const visible = await visibleAccountIds(db, ctx.user);
-    const [allBudgets, allTxs, cats] = await Promise.all([
-      db.select().from(budgets),
-      db.select().from(transactions),
+    const [statuses, cats] = await Promise.all([
+      computeBudgetStatuses(db, ctx.user),
       db.select().from(categories),
     ]);
-    const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
     const today = new Date();
-    const currentKey = localISO(today).slice(0, 7);
+    // Hochrechnung linear auf das Periodenende
+    const startOfYear = new Date(today.getFullYear(), 0, 1);
+    const dayOfYear = Math.floor(
+      (today.getTime() - startOfYear.getTime()) / 86_400_000,
+    ) + 1;
+    // Schaltjahr: 29. Februar existiert
+    const daysInYear =
+      new Date(today.getFullYear(), 1, 29).getDate() === 29 ? 366 : 365;
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
     const dayOfMonth = today.getDate();
 
-    return allBudgets.map((b) => {
-      const spent = txs
-        .filter((t) => t.type === "expense" && t.categoryId === b.categoryId && monthKey(t.date) === currentKey)
-        .reduce((s, t) => s + t.amount, 0);
-      const projected = dayOfMonth > 0 ? Math.round((spent / dayOfMonth) * daysInMonth) : 0;
-      const cat = cats.find((c) => c.id === b.categoryId);
+    return statuses.map((s) => {
+      const yearly = s.budget.period === "yearly";
+      const elapsed = yearly ? dayOfYear : dayOfMonth;
+      const total = yearly ? daysInYear : daysInMonth;
+      const projected = elapsed > 0 ? Math.round((s.spent / elapsed) * total) : 0;
+      const cat = cats.find((c) => c.id === s.budget.categoryId);
       return {
-        categoryId: b.categoryId,
+        categoryId: s.budget.categoryId,
         categoryName: cat?.name ?? "Unbekannt",
         color: cat?.color ?? "#94a3b8",
-        budget: b.amount,
-        spent,
+        period: s.budget.period,
+        budget: s.effectiveLimit,
+        spent: s.spent,
         projected,
-        willExceed: projected > b.amount,
+        willExceed: projected > s.effectiveLimit,
       };
     });
   }),

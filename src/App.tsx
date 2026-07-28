@@ -11,6 +11,7 @@ import Splitting from '@/pages/Splitting'
 import Recurring from '@/pages/Recurring'
 import Goals from '@/pages/Goals'
 import Forecasts from '@/pages/Forecasts'
+import YearReview from '@/pages/YearReview'
 import Settings from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
 import Login from '@/pages/Login'
@@ -52,6 +53,7 @@ function Root() {
         <Route path="/wiederkehrend" element={<Recurring />} />
         <Route path="/sparziele" element={<Goals />} />
         <Route path="/prognosen" element={<Forecasts />} />
+        <Route path="/auswertung" element={<YearReview />} />
         <Route path="/personen" element={<UsersPage />} />
         <Route path="/einstellungen" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

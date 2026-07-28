@@ -64,7 +64,8 @@ export function ensureSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       type TEXT NOT NULL,
-      color TEXT NOT NULL
+      color TEXT NOT NULL,
+      parent_id INTEGER
     )`,
     `CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +102,10 @@ export function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS budgets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category_id INTEGER NOT NULL UNIQUE,
-      amount INTEGER NOT NULL
+      amount INTEGER NOT NULL,
+      period TEXT NOT NULL DEFAULT 'monthly',
+      rollover INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER
     )`,
     `CREATE TABLE IF NOT EXISTS recurring (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,6 +157,28 @@ export function ensureSchema() {
   const recurringCols = raw.prepare("PRAGMA table_info(recurring)").raw().all();
   if (!recurringCols.some((col) => col[1] === "to_account_id")) {
     db.run("ALTER TABLE recurring ADD COLUMN to_account_id INTEGER" as never);
+  }
+  // Kategorien-Hierarchie: parent_id für Unterkategorien nachrüsten
+  const categoryCols = raw.prepare("PRAGMA table_info(categories)").raw().all();
+  if (!categoryCols.some((col) => col[1] === "parent_id")) {
+    db.run("ALTER TABLE categories ADD COLUMN parent_id INTEGER" as never);
+  }
+  // Budgets: Zeitraum (Monat/Jahr), Rollover und Anker-Datum nachrüsten.
+  // Bestandsbudgets bleiben Monatsbudgets ohne Rollover (created_at NULL =
+  // Rollover-Anker am Jahresanfang, siehe api/lib/budgets.ts).
+  const budgetCols = raw.prepare("PRAGMA table_info(budgets)").raw().all();
+  if (!budgetCols.some((col) => col[1] === "period")) {
+    db.run(
+      "ALTER TABLE budgets ADD COLUMN period TEXT NOT NULL DEFAULT 'monthly'" as never,
+    );
+  }
+  if (!budgetCols.some((col) => col[1] === "rollover")) {
+    db.run(
+      "ALTER TABLE budgets ADD COLUMN rollover INTEGER NOT NULL DEFAULT 0" as never,
+    );
+  }
+  if (!budgetCols.some((col) => col[1] === "created_at")) {
+    db.run("ALTER TABLE budgets ADD COLUMN created_at INTEGER" as never);
   }
 
   // Builtin-Kontotypen seeden — nur fehlende Keys ergänzen, bestehende

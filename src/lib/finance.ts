@@ -153,6 +153,33 @@ export function expensesByCategory(txs: TxLike[], key: string): Map<number, numb
   return map;
 }
 
+export interface CategoryLike {
+  id: number;
+  parentId: number | null;
+}
+
+/**
+ * Ausgaben eines Monats auf Oberkategorien aggregiert: Ausgaben einer
+ * Unterkategorie zählen zur Oberkategorie, Kategorien ohne Oberkategorie
+ * bilden eine eigene Gruppe (Schlüssel -1 = ohne Kategorie, wie bei
+ * expensesByCategory).
+ */
+export function expensesByRootCategory(
+  txs: TxLike[],
+  key: string,
+  categories: CategoryLike[],
+): Map<number, number> {
+  const rootOf = new Map<number, number>(
+    categories.map((c) => [c.id, c.parentId ?? c.id]),
+  );
+  const map = new Map<number, number>();
+  for (const [catId, amount] of expensesByCategory(txs, key)) {
+    const rootId = catId === -1 ? -1 : (rootOf.get(catId) ?? catId);
+    map.set(rootId, (map.get(rootId) ?? 0) + amount);
+  }
+  return map;
+}
+
 /** Netto-Salden zwischen Personen aus geteilten Ausgaben */
 export function memberBalances(txs: TxLike[], userIds: number[]): Map<number, number> {
   const net = new Map<number, number>();

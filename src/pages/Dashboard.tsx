@@ -6,7 +6,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFinanceData } from '@/lib/data';
 import {
-  currencySymbol, currentMonthKey, expensesByCategory, formatCents, formatDate, formatMonth,
+  currencySymbol, currentMonthKey, expensesByRootCategory, formatCents, formatDate, formatMonth,
   getUserLocale, memberBalances, monthTotals, totalBalance,
 } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
@@ -34,7 +34,8 @@ export default function Dashboard() {
     });
   }, [transactions]);
 
-  const categoryData = [...expensesByCategory(transactions, month).entries()]
+  // Ausgaben auf Oberkategorien aggregiert (Unterkategorien zählen zur Oberkategorie)
+  const categoryData = [...expensesByRootCategory(transactions, month, categories).entries()]
     .map(([catId, amount]) => {
       const cat = categories.find((c) => c.id === catId);
       return { name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? '#94a3b8' };

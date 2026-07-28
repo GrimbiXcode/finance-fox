@@ -39,10 +39,12 @@ export function useInvalidateFinance() {
     utils.finance.listBanks.invalidate();
     utils.finance.listTransactions.invalidate();
     utils.finance.listBudgets.invalidate();
+    utils.finance.listBudgetStatus.invalidate();
     utils.finance.listRecurring.invalidate();
     utils.finance.listGoals.invalidate();
     utils.finance.listCategories.invalidate();
     utils.finance.getAppSettings.invalidate();
+    utils.finance.yearComparison.invalidate();
     utils.forecast.balance.invalidate();
     utils.forecast.budgetForecast.invalidate();
     utils.forecast.goalForecast.invalidate();

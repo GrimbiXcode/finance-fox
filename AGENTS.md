@@ -69,6 +69,9 @@ api/            Backend (Hono + tRPC), Einstieg: api/boot.ts (enthält auch die
                   accountTypes.ts (IBAN-Normalisierung/-Validierung, Existenz-
                   prüfung für Kontotyp-Keys und Banken),
                   csv.ts (CSV-Format: Semikolon, Dezimalkomma, RFC-4180-Quoting),
+                  budgets.ts (Budget-Auswertung: Zeitraum Monat/Jahr, Rollup
+                  über Unterkategorien, Rollover-Rechnung — geteilt von
+                  finance.listBudgetStatus und forecast.budgetForecast),
                   attachments.ts (Beleg-Dateien außerhalb der DB speichern/
                   löschen, Speicherort ATTACHMENTS_DIR),
                   http.ts, vite.ts (statische Auslieferung in Produktion)
@@ -110,6 +113,27 @@ Wichtige Konventionen:
   Frontend: `formatCents` / `currencySymbol` in `src/lib/finance.ts` nutzen
   die App-Währung als Default; das Layout lädt sie via
   `finance.getAppSettings` und setzt sie mit `setAppCurrency`.
+- **Benachrichtigungen (opt-in)**: Versand via ntfy und/oder generischem
+  Webhook, zentral `sendNotification` in `api/lib/notify.ts` (Konfiguration in
+  `app_settings`: `notify_ntfy_url`, `notify_webhook_url`, `notify_events` —
+  Admin-Endpunkte `finance.getNotifySettings`/`setNotifySettings`/
+  `sendTestNotification`). Nur http/https-URLs; Versandfehler werden nur
+  geloggt, nie den Hauptflow brechen. Trigger: Budget-Kipppunkt >100 % in
+  `finance.createTransaction`, Sammelmeldung am Ende von `runRecurringJob`,
+  Sparziel-Meilensteine (25/50/75/100 %) in `finance.updateGoalSaved`.
+- **Kontoabgleich**: `finance.reconcileAccount` bucht die Differenz zwischen
+  Ist- und berechnetem Soll-Saldo (Logik wie `listAccounts`) als Korrektur-
+  buchung ohne Kategorie (Einnahme/Ausgabe, erfordert `edit`); bei Differenz 0
+  wird nichts gebucht. UI: Sektion „Kontoabgleich" im AccountDialog
+  (Bearbeiten-Modus).
+- **Schnellerfassung**: `src/components/QuickAddDialog.tsx` (Button „Schnell"
+  im Layout-Header) bucht eine Ausgabe mit nur Betrag + Notiz; Defaults:
+  erstes Konto mit `access === "edit"`, zuletzt verwendete Ausgaben-Kategorie,
+  heutiges Datum, aktueller User.
+- **Jahresvergleich**: `finance.yearComparison` liefert pro Ausgaben-
+  Oberkategorie (Unterkategorien aufgerollt, Sichtbarkeitsfilter) die Summen
+  von Jahr und Vorjahr; Ausgaben ohne Kategorie als Zeile `categoryId: null`.
+  UI: Seite `src/pages/YearReview.tsx` unter `/auswertung` (Nav „Auswertung").
 - Path-Aliase: `@/*` → `src/*`, `@contracts/*` → `contracts/*`,
   `@db/*` → `db/*` (in tsconfig und `vite.config.ts` konsistent halten).
 - Der Frontend-Client importiert den Typ `AppRouter` direkt aus
@@ -132,6 +156,25 @@ Wichtige Konventionen:
   Saldo-Prognose sind Transfers zwischen zwei sichtbaren Konten neutral, bei
   nur einer sichtbaren Seite wirken sie als Ab-/Zufluss (nicht in
   `recurringIncome`/`recurringExpense`).
+- **Kategorien-Hierarchie**: `categories.parentId` NULL = Oberkategorie, sonst
+  Verweis auf die Oberkategorie — genau EINE Ebene (Unterkategorien dürfen
+  keine Kinder haben, wird in `finance.createCategory` geprüft). Unter-
+  kategorien erben Typ und Farbe der Oberkategorie; Oberkategorien mit
+  Kindern können nicht gelöscht werden (CONFLICT). Das Frontend baut den
+  Baum selbst (listCategories bleibt flach); das Dashboard aggregiert
+  Ausgaben per `expensesByRootCategory` (src/lib/finance.ts) auf
+  Oberkategorien. CSV-Import matcht Kategorien weiterhin rein per Name —
+  bei Namensgleichheit gewinnt die erste passende Kategorie.
+- **Budgets**: `budgets.period` = `monthly` (Kalendermonat) oder `yearly`
+  (Kalenderjahr), `budgets.rollover` (nur bei monthly) überträgt unver-
+  brauchtes Budget in Folgemonate, `budgets.createdAt` ist der Rollover-
+  Anker (NULL bei Bestandsbudgets = 1. Januar des laufenden Jahres).
+  Effektives Limit = amount × Monate-seit-Anker − Ausgaben der abgelaufenen
+  Monate seit Anker, mindestens 0. Auswertung zentral in
+  `api/lib/budgets.ts` (`computeBudgetStatuses`) — Ausgaben einer Budget-
+  Kategorie inkl. aller Unterkategorien, mit Sichtbarkeitsfilter; genutzt
+  von `finance.listBudgetStatus` (Budgets-Seite) und
+  `forecast.budgetForecast`.
 - **Kontotypen**: `accounts.type` speichert den KEY aus der Tabelle
   `account_types` — Builtin-Keys `checking`/`cash`/`savings` (in
   `ensureSchema` per INSERT OR IGNORE geseedet, nicht löschbar) plus

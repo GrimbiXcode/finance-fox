@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router';
 import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
-  Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon,
+  Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
@@ -11,6 +11,7 @@ import { formatCents, setAppCurrency, totalBalance } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import QuickAddDialog from '@/components/QuickAddDialog';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/wiederkehrend', label: 'Wiederkehrend', icon: Repeat },
   { to: '/sparziele', label: 'Sparziele', icon: PiggyBank },
   { to: '/prognosen', label: 'Prognosen', icon: TrendingUp },
+  { to: '/auswertung', label: 'Auswertung', icon: ChartColumn },
   { to: '/personen', label: 'Personen', icon: UserCog },
   { to: '/einstellungen', label: 'Einstellungen', icon: Settings },
 ];
@@ -89,6 +91,7 @@ export default function Layout() {
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}
           </div>
           <div className="flex items-center gap-3">
+            <QuickAddDialog />
             <Button
               variant="ghost"
               size="icon"

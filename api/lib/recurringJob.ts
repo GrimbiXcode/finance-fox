@@ -46,6 +46,7 @@ export async function runRecurringJob(): Promise<number> {
         tx.insert(transactions).values({
           type: r.type,
           accountId: r.accountId,
+          toAccountId: r.toAccountId ?? undefined,
           amount: r.amount,
           categoryId: r.categoryId ?? undefined,
           userId: r.userId,

@@ -661,14 +661,18 @@ export const financeRouter = createRouter({
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
     const rows = await db.select().from(recurring);
-    return rows.filter(r => visible.has(r.accountId));
+    // Dauer-Umbuchungen bleiben sichtbar, wenn Quell- ODER Zielkonto sichtbar
+    // ist (analog zu listTransactions).
+    return rows.filter(r => visible.has(r.accountId)
+      || (r.toAccountId !== null && visible.has(r.toAccountId)));
   }),
 
   createRecurring: authedQuery
     .input(
       z.object({
-        type: z.enum(["income", "expense"]),
+        type: z.enum(["income", "expense", "transfer"]),
         accountId: z.number().int().positive(),
+        toAccountId: z.number().int().positive().optional(),
         amount: z.number().int().positive(),
         categoryId: z.number().int().positive().optional(),
         userId: z.number().int().positive(),
@@ -680,9 +684,30 @@ export const financeRouter = createRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
       await requireAccountAccess(db, ctx.user, input.accountId, "edit");
-      await db
-        .insert(recurring)
-        .values({ ...input, active: true, createdAt: new Date() });
+      if (input.type === "transfer") {
+        if (!input.toAccountId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Bei Umbuchungen muss ein Zielkonto angegeben werden.",
+          });
+        }
+        if (input.toAccountId === input.accountId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Zielkonto muss ein anderes Konto sein.",
+          });
+        }
+        // Zielkonto muss zumindest sichtbar sein (wie bei createTransaction)
+        await requireAccountAccess(db, ctx.user, input.toAccountId, "view");
+      }
+      await db.insert(recurring).values({
+        ...input,
+        // Kategorie ist bei Umbuchungen irrelevant
+        categoryId: input.type === "transfer" ? undefined : input.categoryId,
+        toAccountId: input.type === "transfer" ? input.toAccountId : undefined,
+        active: true,
+        createdAt: new Date(),
+      });
       return { ok: true };
     }),
 

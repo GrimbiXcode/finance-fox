@@ -49,7 +49,10 @@ export const forecastRouter = createRouter({
       // Nur sichtbare Konten/Buchungen in die Prognose einbeziehen
       const accs = allAccs.filter((a) => visible.has(a.id));
       const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
-      const recs = allRecs.filter((r) => visible.has(r.accountId));
+      // Dauer-Umbuchungen mit nur einer sichtbaren Seite wirken auf den Saldo
+      // (s. Projektion unten) und dürfen daher nicht herausgefiltert werden.
+      const recs = allRecs.filter((r) => visible.has(r.accountId)
+        || (r.toAccountId !== null && visible.has(r.toAccountId)));
 
       // Startvermögen (Anfangsbestände)
       const base = accs.reduce((s, a) => s + a.initialBalance, 0);
@@ -128,6 +131,9 @@ export const forecastRouter = createRouter({
 
         let recInc = 0;
         let recExp = 0;
+        // Netto-Saldo-Effekt von Dauer-Umbuchungen, getrennt von Einnahmen/
+        // Ausgaben, damit diese Anzeigen nicht verfälscht werden
+        let recTransferNet = 0;
         for (const r of recs) {
           if (!r.active) continue;
           let next = r.nextDate;
@@ -138,13 +144,27 @@ export const forecastRouter = createRouter({
             guard += 1;
           }
           while (next <= monthEnd && guard < 1000) {
-            if (r.type === "income") recInc += r.amount;
-            else recExp += r.amount;
+            if (r.type === "income") {
+              recInc += r.amount;
+            } else if (r.type === "expense") {
+              recExp += r.amount;
+            } else {
+              // Umbuchung: zwischen zwei sichtbaren Konten saldo-neutral
+              // (Gesamtsicht). Ist nur eine Seite sichtbar, wirkt sie als
+              // Abfluss (Quelle sichtbar) bzw. Zufluss (Ziel sichtbar) —
+              // bewusst nicht in recurringIncome/Expense, da es sich nicht
+              // um Einnahmen/Ausgaben handelt.
+              const srcVisible = visible.has(r.accountId);
+              const dstVisible = r.toAccountId !== null
+                && visible.has(r.toAccountId);
+              if (srcVisible && !dstVisible) recTransferNet -= r.amount;
+              else if (!srcVisible && dstVisible) recTransferNet += r.amount;
+            }
             next = advanceDate(next, r.interval);
             guard += 1;
           }
         }
-        projected += recInc + avgVarIncome - recExp - avgVarExpense;
+        projected += recInc + avgVarIncome - recExp - avgVarExpense + recTransferNet;
         projection.push({
           month: addMonths(currentKey, i),
           balance: projected,

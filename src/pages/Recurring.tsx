@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
+import { ArrowRight, Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,15 +22,17 @@ type Interval = 'weekly' | 'monthly' | 'yearly';
 const intervalLabel: Record<Interval, string> = {
   weekly: 'Wöchentlich', monthly: 'Monatlich', yearly: 'Jährlich',
 };
+type RecType = 'income' | 'expense' | 'transfer';
 
 export default function Recurring() {
   const { user } = useAuth();
   const { accounts, categories, recurring, users } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<'income' | 'expense'>('expense');
+  const [type, setType] = useState<RecType>('expense');
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
+  const [toAccountId, setToAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [userId, setUserId] = useState('');
   const [note, setNote] = useState('');
@@ -41,7 +43,7 @@ export default function Recurring() {
     onSuccess: () => {
       toast.success('Dauerbuchung angelegt — fällige Buchungen erzeugt der Server automatisch.');
       invalidate();
-      setOpen(false); setAmount(''); setNote('');
+      setOpen(false); setAmount(''); setNote(''); setToAccountId('');
     },
     onError: (err) => toast.error(err.message),
   });
@@ -57,10 +59,15 @@ export default function Recurring() {
   const submit = () => {
     const cents = parseEuro(amount);
     const accId = Number(accountId) || accounts[0]?.id;
+    const toAccId = Number(toAccountId);
     if (cents <= 0 || !accId) { toast.error('Betrag und Konto angeben.'); return; }
+    if (type === 'transfer' && (!toAccId || toAccId === accId)) {
+      toast.error('Zielkonto muss ein anderes Konto sein.'); return;
+    }
     createRecurring.mutate({
       type, amount: cents, accountId: accId,
-      categoryId: categoryId ? Number(categoryId) : undefined,
+      toAccountId: type === 'transfer' ? toAccId : undefined,
+      categoryId: type !== 'transfer' && categoryId ? Number(categoryId) : undefined,
       userId: Number(userId) || user?.id || 0,
       note: note.trim(), interval, nextDate,
     });
@@ -86,9 +93,10 @@ export default function Recurring() {
             <DialogContent>
               <DialogHeader><DialogTitle>Neue wiederkehrende Buchung</DialogTitle></DialogHeader>
               <div className="grid gap-4 py-2">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <Button type="button" variant={type === 'expense' ? 'default' : 'outline'} className={type === 'expense' ? 'bg-rose-600 hover:bg-rose-700' : ''} onClick={() => setType('expense')}>Ausgabe</Button>
                   <Button type="button" variant={type === 'income' ? 'default' : 'outline'} className={type === 'income' ? 'bg-emerald-600 hover:bg-emerald-700' : ''} onClick={() => setType('income')}>Einnahme</Button>
+                  <Button type="button" variant={type === 'transfer' ? 'default' : 'outline'} className={type === 'transfer' ? 'bg-sky-600 hover:bg-sky-700' : ''} onClick={() => setType('transfer')}>Umbuchung</Button>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -107,7 +115,7 @@ export default function Recurring() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Konto</Label>
+                    <Label>{type === 'transfer' ? 'Von Konto' : 'Konto'}</Label>
                     <Select value={accountId} onValueChange={setAccountId}>
                       <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
                       <SelectContent>
@@ -115,17 +123,31 @@ export default function Recurring() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Kategorie</Label>
-                    <Select value={categoryId} onValueChange={setCategoryId}>
-                      <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                      <SelectContent>
-                        {categories.filter((c) => c.type === type).map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {type === 'transfer' ? (
+                    <div className="space-y-2">
+                      <Label>Nach Konto</Label>
+                      <Select value={toAccountId} onValueChange={setToAccountId}>
+                        <SelectTrigger><SelectValue placeholder="Zielkonto" /></SelectTrigger>
+                        <SelectContent>
+                          {accounts.filter((a) => String(a.id) !== accountId).map((a) => (
+                            <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label>Kategorie</Label>
+                      <Select value={categoryId} onValueChange={setCategoryId}>
+                        <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+                        <SelectContent>
+                          {categories.filter((c) => c.type === type).map((c) => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -167,14 +189,28 @@ export default function Recurring() {
         {recurring.map((r) => {
           const cat = categories.find((c) => c.id === r.categoryId);
           const account = accounts.find((a) => a.id === r.accountId);
+          const toAccount = r.toAccountId ? accounts.find((a) => a.id === r.toAccountId) : undefined;
           const owner = users.find((u) => u.id === r.userId);
           return (
             <Card key={r.id} className={cn(!r.active && 'opacity-60')}>
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
                   <div>
-                    <CardTitle className="text-base">{r.note || cat?.name || 'Dauerbuchung'}</CardTitle>
-                    <CardDescription>{account?.name} · {owner?.name}</CardDescription>
+                    <CardTitle className="text-base">
+                      {r.note || (r.type === 'transfer' ? 'Umbuchung' : cat?.name) || 'Dauerbuchung'}
+                    </CardTitle>
+                    <CardDescription className="flex items-center gap-1">
+                      {r.type === 'transfer' ? (
+                        <>
+                          {account?.name ?? '?'}
+                          <ArrowRight className="h-3 w-3" />
+                          {toAccount?.name ?? '?'}
+                          {' · '}{owner?.name}
+                        </>
+                      ) : (
+                        <>{account?.name} · {owner?.name}</>
+                      )}
+                    </CardDescription>
                   </div>
                   <Badge variant={r.active ? 'default' : 'secondary'} className={r.active ? 'bg-emerald-600' : ''}>
                     {r.active ? 'Aktiv' : 'Pausiert'}
@@ -183,8 +219,12 @@ export default function Recurring() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-baseline justify-between">
-                  <span className={cn('text-xl font-bold', r.type === 'income' ? 'text-emerald-600' : 'text-rose-500')}>
-                    {r.type === 'income' ? '+' : '−'}{formatCents(r.amount)}
+                  <span className={cn(
+                    'text-xl font-bold',
+                    r.type === 'income' && 'text-emerald-600',
+                    r.type === 'expense' && 'text-rose-500',
+                  )}>
+                    {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
                   </span>
                   <span className="text-sm text-muted-foreground">{intervalLabel[r.interval]}</span>
                 </div>

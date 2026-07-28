@@ -107,6 +107,7 @@ export function ensureSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       type TEXT NOT NULL,
       account_id INTEGER NOT NULL,
+      to_account_id INTEGER,
       amount INTEGER NOT NULL,
       category_id INTEGER,
       user_id INTEGER NOT NULL,
@@ -147,6 +148,11 @@ export function ensureSchema() {
   }
   if (!accountCols.some((col) => col[1] === "iban")) {
     db.run("ALTER TABLE accounts ADD COLUMN iban TEXT" as never);
+  }
+  // Dauerbuchungen: Zielkonto für wiederkehrende Umbuchungen nachrüsten
+  const recurringCols = raw.prepare("PRAGMA table_info(recurring)").raw().all();
+  if (!recurringCols.some((col) => col[1] === "to_account_id")) {
+    db.run("ALTER TABLE recurring ADD COLUMN to_account_id INTEGER" as never);
   }
 
   // Builtin-Kontotypen seeden — nur fehlende Keys ergänzen, bestehende

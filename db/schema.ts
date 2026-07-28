@@ -122,8 +122,10 @@ export const budgets = sqliteTable("budgets", {
 
 export const recurring = sqliteTable("recurring", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  type: text("type", { enum: ["income", "expense"] }).notNull(),
+  type: text("type", { enum: ["income", "expense", "transfer"] }).notNull(),
   accountId: integer("account_id").notNull(),
+  // Zielkonto bei type "transfer" (Dauerauftrag zwischen Konten)
+  toAccountId: integer("to_account_id"),
   amount: integer("amount").notNull(),
   categoryId: integer("category_id"),
   userId: integer("user_id").notNull(),

@@ -124,6 +124,14 @@ Wichtige Konventionen:
   (`requireAccountAccess`, `visibleAccountIds`) — nicht nur im Frontend
   ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen) sind
   pro anfragendem Nutzer gefiltert.
+- **Wiederkehrende Umbuchungen**: `recurring.type` kann auch `transfer` sein
+  (Dauerauftrag zwischen Konten) — dann ist `recurring.to_account_id` gesetzt
+  (Pflicht, ≠ `account_id`, Kategorie irrelevant). Rechte wie bei Buchungen:
+  `edit` aufs Quellkonto, mindestens `view` aufs Zielkonto; Sichtbarkeit in
+  `listRecurring`/Prognose, wenn Quell- ODER Zielkonto sichtbar ist. In der
+  Saldo-Prognose sind Transfers zwischen zwei sichtbaren Konten neutral, bei
+  nur einer sichtbaren Seite wirken sie als Ab-/Zufluss (nicht in
+  `recurringIncome`/`recurringExpense`).
 - **Kontotypen**: `accounts.type` speichert den KEY aus der Tabelle
   `account_types` — Builtin-Keys `checking`/`cash`/`savings` (in
   `ensureSchema` per INSERT OR IGNORE geseedet, nicht löschbar) plus

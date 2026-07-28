@@ -379,7 +379,8 @@ Wichtige Konventionen:
   eingebunden in `index.html`.
 - **UI-State in `localStorage`**: Darstellungsart der Konten-Seite
   (Karten/Tabelle) unter dem Key `ff-accounts-view`, der Dauerbuchungen-Seite
-  unter `ff-recurring-view`.
+  unter `ff-recurring-view`; eingeklappte Seitenleiste unter
+  `ff-sidebar-collapsed`.
 - **Beleg-Anhänge**: Metadaten in `transaction_attachments`, Dateien mit
   UUID-Dateinamen im Verzeichnis `ATTACHMENTS_DIR` (Default: `<DB-Verzeichnis>/attachments`,
   bei In-Memory-DB `./data/attachments`). Upload/Download/Löschen über die

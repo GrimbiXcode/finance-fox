@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
   Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn,
+  PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
@@ -27,11 +28,21 @@ const navItems = [
   { to: '/einstellungen', label: 'Einstellungen', icon: Settings },
 ];
 
+const SIDEBAR_KEY = 'ff-sidebar-collapsed';
+
 export default function Layout() {
   const { user, logout } = useAuth();
   const { accounts, transactions, users } = useFinanceData();
   const { resolvedTheme, setTheme } = useTheme();
   const total = totalBalance(accounts, transactions);
+  // Eingeklappte Seitenleiste (nur Icons) pro Gerät merken
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      localStorage.setItem(SIDEBAR_KEY, String(!c));
+      return !c;
+    });
+  };
 
   // Haushaltsweite Währung laden und für formatCents/currencySymbol setzen.
   // Ändert der Admin die Währung, wird die Query invalidiert und das Layout
@@ -43,15 +54,17 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="hidden w-64 flex-col border-r bg-card md:flex">
-        <div className="flex items-center gap-2 border-b px-6 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white">
+      <aside className={cn('hidden flex-col border-r bg-card transition-all md:flex', collapsed ? 'w-16' : 'w-64')}>
+        <div className={cn('flex items-center gap-2 border-b py-5', collapsed ? 'justify-center px-2' : 'px-6')}>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
             <PiggyBank className="h-5 w-5" />
           </div>
-          <div>
-            <div className="text-sm font-semibold leading-tight">Finance Fox</div>
-            <div className="text-xs text-muted-foreground">Self-hosted &amp; privat</div>
-          </div>
+          {!collapsed && (
+            <div>
+              <div className="text-sm font-semibold leading-tight">Finance Fox</div>
+              <div className="text-xs text-muted-foreground">Self-hosted &amp; privat</div>
+            </div>
+          )}
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
           {navItems.map((item) => (
@@ -59,25 +72,39 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               end={item.to === '/'}
+              title={collapsed ? item.label : undefined}
               className={({ isActive }) => cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                collapsed && 'justify-center px-0',
                 isActive
                   ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground',
               )}
             >
-              <item.icon className="h-4 w-4" />
-              {item.label}
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && item.label}
             </NavLink>
           ))}
         </nav>
-        <div className="border-t px-6 py-4">
-          <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
-          <div className={cn('text-lg font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Daten bleiben auf deinem Server
+        {!collapsed && (
+          <div className="border-t px-6 py-4">
+            <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
+            <div className={cn('text-lg font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Daten bleiben auf deinem Server
+            </div>
           </div>
+        )}
+        <div className="flex justify-center border-t py-3">
+          <Button
+            variant="ghost" size="icon" onClick={toggleCollapsed}
+            title={collapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
+          >
+            {collapsed
+              ? <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />
+              : <PanelLeftClose className="h-4 w-4 text-muted-foreground" />}
+          </Button>
         </div>
       </aside>
 

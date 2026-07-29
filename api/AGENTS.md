@@ -6,9 +6,10 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
 
 - `boot.ts` — Einstieg (Hono); enthält auch die Admin-Binärrouten
   `GET /api/backup` und `POST /api/backup/restore` sowie die Beleg-Routen
-  `POST/GET/DELETE /api/attachments*`. Request-Body-Limit: 50 MB.
-- `router.ts` — `appRouter: { ping, auth, finance, forecast }`. Der Frontend-
-  Client importiert den Typ `AppRouter` direkt von hier
+  `POST/GET/DELETE /api/attachments*` und die Vorsorge-Anhang-Routen
+  `POST/GET/DELETE /api/pension-attachments*`. Request-Body-Limit: 50 MB.
+- `router.ts` — `appRouter: { ping, auth, finance, forecast, pension }`. Der
+  Frontend-Client importiert den Typ `AppRouter` direkt von hier
   (`src/providers/trpc.tsx`) — Typänderungen wirken sofort auf den Client.
 - `middleware.ts` — tRPC-Setup: `publicQuery` / `authedQuery` / `adminQuery`.
   Alle fachlichen Endpunkte nutzen `authedQuery` (Login erforderlich);
@@ -21,11 +22,65 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   Banken), Transaktionen (inkl. CSV-Export/-Import), Kategorien, Tags,
   Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele.
 - `forecastRouter.ts` — Prognosen.
+- `pensionRouter.ts` — Vorsorge-Modul (Schweizer 3-Säulen-Prinzip, siehe
+  Abschnitt „Vorsorge").
 - `lib/` — `env.ts`, `session.ts`, `migrate.ts` (`ensureSchema`),
   `recurringJob.ts`, `accountAccess.ts`, `accountTypes.ts`, `csv.ts`,
   `camt.ts`, `budgets.ts`, `attachments.ts`, `goalProgress.ts`, `http.ts`,
   `vite.ts` (statische Auslieferung in Produktion), `audit.ts`, `notify.ts`,
-  `totp.ts`.
+  `totp.ts`, `pension/` (Vorsorge: `netSalary.ts`, `history.ts`,
+  `forecastCh.ts` + `index.ts`-Factory, `accountSync.ts`).
+
+## Vorsorge (3-Säulen-Prinzip)
+
+Modul in `pensionRouter.ts` (tRPC-Namespace `pension`) — **alle Daten sind
+strikt privat pro Benutzer**: jede Tabelle trägt `userId`, jeder Endpunkt
+scoped auf `ctx.user.id`, es gibt bewusst keine Haushalts-Sichtbarkeit.
+Tabellen: `pension_profiles` (1:1, country Default "CH", birthDate,
+retirementAge), `pension_salaries` (Lohn-Timeline, Unique (user_id,
+valid_from) `YYYY-MM`; gültig = letzter Eintrag ≤ Monat),
+`pension_deductions` (mode percent in **Basispunkten** / absolute in Cent,
+active-Flag), `pension_ahv` (1:1), `pension_funds` (Säule 2, kind
+pension_fund/vested_benefits, Sätze in Basispunkten), `pension_pillar3`
+(Säule 3a, optional `accountId`-Link auf ein Finanz-Konto),
+`pension_attachments`, `pension_changes` (Änderungshistorie, Muster
+`transaction_changes`, deutsche Feldnamen, Beträge roh in Cent).
+
+- **Netto-Berechnung** in `lib/pension/netSalary.ts` (`salaryForMonth`,
+  `computeNet`); `pension.transferNetSalary` legt das aktuelle Netto als
+  monatliche wiederkehrende Einnahme an (Notiz „Nettolohn (Vorsorge)",
+  nextDate = 1. des Folgemonats, erfordert `edit` auf dem Konto).
+- **Historie**: `lib/pension/history.ts` (`recordPensionChange`) — Eintrag
+  nur bei echter Änderung; Anlage/Löschung mit `summary` als einzelner
+  „Eintrag", ohne `summary` strukturiert pro Feld (damit das UI Beträge
+  locale-konform formatieren kann); jede Mutation zusätzlich `logAudit`
+  (`pension.<entity>.<verb>`, best effort, **nie** sensible Werte wie die
+  AHV-Nummer im Detail). Lesen über `pension.listChanges`.
+- **Prognose**: länderabhängige Engine über die Factory
+  `getPensionCalculator(country)` in `lib/pension/index.ts` (wirft bei
+  unbekanntem Land); CH-Umsetzung in `forecastCh.ts` — monatliche
+  Simulation bis zum Rentenalter (max. 600 Monate, monatlich auf Cent
+  gerundet): Säule 2 mit Umwandlungssatz, Säule 3a mit fiktiver Entnahme
+  über 20 Jahre (capital/240), AHV aus hinterlegter Rente oder grober
+  Schätzung (Vollrente 302400 Cent × Beitragsjahre/44, `estimated`).
+- **3a-Konto-Link**: Sync-Saldo (Logik wie `listAccounts`) minus in
+  Sparzielen verplante Anteile (`availableForAccount`/`commitmentOf` aus
+  `lib/goalProgress.ts`, Zielnamen über goal_sources → savings_goals) in
+  `lib/pension/accountSync.ts`; `listPillar3` liefert `syncedBalance`,
+  `goalCommitment`, `goalNames`, die Prognose zieht verplante Anteile ab
+  und warnt („… im Sparziel ‹Name› verplant").
+- **Anhänge**: eigene Tabelle `pension_attachments` (entityType
+  ahv/fund/pillar3) und eigene Hono-Routen in `boot.ts` — gleiche
+  Constraints wie Belege (MIME-Whitelist, 10 MB, X-Filename-Header,
+  inline-Download); Besitzprüfung über `userId` (404 bei Fremdzugriff).
+  Metadaten-Liste pro Datensatz über `pension.listAttachments`
+  ({entityType, entityId}). Gemeinsames Datei-Handling in
+  `lib/attachments.ts` (`savePensionAttachment`/`deletePensionAttachment`/
+  `deletePensionAttachmentsFor` — letztere für die Kaskaden in
+  `deleteFund`/`deletePillar3`).
+- Tests: `api/pension.test.ts` (CRUD, Isolation, Historie, Netto,
+  transferNetSalary, Anhänge inkl. Kaskaden), `api/pensionForecast.test.ts`
+  (Zinseszins, Umwandlungssatz, AHV, Ersatzrate, Warnungen, 3a-Link).
 - `queries/connection.ts` — sql.js-DB mit better-sqlite3-kompatiblem Proxy,
   `initDb()` / `getDb()` / `markDirty()`.
 

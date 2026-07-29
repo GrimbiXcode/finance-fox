@@ -14,6 +14,8 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   `TransactionAttachmentsDialog.tsx` (Belege/Fotos einer Buchung: ansehen,
   hochladen, löschen), `TransactionHistoryDialog.tsx` (Änderungsverlauf),
   `QuickAddDialog.tsx`, `SearchableSelect.tsx`,
+  `PensionFundDialog.tsx`/`PensionPillar3Dialog.tsx` (Vorsorge-Dialoge),
+  `PensionAttachments.tsx` (Anhänge von Vorsorge-Datensätzen),
   `ui/` (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
   `AppRouter` aus `api/router.ts`), `auth.tsx`.
@@ -121,6 +123,24 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   `qrcode`-Paket als Data-URL), Card „Aktivitäten" (Audit-Log: deutsches
   Action-Mapping, Entity-Filter, „Mehr laden").
 - **Login**: zweistufig bei aktiviertem TOTP (InputOTP).
+- **Vorsorge** (`pages/Pension.tsx` unter `/vorsorge`, Nav „Vorsorge" nach
+  „Sparziele"): privates 3-Säulen-Modul pro Benutzer. Ohne Profil nur eine
+  Setup-Card („Vorsorge einrichten": Geburtsdatum, Rentenalter). Danach
+  gestapelte Cards: Übersicht & Prognose (drei Säulen-Karten, gestapeltes
+  AreaChart der Kapitalentwicklung, Einkommen im Alter + Ersatzrate,
+  Warnungen), Lohn & Abzüge (Lohn-Timeline als Tabelle mit
+  `type="month"`-Dialog, Abzüge mit Aktiv-Switch, „Als Dauerbuchung
+  übernehmen"-Dialog), AHV (Anzeige-Card + Bearbeiten-Dialog + Anhänge),
+  Pensionskasse und Säule 3a (Karten-Grids mit Dialogen
+  `PensionFundDialog`/`PensionPillar3Dialog`, Löschen in der Gefahrenzone;
+  3a mit optionaler Konto-Verknüpfung via SearchableSelect, Sync-Saldo-
+  Badge und Sparziel-Warnhinweis), Verlauf (Änderungshistorie, Cent-Felder
+  über `MONEY_FIELDS` mit `formatCents`, `(Bp)`-Felder als Prozent).
+  Anhänge über `PensionAttachments.tsx` (Liste via `pension.listAttachments`,
+  Upload per Fetch auf `/api/pension-attachments` mit `X-Filename`-Header).
+  Invalidierung zentral `useInvalidatePension()` in `lib/data.ts`;
+  Prozent-Eingaben via `parsePercent`/`formatBp` in `lib/finance.ts`
+  (Basispunkte).
 
 ## Geldfluss-Visualisierung
 

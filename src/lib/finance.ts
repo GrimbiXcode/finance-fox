@@ -87,6 +87,22 @@ export const parseAmountCents = (input: string, locale: string): number => {
 
 export const parseEuro = (input: string): number => parseAmountCents(input, userLocale);
 
+/**
+ * Prozent-Eingabe locale-bewusst parsen (z. B. "5,30" → 5.3, 0 bei
+ * ungültiger Eingabe). Akzeptiert Komma und Punkt als Dezimalzeichen.
+ */
+export const parsePercent = (input: string): number => {
+  const value = parseFloat(input.trim().replace(',', '.'));
+  return Number.isNaN(value) ? 0 : value;
+};
+
+/** Basispunkte als locale-formatierten Prozent-String (530 → "5,30") */
+export const formatBp = (bp: number): string =>
+  new Intl.NumberFormat(userLocale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(bp / 100);
+
 export const monthKey = (dateISO: string): string => dateISO.slice(0, 7);
 
 export const currentMonthKey = (): string => monthKey(todayISO());

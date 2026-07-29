@@ -7,7 +7,8 @@ jeweiligen Dateien automatisch relevant:
 
 - `api/AGENTS.md` — Backend: Router, Auth/2FA, Konto-Rechte, Transaktionen,
   Dauerbuchungen, Kategorien/Budgets, Splits/Projekte/Tags, Sparziele,
-  Prognosen, Benachrichtigungen, Audit-Log, Beleg-Anhänge
+  Prognosen, Vorsorge (3-Säulen-Modul), Benachrichtigungen, Audit-Log,
+  Beleg-Anhänge
 - `src/AGENTS.md` — Frontend: Seiten/Komponenten, Helfer, Auswahlfelder,
   Dialog-Layouts, Geldfluss-Visualisierung, Dark Mode/PWA
 - `db/AGENTS.md` — Schema-Regeln: `db/schema.ts` ↔ `api/lib/migrate.ts`
@@ -19,8 +20,9 @@ Self-gehostete Full-Stack-Webapp zur Organisation der Finanzen eines Haushalts
 mit einer oder mehreren Personen. Alle Daten liegen in einer einzigen
 **SQLite-Datei auf dem eigenen Server**. Funktionen: Dashboard, Transaktionen
 (Einnahmen/Ausgaben/Umbuchungen), Konten, Budgets, Kostenaufteilung (Splits),
-wiederkehrende Buchungen (Cron-Job), Sparziele, Prognosen, Benutzerverwaltung
-mit Ersteinrichtungs-Wizard und Einladungslinks.
+wiederkehrende Buchungen (Cron-Job), Sparziele, Prognosen, privates
+Vorsorge-Modul (Schweizer 3-Säulen-Prinzip) mit Altersprognose,
+Benutzerverwaltung mit Ersteinrichtungs-Wizard und Einladungslinks.
 
 UI-Texte, Kommentare und Doku sind auf **Deutsch** — neue Kommentare,
 Fehlermeldungen und UI-Strings ebenfalls auf Deutsch verfassen.

@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import type { HttpBindings } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import cron from "node-cron";
 import { appRouter } from "./router";
 import { createContext, getSessionUser, type SessionUser } from "./context";
@@ -16,15 +16,24 @@ import {
   initDb,
   replaceDatabase,
 } from "./queries/connection";
-import { transactionAttachments, transactions } from "@db/schema";
+import {
+  pensionAhv,
+  pensionAttachments,
+  pensionFunds,
+  pensionPillar3,
+  transactionAttachments,
+  transactions,
+} from "@db/schema";
 import { requireAccountAccess, type AccessLevel } from "./lib/accountAccess";
 import {
   ALLOWED_MIME_TYPES,
   MAX_ATTACHMENT_BYTES,
   deleteAttachment,
+  deletePensionAttachment,
   initAttachmentsDir,
   readAttachmentFile,
   saveAttachment,
+  savePensionAttachment,
 } from "./lib/attachments";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
@@ -75,7 +84,8 @@ app.post("/api/backup/restore", async c => {
 /** TRPCError aus den Zugriffs-Helpern als HTTP-Antwort mappen */
 function accessErrorResponse(c: Context, err: unknown): Response {
   if (err instanceof TRPCError) {
-    const status = err.code === "NOT_FOUND" ? 404 : err.code === "FORBIDDEN" ? 403 : 400;
+    const status =
+      err.code === "NOT_FOUND" ? 404 : err.code === "FORBIDDEN" ? 403 : 400;
     return c.json({ error: err.message }, status);
   }
   throw err;
@@ -123,7 +133,10 @@ app.post("/api/attachments", async c => {
     .toLowerCase();
   if (!(mimeType in ALLOWED_MIME_TYPES)) {
     return c.json(
-      { error: "Nur Bilder (JPEG, PNG, WebP, GIF) oder PDF-Dateien sind erlaubt." },
+      {
+        error:
+          "Nur Bilder (JPEG, PNG, WebP, GIF) oder PDF-Dateien sind erlaubt.",
+      },
       400
     );
   }
@@ -171,7 +184,9 @@ app.get("/api/attachments/:id", async c => {
 
   const data = readAttachmentFile(row.storedName);
   if (!data) return c.json({ error: "Datei nicht gefunden." }, 404);
-  const asciiName = row.originalName.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "'");
+  const asciiName = row.originalName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replace(/"/g, "'");
   return new Response(data, {
     headers: {
       "Content-Type": row.mimeType,
@@ -199,6 +214,149 @@ app.delete("/api/attachments/:id", async c => {
   if (txRow instanceof Response) return txRow;
 
   await deleteAttachment(getDb(), id);
+  return c.json({ ok: true });
+});
+
+/* ---- Vorsorge-Anhänge (binär, strikt privat pro Benutzer — außerhalb von tRPC) ---- */
+
+/**
+ * Ziel-Datensatz eines Vorsorge-Anhangs laden; er muss existieren und dem
+ * angemeldeten Benutzer gehören (sonst null → 404, kein Existenz-Leak).
+ */
+async function loadPensionEntity(
+  user: SessionUser,
+  entityType: "ahv" | "fund" | "pillar3",
+  entityId: number
+): Promise<boolean> {
+  const db = getDb();
+  if (entityType === "ahv") {
+    const row = await db.query.pensionAhv.findFirst({
+      where: and(eq(pensionAhv.id, entityId), eq(pensionAhv.userId, user.id)),
+    });
+    return !!row;
+  }
+  if (entityType === "fund") {
+    const row = await db.query.pensionFunds.findFirst({
+      where: and(
+        eq(pensionFunds.id, entityId),
+        eq(pensionFunds.userId, user.id)
+      ),
+    });
+    return !!row;
+  }
+  const row = await db.query.pensionPillar3.findFirst({
+    where: and(
+      eq(pensionPillar3.id, entityId),
+      eq(pensionPillar3.userId, user.id)
+    ),
+  });
+  return !!row;
+}
+
+// Upload: rohe Dateibytes; Originalname URL-kodiert im X-Filename-Header,
+// MIME-Typ im Content-Type-Header. Gleiche Constraints wie bei Belegen.
+app.post("/api/pension-attachments", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const entityType = c.req.query("entityType");
+  if (
+    entityType !== "ahv" &&
+    entityType !== "fund" &&
+    entityType !== "pillar3"
+  ) {
+    return c.json({ error: "Ungültiger entityType." }, 400);
+  }
+  const entityId = Number(c.req.query("entityId"));
+  if (!Number.isInteger(entityId) || entityId <= 0) {
+    return c.json({ error: "Ungültige entityId." }, 400);
+  }
+  if (!(await loadPensionEntity(user, entityType, entityId))) {
+    return c.json({ error: "Datensatz nicht gefunden." }, 404);
+  }
+
+  const mimeType = (c.req.header("content-type") ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!(mimeType in ALLOWED_MIME_TYPES)) {
+    return c.json(
+      {
+        error:
+          "Nur Bilder (JPEG, PNG, WebP, GIF) oder PDF-Dateien sind erlaubt.",
+      },
+      400
+    );
+  }
+  let originalName = "beleg";
+  const filenameHeader = c.req.header("x-filename");
+  if (filenameHeader) {
+    try {
+      originalName = decodeURIComponent(filenameHeader);
+    } catch {
+      // fehlerhafte Kodierung → Fallback-Name
+    }
+  }
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.byteLength === 0) {
+    return c.json({ error: "Die Datei ist leer." }, 400);
+  }
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+    return c.json({ error: "Die Datei ist zu groß (maximal 10 MB)." }, 413);
+  }
+  const meta = await savePensionAttachment(
+    getDb(),
+    { userId: user.id, entityType, entityId },
+    bytes,
+    originalName,
+    mimeType
+  );
+  return c.json(meta, 201);
+});
+
+// Download/Anzeige: nur der Besitzer des Anhangs.
+app.get("/api/pension-attachments/:id", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "Ungültige Anhang-ID." }, 400);
+  }
+  const row = await getDb().query.pensionAttachments.findFirst({
+    where: eq(pensionAttachments.id, id),
+  });
+  if (!row || row.userId !== user.id) {
+    return c.json({ error: "Anhang nicht gefunden." }, 404);
+  }
+  const data = readAttachmentFile(row.storedName);
+  if (!data) return c.json({ error: "Datei nicht gefunden." }, 404);
+  const asciiName = row.originalName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replace(/"/g, "'");
+  return new Response(data, {
+    headers: {
+      "Content-Type": row.mimeType,
+      "Content-Disposition": `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(row.originalName)}`,
+      "Content-Length": String(data.byteLength),
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+});
+
+// Löschen: nur der Besitzer des Anhangs.
+app.delete("/api/pension-attachments/:id", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "Ungültige Anhang-ID." }, 400);
+  }
+  const row = await getDb().query.pensionAttachments.findFirst({
+    where: eq(pensionAttachments.id, id),
+  });
+  if (!row || row.userId !== user.id) {
+    return c.json({ error: "Anhang nicht gefunden." }, 404);
+  }
+  await deletePensionAttachment(getDb(), id);
   return c.json({ ok: true });
 });
 

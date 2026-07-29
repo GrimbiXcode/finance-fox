@@ -76,3 +76,18 @@ export function useInvalidateFinance() {
     utils.forecast.goalForecast.invalidate();
   };
 }
+
+/** Invalidiert nach einer Mutation alle Vorsorge-Queries (pension-Namespace) */
+export function useInvalidatePension() {
+  const utils = trpc.useUtils();
+  return () => {
+    utils.pension.getProfile.invalidate();
+    utils.pension.listSalaries.invalidate();
+    utils.pension.listDeductions.invalidate();
+    utils.pension.getAhv.invalidate();
+    utils.pension.listFunds.invalidate();
+    utils.pension.listPillar3.invalidate();
+    utils.pension.forecast.invalidate();
+    utils.pension.listChanges.invalidate();
+  };
+}

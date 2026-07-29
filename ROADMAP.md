@@ -149,6 +149,27 @@ sich von selbst. Reihenfolge = empfohlene Umsetzungsreihenfolge.
 6. **Szenario-Planung** in den Prognosen ("Was, wenn Gehalt X% steigt /
    Ausgabe Y wegfällt") — nützlich, aber klar hinter den Alltagsthemen. ✅
 
+### Phase 4 — Vorsorge & Altersprognose ✅ *vollständig umgesetzt*
+
+1. **Vorsorge-Modul (Schweizer 3-Säulen-Prinzip)** als eigenständiges,
+   privates Modul pro Benutzer (Route `/vorsorge`): Bruttolohn-Timeline
+   (fix oder monatlich variabel für Schicht/Stundenlohn/Spesen) mit frei
+   definierbaren Abzügen (Prozent- oder Fixbeträge) → Netto-Berechnung;
+   AHV-Daten (1. Säule), Pensionskasse & Freizügigkeitskonten (2. Säule),
+   Säule-3a-Konten — jeweils mit Datei-Anhängen (Reglemente, Auszüge) und
+   lückenloser Änderungshistorie. Die Architektur (`country`-Feld,
+   austauschbare Prognose-Engine) hält spätere Ländermodelle offen.
+2. **Altersprognose**: monatliche Simulation der Kapitalentwicklung bis
+   zur Pensionierung (Säule 2 mit Umwandlungssatz, 3a mit Entnahmeplan,
+   AHV-Schätzung), monatliches Einkommen im Alter und Ersatzrate zum
+   heutigen Netto, Warnungen bei fehlenden Daten.
+3. **Optionale Verknüpfung mit dem Finanzmodul**: 3a-Konten können an
+   Finanz-Konten geknüpft werden (Saldo-Sync; in Sparzielen verplante
+   Anteile werden abgezogen und mit Hinweis ausgewiesen — keine
+   Doppelzählung), und das berechnete Netto lässt sich per Klick als
+   wiederkehrende Einnahme übertragen (Kopie, kein Live-Sync).
+   Nicht-Ziel bleibt die Anbindung von Pensionskassen-APIs.
+
 ### Bewusst zurückgestellt / Nicht-Ziele
 
 Mit Begründung — diese Punkte passen aktuell nicht zum Produktleitbild
@@ -181,8 +202,9 @@ Aufwand nicht:
 
 ## 5. Nächste Schritte
 
-Alle drei Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
-Backlog (Abschnitt 3) zur Bewertung an — naheliegend: Tags/Labels,
-Massenbearbeitung, Saldo-Verlaufschart pro Konto, CSV-Import mit
-Kategorie-Mapping-Regeln. Diese bei Bedarf als GitHub Issues aufbrechen
-und einzeln priorisieren.
+Alle vier Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
+Backlog (Abschnitt 3) zur Bewertung an — naheliegend: Massenbearbeitung,
+CSV-Import mit Kategorie-Mapping-Regeln, Netto-Vermögensentwicklung.
+Diese bei Bedarf als GitHub Issues aufbrechen und einzeln priorisieren.
+Denkbar sind auch Erweiterungen des Vorsorge-Moduls (weitere
+Ländermodelle neben CH, Kapitalbezug-vs-Rente-Szenarien).

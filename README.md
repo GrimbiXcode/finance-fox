@@ -14,6 +14,7 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 - **Wiederkehrende Buchungen** — inkl. Dauer-Umbuchungen; der Server verbucht Fälliges **täglich per Cron-Job** (03:00 Uhr) und bei jedem Start
 - **Sparziele** — Fortschritt aus verknüpften Konten (ganzes Konto / fixer Anteil / Prozent), Herkunfts-Aufschlüsselung, ETA-Prognose
 - **Prognosen & Auswertung** — Kontostand-Prognose, Budget-Hochrechnung, Sparziel-ETA, Szenario-Planung, Jahresvergleich
+- **Vorsorge (privat pro Benutzer)** — Schweizer 3-Säulen-Prinzip: Lohn & Abzüge (fix oder monatlich variabel), AHV, Pensionskasse, Säule 3a mit Dokument-Anhängen, Änderungshistorie und Altersprognose (Kapitalentwicklung, Rente, Ersatzrate); optional mit Konten verknüpfbar, Nettolohn per Klick als Dauerbuchung
 - **Benutzer & Login** — Ersteinrichtungs-Wizard, E-Mail/Passwort-Login, optionale 2FA (TOTP), Einladungslinks, Admin-Verwaltung, Aktivitäts-Log
 - **Rundherum** — Benachrichtigungen (opt-in, ntfy/Webhook), Backup/Restore, Dark Mode, PWA, Zahlen- und Datumsformate nach Systemregion, 20 Währungen
 

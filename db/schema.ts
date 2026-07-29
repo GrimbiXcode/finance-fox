@@ -319,6 +319,139 @@ export const goalSources = sqliteTable(
   t => [index("goal_sources_goal_idx").on(t.goalId)]
 );
 
+/* --------------------------------- Vorsorge -------------------------------- */
+
+/**
+ * Modul „Vorsorge" (Schweizer 3-Säulen-Prinzip): alle Tabellen sind strikt
+ * privat pro Benutzer (userId-Scope in jedem Endpunkt) — es gibt bewusst
+ * keine Haushalts-Sichtbarkeit. Das country-Feld (Default "CH") und die
+ * austauschbare Prognose-Engine (api/lib/pension/) halten das Modul für
+ * spätere Länder offen.
+ */
+
+/** Vorsorge-Profil (1:1 pro Benutzer): Geburtsdatum + Rentenalter */
+export const pensionProfiles = sqliteTable("pension_profiles", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().unique(),
+  // Ländercode für die Prognose-Engine (derzeit nur "CH" implementiert)
+  country: text("country").notNull().default("CH"),
+  birthDate: text("birth_date").notNull(), // YYYY-MM-DD
+  retirementAge: integer("retirement_age").notNull().default(65),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Lohn-Timeline: „Fix" = ein Eintrag, variabel = monatliche Einträge.
+ * Der gültige Lohn eines Monats ist der letzte Eintrag mit valid_from ≤ Monat.
+ */
+export const pensionSalaries = sqliteTable(
+  "pension_salaries",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    validFrom: text("valid_from").notNull(), // YYYY-MM
+    grossMonthly: integer("gross_monthly").notNull(), // Cent
+    note: text("note").notNull().default(""),
+  },
+  t => [
+    uniqueIndex("pension_salaries_user_month_idx").on(t.userId, t.validFrom),
+  ]
+);
+
+/** Lohnabzüge (AHV/IV/EO, ALV, PK-Anteil etc.) für die Netto-Berechnung */
+export const pensionDeductions = sqliteTable("pension_deductions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull(),
+  name: text("name").notNull(),
+  mode: text("mode", { enum: ["percent", "absolute"] }).notNull(),
+  // percent: Basispunkte (530 = 5,30 %); absolute: Cent
+  value: integer("value").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/** Säule 1 (AHV, 1:1 pro Benutzer) — AHV-Nummer ist sensibel und optional */
+export const pensionAhv = sqliteTable("pension_ahv", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().unique(),
+  ahvNumber: text("ahv_number"),
+  contributionYears: integer("contribution_years"),
+  expectedMonthlyPension: integer("expected_monthly_pension"), // Cent
+  notes: text("notes").notNull().default(""),
+});
+
+/** Säule 2: Pensionskassen und Freizügigkeitskonten (n pro Benutzer) */
+export const pensionFunds = sqliteTable("pension_funds", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull(),
+  name: text("name").notNull(),
+  kind: text("kind", { enum: ["pension_fund", "vested_benefits"] })
+    .notNull()
+    .default("pension_fund"),
+  currentCapital: integer("current_capital").notNull().default(0), // Cent
+  yearlySavings: integer("yearly_savings").notNull().default(0), // Cent
+  interestRateBp: integer("interest_rate_bp").notNull().default(0), // Basispunkte p.a.
+  // Umwandlungssatz in Basispunkten (680 = 6,8 %)
+  conversionRateBp: integer("conversion_rate_bp").notNull().default(680),
+  notes: text("notes").notNull().default(""),
+});
+
+/**
+ * Säule 3a (n pro Benutzer). Bei account_id-Verknüpfung mit einem Finanz-Konto
+ * zählt der dortige Saldo (current_balance ist dann irrelevant).
+ */
+export const pensionPillar3 = sqliteTable("pension_pillar3", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull(),
+  name: text("name").notNull(),
+  institution: text("institution").notNull().default(""),
+  currentBalance: integer("current_balance").notNull().default(0), // Cent
+  yearlyDeposit: integer("yearly_deposit").notNull().default(0), // Cent
+  interestRateBp: integer("interest_rate_bp").notNull().default(0), // Basispunkte p.a.
+  accountId: integer("account_id"),
+  notes: text("notes").notNull().default(""),
+});
+
+/** Datei-Anhänge der Vorsorge (AHV-Ausweis, PK-Ausweise, 3a-Belege) */
+export const pensionAttachments = sqliteTable(
+  "pension_attachments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    entityType: text("entity_type", {
+      enum: ["ahv", "fund", "pillar3"],
+    }).notNull(),
+    entityId: integer("entity_id").notNull(),
+    // Zufälliger Dateiname im Attachments-Verzeichnis (eindeutig)
+    storedName: text("stored_name").notNull().unique(),
+    originalName: text("original_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("pension_att_entity_idx").on(t.entityType, t.entityId)]
+);
+
+/**
+ * Änderungshistorie des Vorsorge-Moduls (Muster: transaction_changes).
+ * entity: profile | salary | deduction | ahv | fund | pillar3;
+ * changes = JSON-Text [{field, from, to}] mit deutschen Feldnamen,
+ * Beträge roh in Cent.
+ */
+export const pensionChanges = sqliteTable(
+  "pension_changes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    entity: text("entity").notNull(),
+    entityId: integer("entity_id").notNull(),
+    comment: text("comment").notNull().default(""),
+    changes: text("changes").notNull(), // JSON: [{ field, from, to }]
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("pension_changes_user_idx").on(t.userId, t.createdAt)]
+);
+
 /* -------------------------------- Audit-Log -------------------------------- */
 
 /**

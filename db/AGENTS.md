@@ -20,3 +20,6 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
   `stubs/better-sqlite3-stub.cjs` — ersetzt `better-sqlite3` im Server-Bundle
   per esbuild-Alias (die App läuft rein auf sql.js/WASM, siehe Root-AGENTS.md).
 - Datumsformat in der DB: Text `YYYY-MM-DD`; Geldbeträge als Integer in Cent.
+- Die Vorsorge-Tabellen (`pension_*`) folgen denselben Konventionen; Monate
+  als Text `YYYY-MM`, Prozentsätze als Integer in **Basispunkten**
+  (530 = 5,30 %). Fachlogik dazu: `api/AGENTS.md` Abschnitt „Vorsorge".

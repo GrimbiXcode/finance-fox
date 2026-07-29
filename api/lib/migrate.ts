@@ -212,6 +212,87 @@ export function ensureSchema() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )`,
+    // Vorsorge-Modul (privat pro Benutzer, synchron mit db/schema.ts)
+    `CREATE TABLE IF NOT EXISTS pension_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE,
+      country TEXT NOT NULL DEFAULT 'CH',
+      birth_date TEXT NOT NULL,
+      retirement_age INTEGER NOT NULL DEFAULT 65,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS pension_salaries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      valid_from TEXT NOT NULL,
+      gross_monthly INTEGER NOT NULL,
+      note TEXT NOT NULL DEFAULT ''
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS pension_salaries_user_month_idx
+      ON pension_salaries (user_id, valid_from)`,
+    `CREATE TABLE IF NOT EXISTS pension_deductions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      value INTEGER NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS pension_ahv (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE,
+      ahv_number TEXT,
+      contribution_years INTEGER,
+      expected_monthly_pension INTEGER,
+      notes TEXT NOT NULL DEFAULT ''
+    )`,
+    `CREATE TABLE IF NOT EXISTS pension_funds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'pension_fund',
+      current_capital INTEGER NOT NULL DEFAULT 0,
+      yearly_savings INTEGER NOT NULL DEFAULT 0,
+      interest_rate_bp INTEGER NOT NULL DEFAULT 0,
+      conversion_rate_bp INTEGER NOT NULL DEFAULT 680,
+      notes TEXT NOT NULL DEFAULT ''
+    )`,
+    `CREATE TABLE IF NOT EXISTS pension_pillar3 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      institution TEXT NOT NULL DEFAULT '',
+      current_balance INTEGER NOT NULL DEFAULT 0,
+      yearly_deposit INTEGER NOT NULL DEFAULT 0,
+      interest_rate_bp INTEGER NOT NULL DEFAULT 0,
+      account_id INTEGER,
+      notes TEXT NOT NULL DEFAULT ''
+    )`,
+    `CREATE TABLE IF NOT EXISTS pension_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      stored_name TEXT NOT NULL UNIQUE,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS pension_att_entity_idx
+      ON pension_attachments (entity_type, entity_id)`,
+    `CREATE TABLE IF NOT EXISTS pension_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      comment TEXT NOT NULL DEFAULT '',
+      changes TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS pension_changes_user_idx
+      ON pension_changes (user_id, created_at)`,
   ];
   for (const sql of stmts) {
     db.run(sql as never);

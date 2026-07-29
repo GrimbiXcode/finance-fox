@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router';
 import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
-  Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn,
+  Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn, Landmark,
   PanelLeftClose, PanelLeftOpen, GitBranch,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
@@ -23,6 +23,7 @@ const navItems = [
   { to: '/aufteilung', label: 'Aufteilung', icon: Users },
   { to: '/wiederkehrend', label: 'Wiederkehrend', icon: Repeat },
   { to: '/sparziele', label: 'Sparziele', icon: PiggyBank },
+  { to: '/vorsorge', label: 'Vorsorge', icon: Landmark },
   { to: '/prognosen', label: 'Prognosen', icon: TrendingUp },
   { to: '/auswertung', label: 'Auswertung', icon: ChartColumn },
   { to: '/personen', label: 'Personen', icon: UserCog },

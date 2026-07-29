@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { eq, inArray } from "drizzle-orm";
-import { transactionAttachments } from "@db/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { pensionAttachments, transactionAttachments } from "@db/schema";
 import type { Db } from "../queries/connection";
 
 /**
@@ -71,6 +71,29 @@ export type AttachmentMeta = {
 };
 
 /**
+ * Datei unter einem Zufallsnamen (UUID) ins Attachments-Verzeichnis schreiben;
+ * Endung aus dem Originalnamen (Fallback: Endung passend zum MIME-Typ).
+ * Gemeinsamer Speicherschritt für Beleg- und Vorsorge-Anhänge.
+ */
+function storeAttachmentFile(
+  bytes: Uint8Array,
+  originalName: string,
+  mimeType: string
+): { storedName: string; cleanName: string } {
+  const cleanName = path.basename(originalName).trim() || "beleg";
+  let ext = path
+    .extname(cleanName)
+    .toLowerCase()
+    .replace(/[^a-z0-9.]/g, "");
+  if (!ext || ext.length > 10) ext = ALLOWED_MIME_TYPES[mimeType] ?? "";
+  const storedName = `${crypto.randomUUID()}${ext}`;
+
+  fs.mkdirSync(attachmentsDir(), { recursive: true });
+  fs.writeFileSync(attachmentFilePath(storedName), Buffer.from(bytes));
+  return { storedName, cleanName };
+}
+
+/**
  * Datei speichern + Metadaten-Zeile anlegen.
  * Dateiname: Zufallsname (UUID) mit Endung aus dem Originalnamen
  * (Fallback: Endung passend zum MIME-Typ).
@@ -82,13 +105,11 @@ export async function saveAttachment(
   originalName: string,
   mimeType: string
 ): Promise<AttachmentMeta> {
-  const cleanName = path.basename(originalName).trim() || "beleg";
-  let ext = path.extname(cleanName).toLowerCase().replace(/[^a-z0-9.]/g, "");
-  if (!ext || ext.length > 10) ext = ALLOWED_MIME_TYPES[mimeType] ?? "";
-  const storedName = `${crypto.randomUUID()}${ext}`;
-
-  fs.mkdirSync(attachmentsDir(), { recursive: true });
-  fs.writeFileSync(attachmentFilePath(storedName), Buffer.from(bytes));
+  const { storedName, cleanName } = storeAttachmentFile(
+    bytes,
+    originalName,
+    mimeType
+  );
 
   const inserted = await db
     .insert(transactionAttachments)
@@ -138,5 +159,86 @@ export async function deleteAttachmentsForTransactions(
   await db
     .delete(transactionAttachments)
     .where(inArray(transactionAttachments.transactionId, txIds));
+  for (const row of rows) unlinkQuiet(row.storedName);
+}
+
+/* ------------------------- Vorsorge-Anhänge (pension) --------------------- */
+
+/**
+ * Datei speichern + Metadaten-Zeile in pension_attachments anlegen.
+ * Die Besitz-/Existenzprüfung des Ziel-Datensatzes macht der Aufrufer
+ * (Hono-Route in boot.ts).
+ */
+export async function savePensionAttachment(
+  db: Db,
+  target: {
+    userId: number;
+    entityType: "ahv" | "fund" | "pillar3";
+    entityId: number;
+  },
+  bytes: Uint8Array,
+  originalName: string,
+  mimeType: string
+): Promise<AttachmentMeta> {
+  const { storedName, cleanName } = storeAttachmentFile(
+    bytes,
+    originalName,
+    mimeType
+  );
+
+  const inserted = await db
+    .insert(pensionAttachments)
+    .values({
+      userId: target.userId,
+      entityType: target.entityType,
+      entityId: target.entityId,
+      storedName,
+      originalName: cleanName,
+      mimeType,
+      sizeBytes: bytes.byteLength,
+      createdAt: new Date(),
+    })
+    .returning({
+      id: pensionAttachments.id,
+      originalName: pensionAttachments.originalName,
+      mimeType: pensionAttachments.mimeType,
+      sizeBytes: pensionAttachments.sizeBytes,
+    });
+  return inserted[0];
+}
+
+/** Einzelnen Vorsorge-Anhang löschen (DB-Zeile + Datei) */
+export async function deletePensionAttachment(
+  db: Db,
+  id: number
+): Promise<void> {
+  const row = await db.query.pensionAttachments.findFirst({
+    where: eq(pensionAttachments.id, id),
+  });
+  if (!row) return;
+  await db.delete(pensionAttachments).where(eq(pensionAttachments.id, id));
+  unlinkQuiet(row.storedName);
+}
+
+/**
+ * Alle Vorsorge-Anhänge mehrerer Datensätze eines Typs löschen
+ * (DB-Zeilen + Dateien) — für Kaskaden bei deleteFund / deletePillar3.
+ */
+export async function deletePensionAttachmentsFor(
+  db: Db,
+  entityType: "ahv" | "fund" | "pillar3",
+  entityIds: number[]
+): Promise<void> {
+  if (entityIds.length === 0) return;
+  const where = and(
+    eq(pensionAttachments.entityType, entityType),
+    inArray(pensionAttachments.entityId, entityIds)
+  );
+  const rows = await db
+    .select({ storedName: pensionAttachments.storedName })
+    .from(pensionAttachments)
+    .where(where);
+  if (rows.length === 0) return;
+  await db.delete(pensionAttachments).where(where);
   for (const row of rows) unlinkQuiet(row.storedName);
 }

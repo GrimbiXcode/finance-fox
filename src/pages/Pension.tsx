@@ -34,7 +34,7 @@ import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '../../api/router';
 import { accountLabel, useInvalidatePension } from '@/lib/data';
 import {
-  amountPlaceholder, currencySymbol, formatBp, formatCents, formatDate, formatMonth,
+  amountPlaceholder, currencySymbol, formatAmountInput, formatBp, formatCents, formatDate, formatMonth,
   getUserLocale, parseEuro, parsePercent,
 } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
@@ -102,9 +102,9 @@ const dateTimeFormatter = new Intl.DateTimeFormat(getUserLocale(), {
   timeStyle: 'short',
 });
 
-/** Cent-Betrag als Eingabe-String (deutsches Dezimalkomma) */
+/** Cent-Betrag als Eingabe-String (locale-konformes Dezimalzeichen) */
 const centsInput = (cents: number): string =>
-  cents > 0 ? (cents / 100).toFixed(2).replace('.', ',') : '';
+  cents > 0 ? formatAmountInput(cents) : '';
 
 /* ------------------------------- Einrichtung ------------------------------- */
 
@@ -172,13 +172,125 @@ function SetupCard() {
   );
 }
 
+/* --------------------------- Profil bearbeiten ----------------------------- */
+
+interface ProfileRow {
+  birthDate: string;
+  retirementAge: number;
+}
+
+/** Dialog zum nachträglichen Ändern von Geburtsdatum und Pensionierungsalter */
+function ProfileDialog({ profile, trigger }: { profile: ProfileRow; trigger: ReactNode }) {
+  const invalidate = useInvalidatePension();
+  const [open, setOpen] = useState(false);
+  const [birthDate, setBirthDate] = useState(profile.birthDate);
+  const [retirementAge, setRetirementAge] = useState(String(profile.retirementAge));
+  const [comment, setComment] = useState('');
+
+  const updateProfile = trpc.pension.updateProfile.useMutation({
+    onSuccess: () => {
+      toast.success('Vorsorgeprofil aktualisiert.');
+      invalidate();
+      setOpen(false);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const submit = () => {
+    if (!birthDate) {
+      toast.error('Geburtsdatum angeben.');
+      return;
+    }
+    const age = Number(retirementAge);
+    if (!Number.isInteger(age) || age < 50 || age > 75) {
+      toast.error('Pensionierungsalter zwischen 50 und 75 angeben.');
+      return;
+    }
+    updateProfile.mutate({
+      birthDate,
+      retirementAge: age,
+      comment: comment.trim() || undefined,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Vorsorgeprofil bearbeiten</DialogTitle>
+          <DialogDescription>
+            Geburtsdatum und Pensionierungsalter — die Prognose rechnet sofort mit den neuen Werten.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Geburtsdatum</Label>
+              <Input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Pensionierungsalter</Label>
+              <Input
+                inputMode="numeric"
+                value={retirementAge}
+                onChange={(e) => setRetirementAge(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Änderungskommentar (optional)</Label>
+            <Input
+              placeholder="z. B. Frühpensionierung geplant"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            className="bg-emerald-600 hover:bg-emerald-700"
+            onClick={submit}
+            disabled={updateProfile.isPending}
+          >
+            Speichern
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* --------------------------- Übersicht & Prognose -------------------------- */
 
 /** Prognose-Ergebnis, wie es pension.forecast liefert */
 type Forecast = inferRouterOutputs<AppRouter>['pension']['forecast'];
 
-/** Säulen-Karten, Kennzahlen, Projektions-Chart und Warnungen */
-function OverviewSection({ forecast, isLoading }: { forecast: Forecast | undefined; isLoading: boolean }) {
+/** Säulen-Karten, Kennzahlen, Projektions-Chart, Was-wäre-wenn und Warnungen */
+function OverviewSection({
+  forecast,
+  isLoading,
+  profile,
+}: {
+  forecast: Forecast | undefined;
+  isLoading: boolean;
+  profile: ProfileRow;
+}) {
+  // Hypothetisches Rentenalter (Was-wäre-wenn) — eigene Prognose-Query mit Override
+  const [hypAge, setHypAge] = useState('');
+  const hypAgeNum = Number(hypAge);
+  const hypValid =
+    hypAge.trim() !== '' &&
+    Number.isInteger(hypAgeNum) &&
+    hypAgeNum >= 50 &&
+    hypAgeNum <= 75 &&
+    hypAgeNum !== profile.retirementAge;
+  const hypoQuery = trpc.pension.forecast.useQuery(
+    { retirementAge: hypAgeNum },
+    { enabled: hypValid },
+  );
+  const hypo = hypValid ? hypoQuery.data : undefined;
+
   const chartData = (forecast?.series ?? []).map((s) => ({
     year: String(s.year),
     'Säule 2': Math.round(s.pillar2 / 100),
@@ -200,11 +312,21 @@ function OverviewSection({ forecast, isLoading }: { forecast: Forecast | undefin
             </CardDescription>
           </div>
           {forecast && (
-            <div className="text-right">
-              <div className="text-xs text-muted-foreground">Monatliches Einkommen im Alter</div>
-              <div className="text-xl font-bold text-emerald-600">
-                {formatCents(forecast.monthlyRetirementIncome)}
+            <div className="flex items-start gap-2">
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">Monatliches Einkommen im Alter</div>
+                <div className="text-xl font-bold text-emerald-600">
+                  {formatCents(forecast.monthlyRetirementIncome)}
+                </div>
               </div>
+              <ProfileDialog
+                profile={profile}
+                trigger={
+                  <Button variant="ghost" size="icon" title="Profil bearbeiten (Geburtsdatum, Pensionierungsalter)">
+                    <Pencil className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                }
+              />
             </div>
           )}
         </div>
@@ -258,6 +380,64 @@ function OverviewSection({ forecast, isLoading }: { forecast: Forecast | undefin
                   {forecast.currentNet != null ? formatCents(forecast.currentNet) : '—'}
                 </span>
               </div>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-dashed p-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Was-wäre-wenn: Pensionierung mit</span>
+                <Input
+                  inputMode="numeric"
+                  className="h-8 w-20"
+                  placeholder={String(profile.retirementAge)}
+                  aria-label="Hypothetisches Pensionierungsalter"
+                  value={hypAge}
+                  onChange={(e) => setHypAge(e.target.value)}
+                />
+                <span className="text-muted-foreground">Jahren</span>
+                {hypAge.trim() !== '' && !hypValid && (
+                  <span className="text-xs text-amber-600">
+                    Ganzzahl 50–75, abweichend vom eingestellten Alter ({profile.retirementAge})
+                  </span>
+                )}
+              </div>
+              {hypValid && hypoQuery.isLoading && (
+                <p className="text-sm text-muted-foreground">Hypothetische Rente wird berechnet…</p>
+              )}
+              {hypo && (
+                <div className="space-y-2">
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Hypothese: Pensionierung mit {hypAgeNum}{' '}
+                      ({formatDate(hypo.retirementDate)}) — monatliches Einkommen{' '}
+                    </span>
+                    <span className="font-semibold text-emerald-600">
+                      {formatCents(hypo.monthlyRetirementIncome)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {' '}· Ersatzrate {hypo.replacementRate != null ? `${hypo.replacementRate} %` : '—'}
+                    </span>
+                  </div>
+                  <div className="grid gap-2 text-sm sm:grid-cols-3">
+                    <div>
+                      <span className="text-muted-foreground">AHV: </span>
+                      <span className="font-medium">{formatCents(hypo.ahv.monthlyPension)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Pensionskasse: </span>
+                      <span className="font-medium">{formatCents(hypo.pillar2.monthlyPension)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {' '}· Guthaben {formatCents(hypo.pillar2.capital)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Säule 3a: </span>
+                      <span className="font-medium">{formatCents(hypo.pillar3.monthlyWithdrawal)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {' '}· Kapital {formatCents(hypo.pillar3.capital)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {chartData.length > 1 && (
@@ -690,7 +870,7 @@ function DeductionDialogForm({ deduction, close }: { deduction?: DeductionRow; c
             <Label>{mode === 'percent' ? 'Wert (%)' : `Betrag (${currencySymbol()})`}</Label>
             <Input
               inputMode="decimal"
-              placeholder={mode === 'percent' ? '5,30' : amountPlaceholder}
+              placeholder={mode === 'percent' ? formatBp(530) : amountPlaceholder}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
@@ -1108,8 +1288,13 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
 /* --------------------------------- Verlauf --------------------------------- */
 
 function HistoryCard() {
-  const changesQuery = trpc.pension.listChanges.useQuery({ limit: 100 });
-  const changes = changesQuery.data ?? [];
+  // Backend-Pagination: 25 Einträge pro Seite, „Mehr laden“ blättert per Cursor
+  const changesQuery = trpc.pension.listChanges.useInfiniteQuery(
+    { limit: 25 },
+    { getNextPageParam: (lastPage) => lastPage.nextCursor },
+  );
+  const changes = changesQuery.data?.pages.flatMap((p) => p.entries) ?? [];
+  const total = changesQuery.data?.pages[0]?.total ?? 0;
 
   return (
     <Card>
@@ -1118,7 +1303,10 @@ function HistoryCard() {
           <History className="h-5 w-5 text-muted-foreground" />
           Verlauf
         </CardTitle>
-        <CardDescription>Änderungen an deinen Vorsorge-Daten — neueste zuerst</CardDescription>
+        <CardDescription>
+          Änderungen an deinen Vorsorge-Daten — neueste zuerst
+          {total > 0 && ` (${changes.length} von ${total})`}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {changesQuery.isLoading ? (
@@ -1147,6 +1335,17 @@ function HistoryCard() {
                 )}
               </div>
             ))}
+            {changesQuery.hasNextPage && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={changesQuery.isFetchingNextPage}
+                onClick={() => changesQuery.fetchNextPage()}
+              >
+                {changesQuery.isFetchingNextPage ? 'Lade…' : 'Mehr laden'}
+              </Button>
+            )}
           </div>
         )}
       </CardContent>
@@ -1183,7 +1382,11 @@ export default function Pension() {
         <SetupCard />
       ) : (
         <>
-          <OverviewSection forecast={forecastQuery.data} isLoading={forecastQuery.isLoading} />
+          <OverviewSection
+            forecast={forecastQuery.data}
+            isLoading={forecastQuery.isLoading}
+            profile={{ birthDate: profile.birthDate, retirementAge: profile.retirementAge }}
+          />
           <div className="grid gap-4 lg:grid-cols-2">
             <SalarySection
               salaries={salariesQuery.data ?? []}

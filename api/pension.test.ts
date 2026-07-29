@@ -200,12 +200,13 @@ describe("Löhne (salaries)", () => {
   it("löscht mit Lösch-Eintrag in der Historie", async () => {
     const caller = callerFor(admin);
     const vorher = (await caller.pension.listChanges({ entity: "salary" }))
-      .length;
+      .entries.length;
     await caller.pension.deleteSalary({
       id: salaryId,
       comment: "Alter Lohn bereinigt",
     });
-    const changes = await caller.pension.listChanges({ entity: "salary" });
+    const changes = (await caller.pension.listChanges({ entity: "salary" }))
+      .entries;
     expect(changes.length).toBe(vorher + 1);
     const deletion = changes[0];
     expect(deletion.comment).toBe("Alter Lohn bereinigt");
@@ -354,23 +355,24 @@ describe("Säule 2 (funds)", () => {
 
     const historieVorher = (
       await caller.pension.listChanges({ entity: "fund" })
-    ).length;
+    ).entries.length;
     // Update ohne echte Änderung → kein neuer Historien-Eintrag
     await caller.pension.updateFund({
       id: created.id,
       name: "PK Arbeitgeber",
       comment: "nur ein Kommentar",
     });
-    expect((await caller.pension.listChanges({ entity: "fund" })).length).toBe(
-      historieVorher
-    );
+    expect(
+      (await caller.pension.listChanges({ entity: "fund" })).entries.length
+    ).toBe(historieVorher);
 
     await caller.pension.updateFund({
       id: created.id,
       interestRateBp: 125,
       comment: "Zinssatz 2026",
     });
-    const changes = await caller.pension.listChanges({ entity: "fund" });
+    const changes = (await caller.pension.listChanges({ entity: "fund" }))
+      .entries;
     expect(changes.length).toBe(historieVorher + 1);
     expect(changes[0].comment).toBe("Zinssatz 2026");
     expect(changes[0].changes).toEqual([
@@ -755,9 +757,10 @@ describe("Vorsorge-Anhänge (HTTP-Routen)", () => {
 describe("Historie (listChanges)", () => {
   it("filtert nach Entität und zeigt Einträge absteigend", async () => {
     const caller = callerFor(admin);
-    const alle = await caller.pension.listChanges({});
+    const alle = (await caller.pension.listChanges({})).entries;
     expect(alle.length).toBeGreaterThan(0);
-    const nurFunds = await caller.pension.listChanges({ entity: "fund" });
+    const nurFunds = (await caller.pension.listChanges({ entity: "fund" }))
+      .entries;
     expect(nurFunds.every(c => c.entity === "fund")).toBe(true);
     expect(nurFunds.length).toBeLessThan(alle.length);
     // absteigend: neueste zuerst
@@ -768,8 +771,32 @@ describe("Historie (listChanges)", () => {
     expect(Array.isArray(alle[0].changes)).toBe(true);
   });
 
+  it("paginiert über den Offset-Cursor (total + nextCursor)", async () => {
+    const caller = callerFor(admin);
+    const ersteSeite = await caller.pension.listChanges({ limit: 2 });
+    expect(ersteSeite.entries.length).toBe(2);
+    expect(ersteSeite.total).toBeGreaterThan(2);
+    expect(ersteSeite.nextCursor).toBe(2);
+    const zweiteSeite = await caller.pension.listChanges({
+      limit: 2,
+      cursor: ersteSeite.nextCursor!,
+    });
+    expect(zweiteSeite.entries.length).toBeGreaterThan(0);
+    // keine Überlappung zwischen den Seiten
+    const idsSeite1 = new Set(ersteSeite.entries.map(e => e.id));
+    expect(zweiteSeite.entries.every(e => !idsSeite1.has(e.id))).toBe(true);
+    // letzte Seite: nextCursor null
+    const letzteSeite = await caller.pension.listChanges({
+      limit: 100,
+      cursor: 0,
+    });
+    expect(letzteSeite.nextCursor).toBeNull();
+    expect(letzteSeite.entries.length).toBe(letzteSeite.total);
+  });
+
   it("ist strikt privat — das Mitglied sieht nur die eigene Historie", async () => {
-    const memberChanges = await callerFor(member).pension.listChanges({});
+    const memberChanges = (await callerFor(member).pension.listChanges({}))
+      .entries;
     expect(memberChanges.every(c => c.userId === member.id)).toBe(true);
   });
 });

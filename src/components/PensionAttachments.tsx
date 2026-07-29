@@ -8,18 +8,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { trpc } from '@/providers/trpc';
+import { formatBytes } from '@/lib/finance';
 
 export type PensionEntityType = 'ahv' | 'fund' | 'pillar3';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf';
-
-/** Dateigröße kompakt formatieren (deutsches Dezimalkomma) */
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1).replace('.', ',')} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
-}
 
 /**
  * Kompakte Anhang-Verwaltung für Vorsorge-Datensätze (AHV, Pensionskasse,

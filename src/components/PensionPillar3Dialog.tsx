@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/SearchableSelect';
 import PensionAttachments from '@/components/PensionAttachments';
 import { accountLabel, useInvalidatePension } from '@/lib/data';
-import { amountPlaceholder, currencySymbol, formatBp, parseEuro, parsePercent } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, formatAmountInput, formatBp, parseEuro, parsePercent } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -29,9 +29,9 @@ export interface DialogPillar3 {
   notes: string;
 }
 
-/** Cent-Betrag als Eingabe-String (deutsches Dezimalkomma) */
+/** Cent-Betrag als Eingabe-String (locale-konformes Dezimalzeichen) */
 const centsInput = (cents: number): string =>
-  cents > 0 ? (cents / 100).toFixed(2).replace('.', ',') : '';
+  cents > 0 ? formatAmountInput(cents) : '';
 
 /** Dialog zum Anlegen/Bearbeiten eines Säule-3a-Kontos */
 export default function PensionPillar3Dialog({ pillar, trigger }: { pillar?: DialogPillar3; trigger: ReactNode }) {
@@ -131,7 +131,7 @@ function Pillar3DialogForm({ pillar, close }: { pillar?: DialogPillar3; close: (
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Verzinsung (% p. a.)</Label>
-            <Input inputMode="decimal" placeholder="1,25" value={interest} onChange={(e) => setInterest(e.target.value)} />
+            <Input inputMode="decimal" placeholder={formatBp(125)} value={interest} onChange={(e) => setInterest(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Konto-Verknüpfung (optional)</Label>

@@ -243,6 +243,22 @@ describe("forecast-Endpunkt", () => {
     expect(result.replacementRate).toBeGreaterThan(0);
   });
 
+  it("rechnet mit hypothetischem Rentenalter (Override)", async () => {
+    const caller = callerFor(admin);
+    const basis = await caller.pension.forecast();
+    // Frühere Pensionierung → kürzere Ansparphase, spätere → längere
+    const frueher = await caller.pension.forecast({ retirementAge: 60 });
+    const spaeter = await caller.pension.forecast({ retirementAge: 70 });
+    expect(frueher.retirementDate < basis.retirementDate).toBe(true);
+    expect(spaeter.retirementDate > basis.retirementDate).toBe(true);
+    expect(frueher.pillar2.capital).toBeLessThan(basis.pillar2.capital);
+    expect(spaeter.pillar2.capital).toBeGreaterThan(basis.pillar2.capital);
+    // ungültige Werte lehnt die Validierung ab
+    await expect(
+      caller.pension.forecast({ retirementAge: 40 })
+    ).rejects.toThrow();
+  });
+
   it("meldet ein Land ohne Prognose-Engine als BAD_REQUEST", async () => {
     const caller = callerFor(admin);
     await caller.pension.updateProfile({ country: "DE" });

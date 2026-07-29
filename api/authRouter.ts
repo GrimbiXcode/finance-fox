@@ -13,6 +13,7 @@ import { getDb } from "./queries/connection";
 import { authTokens, users } from "@db/schema";
 import { buildLogoutCookie, buildSessionCookie } from "./lib/session";
 import { buildOtpauthUrl, generateSecret, verifyTotp } from "./lib/totp";
+import { requireAccountAccess } from "./lib/accountAccess";
 import { logAudit } from "./lib/audit";
 import { env } from "./lib/env";
 
@@ -236,8 +237,38 @@ export const authRouter = createRouter({
     const user = await getDb().query.users.findFirst({
       where: eq(users.id, ctx.user.id),
     });
-    return { ...ctx.user, totpEnabled: user?.totpEnabled ?? false };
+    return {
+      ...ctx.user,
+      totpEnabled: user?.totpEnabled ?? false,
+      quickAccountId: user?.quickAccountId ?? null,
+    };
   }),
+
+  /**
+   * Schnellerfassung: Konto konfigurieren, auf das gebucht wird
+   * (null = automatisch erstes Konto mit „edit"-Recht).
+   */
+  setQuickAccount: authedQuery
+    .input(z.object({ accountId: z.number().int().positive().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      let detail = "Schnellkonto: automatisch";
+      if (input.accountId !== null) {
+        const account = await requireAccountAccess(
+          db,
+          ctx.user,
+          input.accountId,
+          "edit"
+        );
+        detail = `Schnellkonto: ${account.name}`;
+      }
+      await db
+        .update(users)
+        .set({ quickAccountId: input.accountId })
+        .where(eq(users.id, ctx.user.id));
+      logAudit(db, ctx.user.id, "user.updated", "user", ctx.user.id, detail);
+      return { ok: true };
+    }),
 
   /** 2FA-Einrichtung starten: Secret erzeugen und (noch inaktiv) speichern */
   setupTotp: authedQuery.mutation(async ({ ctx }) => {

@@ -5,6 +5,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import { useInvalidateFinance } from '@/lib/data';
+import { formatBytes } from '@/lib/finance';
 import { toast } from 'sonner';
 
 /** Beleg-Metadaten, wie sie finance.listTransactions mitliefert */
@@ -17,13 +18,6 @@ export interface TxAttachment {
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf';
-
-/** Dateigröße kompakt formatieren (deutsches Dezimalkomma) */
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1).replace('.', ',')} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
-}
 
 /**
  * Dialog für die Belege (Fotos/PDF) einer Buchung: ansehen, hochladen,

@@ -24,6 +24,9 @@ export const users = sqliteTable("users", {
   totpEnabled: integer("totp_enabled", { mode: "boolean" })
     .notNull()
     .default(false),
+  // Konfiguriertes Konto der Schnellerfassung (NULL = automatisch: erstes
+  // Konto mit „edit"-Recht) — siehe QuickAddDialog
+  quickAccountId: integer("quick_account_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

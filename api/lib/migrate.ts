@@ -23,6 +23,7 @@ export function ensureSchema() {
       active INTEGER NOT NULL DEFAULT 1,
       totp_secret TEXT,
       totp_enabled INTEGER NOT NULL DEFAULT 0,
+      quick_account_id INTEGER,
       created_at INTEGER NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -341,6 +342,10 @@ export function ensureSchema() {
     db.run(
       "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0" as never
     );
+  }
+  // Schnellerfassung: konfiguriertes Konto an Bestands-DBs nachrüsten
+  if (!userCols.some(col => col[1] === "quick_account_id")) {
+    db.run("ALTER TABLE users ADD COLUMN quick_account_id INTEGER" as never);
   }
   // Dauerbuchungen: Zielkonto für wiederkehrende Umbuchungen nachrüsten
   const recurringCols = raw.prepare("PRAGMA table_info(recurring)").raw().all();

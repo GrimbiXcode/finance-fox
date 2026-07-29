@@ -10,7 +10,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useInvalidateFinance } from '@/lib/data';
-import { amountPlaceholder, currencySymbol, parseEuro } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, formatAmountInput, parseEuro } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
@@ -44,7 +44,7 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
   const isEdit = !!goal;
   const [name, setName] = useState(goal?.name ?? '');
   const [target, setTarget] = useState(
-    goal?.targetAmount != null ? (goal.targetAmount / 100).toFixed(2).replace('.', ',') : '',
+    goal?.targetAmount != null ? formatAmountInput(goal.targetAmount) : '',
   );
   const [color, setColor] = useState(goal?.color ?? GOAL_COLORS[0]);
   const [deadline, setDeadline] = useState(goal?.deadline ?? '');

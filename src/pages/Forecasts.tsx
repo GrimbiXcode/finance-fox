@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { trpc } from '@/providers/trpc';
-import { currencySymbol, formatCents, formatMonth, getUserLocale } from '@/lib/finance';
+import { currencySymbol, formatCents, formatMonth, formatMonthYearShort, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
 export default function Forecasts() {
@@ -62,11 +62,11 @@ export default function Forecasts() {
 
   const chartData = [
     ...(balance.data?.history ?? []).map((h) => ({
-      month: formatMonth(h.month).slice(0, 3) + ` '${h.month.slice(2, 4)}`,
+      month: formatMonthYearShort(h.month),
       Ist: Math.round(h.balance / 100),
     })),
     ...(balance.data?.projection ?? []).map((p) => ({
-      month: formatMonth(p.month).slice(0, 3) + ` '${p.month.slice(2, 4)}`,
+      month: formatMonthYearShort(p.month),
       Prognose: Math.round(p.balance / 100),
     })),
   ];

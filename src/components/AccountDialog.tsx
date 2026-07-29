@@ -14,7 +14,7 @@ import {
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
-import { amountPlaceholder, currencySymbol, formatCents, parseEuro } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, formatAmountInput, formatCents, parseEuro } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
@@ -53,7 +53,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
   const [name, setName] = useState(account?.name ?? '');
   const [type, setType] = useState<string>(account?.type ?? 'checking');
   const [balance, setBalance] = useState(
-    account ? (account.initialBalance / 100).toFixed(2).replace('.', ',') : '',
+    account ? formatAmountInput(account.initialBalance) : '',
   );
   const [bankId, setBankId] = useState<number | null>(account?.bankId ?? null);
   const [iban, setIban] = useState(account?.iban ?? '');

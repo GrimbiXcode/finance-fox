@@ -41,9 +41,16 @@ Navigationen bekommen sie dann automatisch.
 - `formatCents` / `parseEuro` für Geldbeträge (Cent-Integer, siehe Root-
   AGENTS.md), `currencySymbol` — beide nutzen die App-Währung als Default;
   das Layout lädt sie via `finance.getAppSettings` und setzt sie mit
-  `setAppCurrency`.
+  `setAppCurrency`. Für die **Vorbefüllung von Eingabefeldern** gibt es
+  `formatAmountInput` (locale-konformes Dezimalzeichen, ohne Tausender-
+  gruppierung) — niemals `.toFixed(2).replace('.', ',')` o. ä. hardcoden.
+  Prozente: `parsePercent`/`formatBp` (Basispunkte), Dateigrößen:
+  `formatBytes` — alle locale-konform.
 - `getUserLocale()` liefert die Browser-Region (`navigator.language`),
-  zentral für alle Zahlen- und Datumsformate.
+  zentral für alle Zahlen- und Datumsformate. Datums-Anzeige ausschließlich
+  über `formatDate` / `formatMonth` / `formatMonthShort` /
+  `formatMonthYearShort` (Chart-Achsen) — niemals Monatsnamen per String-
+  Slicing oder Zeichenketten wie `TT.MM.JJJJ` selbst zusammenbauen.
 - `expensesByRootCategory` rollt Ausgaben auf Oberkategorien auf
   (Dashboard); `listCategories` bleibt flach, der Baum wird im Frontend
   gebaut.
@@ -84,9 +91,13 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
 ## Seiten-Besonderheiten
 
 - **Schnellerfassung**: `components/QuickAddDialog.tsx` (Button „Schnell" im
-  Layout-Header) bucht eine Ausgabe mit nur Betrag + Notiz; Defaults: erstes
-  Konto mit `access === "edit"`, zuletzt verwendete Ausgaben-Kategorie,
-  heutiges Datum, aktueller User.
+  Layout-Header) bucht mit nur Betrag + Notiz; positiv = Ausgabe, negativ
+  (mit „-") = Einnahme. Das Buchungskonto ist pro Benutzer konfigurierbar
+  (`users.quickAccountId` via `auth.setQuickAccount`, erfordert `edit`-
+  Recht; null/Default = erstes Konto mit `access === "edit"`) und wird im
+  Dialog per SearchableSelect angezeigt/gewählt (Wahl wird direkt
+  gespeichert). Weitere Defaults: zuletzt verwendete Kategorie der
+  jeweiligen Art, heutiges Datum, aktueller User.
 - **Transaktionen**: Tag-Auswahl + Inline-Anlage im Details-Bereich des
   TransactionDialog, Badges + Tag-Filter + Tag-Popover zum nachträglichen
   Taggen in der Liste (Tag-Namen sind Teil des Such-Haystacks). Edit-Modus
@@ -142,7 +153,11 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   Setup-Card („Vorsorge einrichten": Geburtsdatum, Rentenalter). Danach
   gestapelte Cards: Übersicht & Prognose (drei Säulen-Karten, gestapeltes
   AreaChart der Kapitalentwicklung, Einkommen im Alter + Ersatzrate,
-  Warnungen), Lohn & Abzüge (Lohn-Timeline als Tabelle mit
+  Warnungen; Stift-Button öffnet `ProfileDialog` zum nachträglichen Ändern
+  von Geburtsdatum/Pensionierungsalter; Was-wäre-wenn-Feld für ein
+  hypothetisches Rentenalter — eigene `forecast`-Query mit
+  `retirementAge`-Override, zeigt hypothetische Renten/Ersatzrate im
+  Vergleich), Lohn & Abzüge (Lohn-Timeline als Tabelle mit
   `type="month"`-Dialog, Abzüge mit Aktiv-Switch, „Als Dauerbuchung
   übernehmen"-Dialog), AHV (Anzeige-Card + Bearbeiten-Dialog + Anhänge),
   Pensionskasse und Säule 3a (Karten-Grids mit Dialogen

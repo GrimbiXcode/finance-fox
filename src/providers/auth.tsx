@@ -8,6 +8,7 @@ export interface SessionUser {
   role: 'admin' | 'member';
   color: string;
   totpEnabled: boolean;
+  quickAccountId: number | null;
 }
 
 interface AuthContextValue {

@@ -88,13 +88,25 @@ export const parseAmountCents = (input: string, locale: string): number => {
 export const parseEuro = (input: string): number => parseAmountCents(input, userLocale);
 
 /**
- * Prozent-Eingabe locale-bewusst parsen (z. B. "5,30" → 5.3, 0 bei
- * ungültiger Eingabe). Akzeptiert Komma und Punkt als Dezimalzeichen.
+ * Cent-Betrag für die Vorbefüllung von Eingabefeldern — locale-konformes
+ * Dezimalzeichen (de-DE „1200,50" vs. de-CH „1200.50"), ohne Tausender-
+ * gruppierung (Eingabefelder). NICHT für die Anzeige verwenden (dort
+ * formatCents).
  */
-export const parsePercent = (input: string): number => {
-  const value = parseFloat(input.trim().replace(',', '.'));
-  return Number.isNaN(value) ? 0 : value;
-};
+export const formatAmountInput = (cents: number): string =>
+  new Intl.NumberFormat(userLocale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  }).format(cents / 100);
+
+/**
+ * Prozent-Eingabe locale-bewusst parsen (z. B. "5,30" bzw. "5.30" → 5.3,
+ * 0 bei ungültiger Eingabe). Nutzt dasselbe Regelwerk wie das Betrags-
+ * Parsing und akzeptiert beide Dezimalzeichen.
+ */
+export const parsePercent = (input: string): number =>
+  parseAmountCents(input, userLocale) / 100;
 
 /** Basispunkte als locale-formatierten Prozent-String (530 → "5,30") */
 export const formatBp = (bp: number): string =>
@@ -102,6 +114,15 @@ export const formatBp = (bp: number): string =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(bp / 100);
+
+/** Dateigröße kompakt und locale-konform formatieren */
+export const formatBytes = (n: number): string => {
+  const fmt = (v: number, unit: string) =>
+    `${new Intl.NumberFormat(userLocale, { maximumFractionDigits: 1 }).format(v)} ${unit}`;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return fmt(n / 1024, 'KB');
+  return fmt(n / (1024 * 1024), 'MB');
+};
 
 export const monthKey = (dateISO: string): string => dateISO.slice(0, 7);
 
@@ -114,6 +135,14 @@ export const formatDate = (dateISO: string): string =>
 
 export const formatMonth = (key: string): string =>
   new Date(`${key}-15T12:00:00`).toLocaleDateString(userLocale, { month: 'long', year: 'numeric' });
+
+/** Monatskürzel locale-konform (z. B. „Jan", „Feb") — für Chart-Achsen */
+export const formatMonthShort = (key: string): string =>
+  new Date(`${key}-15T12:00:00`).toLocaleDateString(userLocale, { month: 'short' });
+
+/** Monat + 2-stelliges Jahr locale-konform (z. B. „Jan '26" bzw. „Jan 26") */
+export const formatMonthYearShort = (key: string): string =>
+  new Date(`${key}-15T12:00:00`).toLocaleDateString(userLocale, { month: 'short', year: '2-digit' });
 
 /** Generische Typen für Berechnungen (kompatibel mit den tRPC-Antworten) */
 export interface TxLike {

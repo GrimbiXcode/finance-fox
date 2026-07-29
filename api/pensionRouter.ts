@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -1117,7 +1117,17 @@ export const pensionRouter = createRouter({
 
   /* --------------------------------- Prognose ------------------------------- */
 
-  forecast: authedQuery.query(async ({ ctx }) => {
+  forecast: authedQuery
+    .input(
+      z
+        .object({
+          // Hypothetisches Rentenalter für Was-wäre-wenn-Rechnungen in der
+          // Übersicht (Default: das im Profil hinterlegte)
+          retirementAge: z.number().int().min(50).max(75).optional(),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
     const db = getDb();
     const profile = await db.query.pensionProfiles.findFirst({
       where: eq(pensionProfiles.userId, ctx.user.id),
@@ -1187,7 +1197,7 @@ export const pensionRouter = createRouter({
     }
     return calculator.forecast({
       birthDate: profile.birthDate,
-      retirementAge: profile.retirementAge,
+      retirementAge: input?.retirementAge ?? profile.retirementAge,
       funds,
       pillar3,
       ahv: ahvRow
@@ -1206,29 +1216,46 @@ export const pensionRouter = createRouter({
     .input(
       z.object({
         entity: z.string().max(50).optional(),
-        limit: z.number().int().min(1).max(500).default(100),
+        limit: z.number().int().min(1).max(100).default(25),
+        // Offset-Cursor für die Pagination („Mehr laden" im UI)
+        cursor: z.number().int().min(0).default(0),
       })
     )
     .query(async ({ ctx, input }) => {
       const db = getDb();
-      const rows = await db.query.pensionChanges.findMany({
-        where: input.entity
-          ? and(
-              eq(pensionChanges.userId, ctx.user.id),
-              eq(pensionChanges.entity, input.entity)
-            )
-          : eq(pensionChanges.userId, ctx.user.id),
-        orderBy: (t, { desc: d }) => [d(t.createdAt), d(t.id)],
-        limit: input.limit,
-      });
-      return rows.map(row => ({
-        ...row,
-        changes: JSON.parse(row.changes) as {
-          field: string;
-          from: string | number | null;
-          to: string | number | null;
-        }[],
-      }));
+      const where = input.entity
+        ? and(
+            eq(pensionChanges.userId, ctx.user.id),
+            eq(pensionChanges.entity, input.entity)
+          )
+        : eq(pensionChanges.userId, ctx.user.id);
+      const [rows, countRow] = await Promise.all([
+        db.query.pensionChanges.findMany({
+          where,
+          orderBy: (t, { desc: d }) => [d(t.createdAt), d(t.id)],
+          limit: input.limit,
+          offset: input.cursor,
+        }),
+        db
+          .select({ total: sql<number>`count(*)` })
+          .from(pensionChanges)
+          .where(where),
+      ]);
+      const total = countRow[0]?.total ?? 0;
+      const nextCursor =
+        input.cursor + rows.length < total ? input.cursor + rows.length : null;
+      return {
+        entries: rows.map(row => ({
+          ...row,
+          changes: JSON.parse(row.changes) as {
+            field: string;
+            from: string | number | null;
+            to: string | number | null;
+          }[],
+        })),
+        total,
+        nextCursor,
+      };
     }),
 
   /* ------------------------------ Anhänge ---------------------------------- */

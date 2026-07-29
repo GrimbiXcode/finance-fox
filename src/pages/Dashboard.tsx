@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFinanceData } from '@/lib/data';
 import {
   currencySymbol, currentMonthKey, expensesByRootCategory, formatCents, formatDate, formatMonth,
-  getUserLocale, memberBalances, monthTotals, totalBalance,
+  formatMonthShort, getUserLocale, memberBalances, monthTotals, totalBalance,
 } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import { cn } from '@/lib/utils';
@@ -30,7 +30,7 @@ export default function Dashboard() {
     }
     return keys.map((key) => {
       const t = monthTotals(transactions, key);
-      return { month: formatMonth(key).slice(0, 3), Einnahmen: t.income / 100, Ausgaben: t.expense / 100 };
+      return { month: formatMonthShort(key), Einnahmen: t.income / 100, Ausgaben: t.expense / 100 };
     });
   }, [transactions]);
 

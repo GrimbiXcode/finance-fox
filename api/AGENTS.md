@@ -18,6 +18,10 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
 - `authRouter.ts` — Setup-Wizard, Login, Einladungen, Passwort-Reset.
   Einladungs-/Reset-Links sind Hash-Routen (`#/einladung/<token>`,
   `#/reset/<token>`) und landen im Server-Log (kein E-Mail-Versand).
+  `auth.setQuickAccount` konfiguriert das Konto der Schnellerfassung pro
+  Benutzer (`users.quick_account_id`, erfordert `edit`-Recht, null =
+  automatisch); `auth.me` liefert `quickAccountId`. Tests:
+  `api/quickAccount.test.ts`.
 - `financeRouter.ts` — Konten (inkl. Besitz/Sichtbarkeit, Kontotypen,
   Banken), Transaktionen (inkl. CSV-Export/-Import), Kategorien, Tags,
   Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele.
@@ -55,7 +59,10 @@ pension_fund/vested_benefits, Sätze in Basispunkten), `pension_pillar3`
   „Eintrag", ohne `summary` strukturiert pro Feld (damit das UI Beträge
   locale-konform formatieren kann); jede Mutation zusätzlich `logAudit`
   (`pension.<entity>.<verb>`, best effort, **nie** sensible Werte wie die
-  AHV-Nummer im Detail). Lesen über `pension.listChanges`.
+  AHV-Nummer im Detail). Lesen über `pension.listChanges` mit Backend-
+  Pagination: Input `{entity?, limit (max 100, Default 25), cursor
+  (Offset, Default 0)}`, Rückgabe `{entries, total, nextCursor}` — das UI
+  blättert per „Mehr laden" (`useInfiniteQuery`).
 - **Prognose**: länderabhängige Engine über die Factory
   `getPensionCalculator(country)` in `lib/pension/index.ts` (wirft bei
   unbekanntem Land); CH-Umsetzung in `forecastCh.ts` — monatliche
@@ -63,6 +70,8 @@ pension_fund/vested_benefits, Sätze in Basispunkten), `pension_pillar3`
   gerundet): Säule 2 mit Umwandlungssatz, Säule 3a mit fiktiver Entnahme
   über 20 Jahre (capital/240), AHV aus hinterlegter Rente oder grober
   Schätzung (Vollrente 302400 Cent × Beitragsjahre/44, `estimated`).
+  Der Endpunkt akzeptiert optional `retirementAge` (50–75) als Override
+  für Was-wäre-wenn-Rechnungen (Default: Profil-Wert).
 - **3a-Konto-Link**: Sync-Saldo (Logik wie `listAccounts`) minus in
   Sparzielen verplante Anteile (`availableForAccount`/`commitmentOf` aus
   `lib/goalProgress.ts`, Zielnamen über goal_sources → savings_goals) in

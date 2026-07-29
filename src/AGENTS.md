@@ -22,6 +22,20 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
 - `lib/` — `finance.ts` (Berechnungen, Cent-Helfer, Locale), `data.ts`,
   `utils.ts` (cn), `moneyflow.ts`, `recurring.ts`.
 
+## Navigation (Layout.tsx)
+
+Die Menüstruktur steht zentral in `navGroups` (thematisch gruppiert:
+Alltag = Dashboard/Transaktionen/Wiederkehrend/Aufteilung, Konten =
+Konten/Geldfluss, Planung = Budgets/Sparziele/Vorsorge, Analyse =
+Prognosen/Auswertung, Verwaltung = Personen/Einstellungen) und speist
+beide Navigationen: die Desktop-Seitenleiste (mit Gruppen-Labels, im
+eingeklappten Zustand nur Icons + Trennlinien) und die mobile Ansicht —
+dort zeigt die untere Leiste vier Schnellzugriffe (`mobilePrimary`:
+Dashboard, Transaktionen, Konten, Budgets) plus „Mehr", das ein
+Bottom-Sheet (`ui/sheet`) mit allen Bereichen in derselben Gruppierung
+öffnet. Neue Seiten: Route in `App.tsx` + Eintrag in `navGroups` — beide
+Navigationen bekommen sie dann automatisch.
+
 ## Zentrale Helfer (lib/finance.ts)
 
 - `formatCents` / `parseEuro` für Geldbeträge (Cent-Integer, siehe Root-

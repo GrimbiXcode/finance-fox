@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
   Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn, Landmark,
-  PanelLeftClose, PanelLeftOpen, GitBranch,
+  PanelLeftClose, PanelLeftOpen, GitBranch, Menu,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
@@ -12,23 +12,59 @@ import { formatCents, setAppCurrency, totalBalance } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
+} from '@/components/ui/sheet';
 import QuickAddDialog from '@/components/QuickAddDialog';
 
-const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/transaktionen', label: 'Transaktionen', icon: ArrowLeftRight },
-  { to: '/konten', label: 'Konten', icon: Wallet },
-  { to: '/geldfluss', label: 'Geldfluss', icon: GitBranch },
-  { to: '/budgets', label: 'Budgets', icon: Target },
-  { to: '/aufteilung', label: 'Aufteilung', icon: Users },
-  { to: '/wiederkehrend', label: 'Wiederkehrend', icon: Repeat },
-  { to: '/sparziele', label: 'Sparziele', icon: PiggyBank },
-  { to: '/vorsorge', label: 'Vorsorge', icon: Landmark },
-  { to: '/prognosen', label: 'Prognosen', icon: TrendingUp },
-  { to: '/auswertung', label: 'Auswertung', icon: ChartColumn },
-  { to: '/personen', label: 'Personen', icon: UserCog },
-  { to: '/einstellungen', label: 'Einstellungen', icon: Settings },
+// Menüstruktur (Desktop-Seitenleiste und mobiles „Mehr“-Menü): thematisch
+// gruppiert — Alltag (buchen & teilen), Konten, Planung, Analyse, Verwaltung.
+const navGroups = [
+  {
+    label: 'Alltag',
+    items: [
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/transaktionen', label: 'Transaktionen', icon: ArrowLeftRight },
+      { to: '/wiederkehrend', label: 'Wiederkehrend', icon: Repeat },
+      { to: '/aufteilung', label: 'Aufteilung', icon: Users },
+    ],
+  },
+  {
+    label: 'Konten',
+    items: [
+      { to: '/konten', label: 'Konten', icon: Wallet },
+      { to: '/geldfluss', label: 'Geldfluss', icon: GitBranch },
+    ],
+  },
+  {
+    label: 'Planung',
+    items: [
+      { to: '/budgets', label: 'Budgets', icon: Target },
+      { to: '/sparziele', label: 'Sparziele', icon: PiggyBank },
+      { to: '/vorsorge', label: 'Vorsorge', icon: Landmark },
+    ],
+  },
+  {
+    label: 'Analyse',
+    items: [
+      { to: '/prognosen', label: 'Prognosen', icon: TrendingUp },
+      { to: '/auswertung', label: 'Auswertung', icon: ChartColumn },
+    ],
+  },
+  {
+    label: 'Verwaltung',
+    items: [
+      { to: '/personen', label: 'Personen', icon: UserCog },
+      { to: '/einstellungen', label: 'Einstellungen', icon: Settings },
+    ],
+  },
 ];
+
+// Mobile Schnellzugriffe in der unteren Leiste — alles Weitere über „Mehr“.
+const mobilePrimary = ['/', '/transaktionen', '/konten', '/budgets'];
+const mobilePrimaryItems = navGroups
+  .flatMap((g) => g.items)
+  .filter((i) => mobilePrimary.includes(i.to));
 
 const SIDEBAR_KEY = 'ff-sidebar-collapsed';
 
@@ -39,6 +75,7 @@ export default function Layout() {
   const total = totalBalance(accounts, transactions);
   // Eingeklappte Seitenleiste (nur Icons) pro Gerät merken
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
+  const [moreOpen, setMoreOpen] = useState(false);
   const toggleCollapsed = () => {
     setCollapsed((c) => {
       localStorage.setItem(SIDEBAR_KEY, String(!c));
@@ -56,7 +93,7 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className={cn('hidden flex-col border-r bg-card transition-all md:flex', collapsed ? 'w-16' : 'w-64')}>
+      <aside className={cn('hidden flex-col border-r bg-card transition-all md:sticky md:top-0 md:flex md:h-screen', collapsed ? 'w-16' : 'w-64')}>
         <div className={cn('flex items-center gap-2 border-b py-5', collapsed ? 'justify-center px-2' : 'px-6')}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
             <PiggyBank className="h-5 w-5" />
@@ -69,23 +106,34 @@ export default function Layout() {
           )}
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              title={collapsed ? item.label : undefined}
-              className={({ isActive }) => cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                collapsed && 'justify-center px-0',
-                isActive
-                  ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-              )}
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {!collapsed && item.label}
-            </NavLink>
+          {navGroups.map((group, gi) => (
+            <div key={group.label}>
+              {collapsed
+                ? gi > 0 && <div className="mx-2 my-2 border-t" />
+                : (
+                  <div className={cn('px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70', gi > 0 && 'pt-4')}>
+                    {group.label}
+                  </div>
+                )}
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  title={collapsed ? item.label : undefined}
+                  className={({ isActive }) => cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    collapsed && 'justify-center px-0',
+                    isActive
+                      ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         {!collapsed && (
@@ -155,7 +203,7 @@ export default function Layout() {
           <Outlet />
         </main>
         <nav className="sticky bottom-0 z-10 flex justify-around border-t bg-background py-2 md:hidden">
-          {navItems.slice(0, 5).map((item) => (
+          {mobilePrimaryItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -169,6 +217,53 @@ export default function Layout() {
               {item.label}
             </NavLink>
           ))}
+          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+            <SheetTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'flex flex-col items-center gap-1 px-2 py-1 text-[10px]',
+                  moreOpen ? 'text-emerald-600' : 'text-muted-foreground',
+                )}
+              >
+                <Menu className="h-5 w-5" />
+                Mehr
+              </button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Alle Bereiche</SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 px-4 pb-6">
+                {navGroups.map((group) => (
+                  <div key={group.label}>
+                    <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                      {group.label}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {group.items.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          end={item.to === '/'}
+                          onClick={() => setMoreOpen(false)}
+                          className={({ isActive }) => cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                            isActive
+                              ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                          )}
+                        >
+                          <item.icon className="h-4 w-4 shrink-0" />
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SheetContent>
+          </Sheet>
         </nav>
       </div>
     </div>

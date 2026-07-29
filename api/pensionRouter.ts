@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -11,6 +11,7 @@ import {
   pensionChanges,
   pensionDeductions,
   pensionFunds,
+  pensionFundTiers,
   pensionPillar3,
   pensionProfiles,
   pensionSalaries,
@@ -70,6 +71,13 @@ const FUND_LABELS = {
   interestRateBp: "Zinssatz (Bp)",
   conversionRateBp: "Umwandlungssatz (Bp)",
   notes: "Notizen",
+  employer: "Arbeitgeber",
+  insuredSalary: "Versicherter Jahreslohn",
+  coordinationDeduction: "Koordinationsabzug",
+  buyInPotential: "Einkaufspotenzial",
+  disabilityPension: "Invalidenrente/Jahr",
+  deathBenefit: "Todesfallkapital",
+  tiers: "Abstufungen",
 };
 const PILLAR3_LABELS = {
   name: "Name",
@@ -106,6 +114,42 @@ function formatFundField(
   if (value === null || value === undefined) return null;
   if (typeof value === "boolean") return value ? "ja" : "nein";
   return value;
+}
+
+/** Sparbeitrags-Abstufung nach Alter (AN/AG-Sätze in Basispunkten) */
+const tierInput = z.object({
+  ageFrom: z.number().int().min(18).max(75),
+  employeeRateBp: z.number().int().min(0).max(10000),
+  employerRateBp: z.number().int().min(0).max(10000),
+});
+type TierInput = z.infer<typeof tierInput>;
+
+/** Optionale Cent-Beträge des Versicherungsausweises (null = entfernen) */
+const nullableAmount = z.number().int().min(0).nullable().optional();
+
+/** Duplikate bei ageFrom sind nicht sinnvoll — pro Alter genau eine Stufe */
+function assertTiers(tiers: TierInput[]) {
+  if (new Set(tiers.map(t => t.ageFrom)).size !== tiers.length) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Pro Alter nur eine Stufe.",
+    });
+  }
+}
+
+/** Lesbare Kurzform der Abstufungen für die Änderungshistorie (AN/AG in %) */
+function tiersToText(
+  tiers: { ageFrom: number; employeeRateBp: number; employerRateBp: number }[]
+): string | null {
+  if (tiers.length === 0) return null;
+  const pct = (bp: number) => (bp / 100).toFixed(2);
+  return [...tiers]
+    .sort((a, b) => a.ageFrom - b.ageFrom)
+    .map(
+      t =>
+        `ab ${t.ageFrom}: ${pct(t.employeeRateBp)} %/${pct(t.employerRateBp)} %`
+    )
+    .join(" · ");
 }
 
 /** Aktueller Monat als YYYY-MM (lokal) */
@@ -715,10 +759,28 @@ export const pensionRouter = createRouter({
 
   listFunds: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
-    return db.query.pensionFunds.findMany({
+    const rows = await db.query.pensionFunds.findMany({
       where: eq(pensionFunds.userId, ctx.user.id),
       orderBy: (t, { asc }) => [asc(t.id)],
     });
+    // Abstufungen gebatcht laden und aufsteigend nach Alter anhängen
+    const ids = rows.map(r => r.id);
+    const tierRows = ids.length
+      ? await db.query.pensionFundTiers.findMany({
+          where: inArray(pensionFundTiers.fundId, ids),
+          orderBy: (t, { asc }) => [asc(t.ageFrom)],
+        })
+      : [];
+    return rows.map(row => ({
+      ...row,
+      tiers: tierRows
+        .filter(t => t.fundId === row.id)
+        .map(t => ({
+          ageFrom: t.ageFrom,
+          employeeRateBp: t.employeeRateBp,
+          employerRateBp: t.employerRateBp,
+        })),
+    }));
   }),
 
   addFund: authedQuery
@@ -733,23 +795,52 @@ export const pensionRouter = createRouter({
         interestRateBp: z.number().int().min(0).default(0),
         conversionRateBp: z.number().int().min(0).default(680),
         notes: z.string().max(2000).default(""),
+        employer: z.string().trim().max(200).nullable().optional(),
+        insuredSalary: nullableAmount,
+        coordinationDeduction: nullableAmount,
+        buyInPotential: nullableAmount,
+        disabilityPension: nullableAmount,
+        deathBenefit: nullableAmount,
+        tiers: z.array(tierInput).optional(),
         comment: commentInput,
       })
     )
     .mutation(async ({ ctx, input }) => {
+      assertTiers(input.tiers ?? []);
       const db = getDb();
-      const { comment, ...values } = input;
+      const { comment, tiers, ...rest } = input;
+      const values = {
+        ...rest,
+        employer: rest.employer ?? null,
+        insuredSalary: rest.insuredSalary ?? null,
+        coordinationDeduction: rest.coordinationDeduction ?? null,
+        buyInPotential: rest.buyInPotential ?? null,
+        disabilityPension: rest.disabilityPension ?? null,
+        deathBenefit: rest.deathBenefit ?? null,
+      };
       const inserted = await db
         .insert(pensionFunds)
         .values({ userId: ctx.user.id, ...values })
         .returning({ id: pensionFunds.id });
+      const fundId = inserted[0].id;
+      for (const tier of [...(tiers ?? [])].sort(
+        (a, b) => a.ageFrom - b.ageFrom
+      )) {
+        await db.insert(pensionFundTiers).values({
+          fundId,
+          ageFrom: tier.ageFrom,
+          employeeRateBp: tier.employeeRateBp,
+          employerRateBp: tier.employerRateBp,
+          createdAt: new Date(),
+        });
+      }
       await recordPensionChange(db, {
         userId: ctx.user.id,
         entity: "fund",
-        entityId: inserted[0].id,
+        entityId: fundId,
         comment,
         before: null,
-        after: { ...values },
+        after: { ...values, tiers: tiersToText(tiers ?? []) },
         fieldLabels: FUND_LABELS,
         format: formatFundField,
         summary: `Vorsorgekonto „${input.name}“`,
@@ -759,10 +850,10 @@ export const pensionRouter = createRouter({
         ctx.user.id,
         "pension.fund.created",
         "pension",
-        inserted[0].id,
+        fundId,
         `Vorsorgekonto „${input.name}“`
       );
-      return { id: inserted[0].id };
+      return { id: fundId };
     }),
 
   updateFund: authedQuery
@@ -776,10 +867,20 @@ export const pensionRouter = createRouter({
         interestRateBp: z.number().int().min(0).optional(),
         conversionRateBp: z.number().int().min(0).optional(),
         notes: z.string().max(2000).optional(),
+        // Versicherungsausweis-Felder: undefined = unverändert, null = entfernen
+        employer: z.string().trim().max(200).nullable().optional(),
+        insuredSalary: nullableAmount,
+        coordinationDeduction: nullableAmount,
+        buyInPotential: nullableAmount,
+        disabilityPension: nullableAmount,
+        deathBenefit: nullableAmount,
+        // Abstufungen: mitgegeben = ersetzen, weggelassen = unverändert
+        tiers: z.array(tierInput).optional(),
         comment: commentInput,
       })
     )
     .mutation(async ({ ctx, input }) => {
+      assertTiers(input.tiers ?? []);
       const db = getDb();
       const row = await db.query.pensionFunds.findFirst({
         where: and(
@@ -801,7 +902,34 @@ export const pensionRouter = createRouter({
         interestRateBp: input.interestRateBp ?? row.interestRateBp,
         conversionRateBp: input.conversionRateBp ?? row.conversionRateBp,
         notes: input.notes ?? row.notes,
+        employer: input.employer === undefined ? row.employer : input.employer,
+        insuredSalary:
+          input.insuredSalary === undefined
+            ? row.insuredSalary
+            : input.insuredSalary,
+        coordinationDeduction:
+          input.coordinationDeduction === undefined
+            ? row.coordinationDeduction
+            : input.coordinationDeduction,
+        buyInPotential:
+          input.buyInPotential === undefined
+            ? row.buyInPotential
+            : input.buyInPotential,
+        disabilityPension:
+          input.disabilityPension === undefined
+            ? row.disabilityPension
+            : input.disabilityPension,
+        deathBenefit:
+          input.deathBenefit === undefined
+            ? row.deathBenefit
+            : input.deathBenefit,
       };
+      // Abstufungen: Ersetzen-Semantik (nur wenn mitgegeben)
+      const oldTiers = await db.query.pensionFundTiers.findMany({
+        where: eq(pensionFundTiers.fundId, row.id),
+        orderBy: (t, { asc }) => [asc(t.ageFrom)],
+      });
+      const newTiers = input.tiers ?? oldTiers;
       const before = {
         name: row.name,
         kind: row.kind,
@@ -810,6 +938,13 @@ export const pensionRouter = createRouter({
         interestRateBp: row.interestRateBp,
         conversionRateBp: row.conversionRateBp,
         notes: row.notes,
+        employer: row.employer,
+        insuredSalary: row.insuredSalary,
+        coordinationDeduction: row.coordinationDeduction,
+        buyInPotential: row.buyInPotential,
+        disabilityPension: row.disabilityPension,
+        deathBenefit: row.deathBenefit,
+        tiers: tiersToText(oldTiers),
       };
       const changed = await recordPensionChange(db, {
         userId: ctx.user.id,
@@ -817,10 +952,26 @@ export const pensionRouter = createRouter({
         entityId: row.id,
         comment: input.comment,
         before,
-        after: next,
+        after: { ...next, tiers: tiersToText(newTiers) },
         fieldLabels: FUND_LABELS,
         format: formatFundField,
       });
+      if (input.tiers !== undefined) {
+        await db
+          .delete(pensionFundTiers)
+          .where(eq(pensionFundTiers.fundId, row.id));
+        for (const tier of [...input.tiers].sort(
+          (a, b) => a.ageFrom - b.ageFrom
+        )) {
+          await db.insert(pensionFundTiers).values({
+            fundId: row.id,
+            ageFrom: tier.ageFrom,
+            employeeRateBp: tier.employeeRateBp,
+            employerRateBp: tier.employerRateBp,
+            createdAt: new Date(),
+          });
+        }
+      }
       if (changed > 0) {
         await db
           .update(pensionFunds)
@@ -856,6 +1007,10 @@ export const pensionRouter = createRouter({
       }
       // Kaskade: zugehörige Anhänge (DB-Zeilen + Dateien) mitlöschen
       await deletePensionAttachmentsFor(db, "fund", [row.id]);
+      // Kaskade: Abstufungen der Kasse mitlöschen
+      await db
+        .delete(pensionFundTiers)
+        .where(eq(pensionFundTiers.fundId, row.id));
       await recordPensionChange(db, {
         userId: ctx.user.id,
         entity: "fund",
@@ -1128,87 +1283,112 @@ export const pensionRouter = createRouter({
         .optional()
     )
     .query(async ({ ctx, input }) => {
-    const db = getDb();
-    const profile = await db.query.pensionProfiles.findFirst({
-      where: eq(pensionProfiles.userId, ctx.user.id),
-    });
-    if (!profile) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message:
-          "Vorsorgeprofil fehlt — bitte zuerst das Geburtsdatum hinterlegen.",
+      const db = getDb();
+      const profile = await db.query.pensionProfiles.findFirst({
+        where: eq(pensionProfiles.userId, ctx.user.id),
       });
-    }
-    const [funds, pillar3Rows, ahvRow, salaryRows, deductionRows] =
-      await Promise.all([
-        db.query.pensionFunds.findMany({
-          where: eq(pensionFunds.userId, ctx.user.id),
-        }),
-        db.query.pensionPillar3.findMany({
-          where: eq(pensionPillar3.userId, ctx.user.id),
-        }),
-        db.query.pensionAhv.findFirst({
-          where: eq(pensionAhv.userId, ctx.user.id),
-        }),
-        db.query.pensionSalaries.findMany({
-          where: eq(pensionSalaries.userId, ctx.user.id),
-        }),
-        db.query.pensionDeductions.findMany({
-          where: eq(pensionDeductions.userId, ctx.user.id),
-        }),
-      ]);
+      if (!profile) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Vorsorgeprofil fehlt — bitte zuerst das Geburtsdatum hinterlegen.",
+        });
+      }
+      const [funds, pillar3Rows, ahvRow, salaryRows, deductionRows] =
+        await Promise.all([
+          db.query.pensionFunds.findMany({
+            where: eq(pensionFunds.userId, ctx.user.id),
+          }),
+          db.query.pensionPillar3.findMany({
+            where: eq(pensionPillar3.userId, ctx.user.id),
+          }),
+          db.query.pensionAhv.findFirst({
+            where: eq(pensionAhv.userId, ctx.user.id),
+          }),
+          db.query.pensionSalaries.findMany({
+            where: eq(pensionSalaries.userId, ctx.user.id),
+          }),
+          db.query.pensionDeductions.findMany({
+            where: eq(pensionDeductions.userId, ctx.user.id),
+          }),
+        ]);
 
-    // Aktuelles Netto aus der Lohn-Timeline (für die Ersatzrate)
-    const gross = salaryForMonth(salaryRows, currentMonth());
-    const currentNet = gross === null ? null : computeNet(gross, deductionRows);
+      // Abstufungen der eigenen Kassen (rateBp = AN+AG vorsummiert fürs Modell)
+      const fundIds = funds.map(f => f.id);
+      const tierRows = fundIds.length
+        ? await db.query.pensionFundTiers.findMany({
+            where: inArray(pensionFundTiers.fundId, fundIds),
+            orderBy: (t, { asc }) => [asc(t.ageFrom)],
+          })
+        : [];
+      const fundInputs = funds.map(f => ({
+        kind: f.kind,
+        name: f.name,
+        currentCapital: f.currentCapital,
+        yearlySavings: f.yearlySavings,
+        interestRateBp: f.interestRateBp,
+        conversionRateBp: f.conversionRateBp,
+        insuredSalary: f.insuredSalary,
+        tiers: tierRows
+          .filter(t => t.fundId === f.id)
+          .map(t => ({
+            ageFrom: t.ageFrom,
+            rateBp: t.employeeRateBp + t.employerRateBp,
+          })),
+      }));
 
-    // 3a-Verknüpfungen: Sync-Saldo minus in Sparzielen verplanter Anteile
-    const pillar3 = await Promise.all(
-      pillar3Rows.map(async row => {
-        let sync = null;
-        if (row.accountId !== null) {
-          try {
-            sync = await pillar3AccountSync(db, ctx.user, row.accountId);
-          } catch {
-            sync = null; // ohne „view"-Recht: manueller Saldo zählt
+      // Aktuelles Netto aus der Lohn-Timeline (für die Ersatzrate)
+      const gross = salaryForMonth(salaryRows, currentMonth());
+      const currentNet =
+        gross === null ? null : computeNet(gross, deductionRows);
+
+      // 3a-Verknüpfungen: Sync-Saldo minus in Sparzielen verplanter Anteile
+      const pillar3 = await Promise.all(
+        pillar3Rows.map(async row => {
+          let sync = null;
+          if (row.accountId !== null) {
+            try {
+              sync = await pillar3AccountSync(db, ctx.user, row.accountId);
+            } catch {
+              sync = null; // ohne „view"-Recht: manueller Saldo zählt
+            }
           }
-        }
-        return {
-          name: row.name,
-          currentBalance: row.currentBalance,
-          yearlyDeposit: row.yearlyDeposit,
-          interestRateBp: row.interestRateBp,
-          accountId: row.accountId,
-          syncedBalance: sync?.syncedBalance ?? null,
-          goalCommitment: sync?.goalCommitment ?? 0,
-          goalNames: sync?.goalNames ?? [],
-        };
-      })
-    );
+          return {
+            name: row.name,
+            currentBalance: row.currentBalance,
+            yearlyDeposit: row.yearlyDeposit,
+            interestRateBp: row.interestRateBp,
+            accountId: row.accountId,
+            syncedBalance: sync?.syncedBalance ?? null,
+            goalCommitment: sync?.goalCommitment ?? 0,
+            goalNames: sync?.goalNames ?? [],
+          };
+        })
+      );
 
-    let calculator;
-    try {
-      calculator = getPensionCalculator(profile.country);
-    } catch (err) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: err instanceof Error ? err.message : "Unbekanntes Land.",
+      let calculator;
+      try {
+        calculator = getPensionCalculator(profile.country);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Unbekanntes Land.",
+        });
+      }
+      return calculator.forecast({
+        birthDate: profile.birthDate,
+        retirementAge: input?.retirementAge ?? profile.retirementAge,
+        funds: fundInputs,
+        pillar3,
+        ahv: ahvRow
+          ? {
+              contributionYears: ahvRow.contributionYears,
+              expectedMonthlyPension: ahvRow.expectedMonthlyPension,
+            }
+          : null,
+        currentNet,
       });
-    }
-    return calculator.forecast({
-      birthDate: profile.birthDate,
-      retirementAge: input?.retirementAge ?? profile.retirementAge,
-      funds,
-      pillar3,
-      ahv: ahvRow
-        ? {
-            contributionYears: ahvRow.contributionYears,
-            expectedMonthlyPension: ahvRow.expectedMonthlyPension,
-          }
-        : null,
-      currentNet,
-    });
-  }),
+    }),
 
   /* ------------------------------ Historie ---------------------------------- */
 

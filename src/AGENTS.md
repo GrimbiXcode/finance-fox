@@ -15,6 +15,9 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   hochladen, löschen), `TransactionHistoryDialog.tsx` (Änderungsverlauf),
   `QuickAddDialog.tsx`, `SearchableSelect.tsx`,
   `PensionFundDialog.tsx`/`PensionPillar3Dialog.tsx` (Vorsorge-Dialoge),
+  `PensionFundStatement.tsx` (Versicherungsausweis-Dialog einer Kasse:
+  Kennzahlen, Abstufungs-Tabelle + Stufen-Balken, Projektions-Chart mit
+  Phasen-Bändern, Risikoleistungen),
   `PensionAttachments.tsx` (Anhänge von Vorsorge-Datensätzen),
   `ui/` (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
@@ -170,6 +173,13 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   Invalidierung zentral `useInvalidatePension()` in `lib/data.ts`;
   Prozent-Eingaben via `parsePercent`/`formatBp` in `lib/finance.ts`
   (Basispunkte).
+- **Charts mit Bändern (recharts)**: `ReferenceArea` braucht eine
+  **numerische X-Achse** (`<XAxis type="number" domain={[min, max]}>`,
+  Werte als Zahl statt String) plus `ifOverflow="hidden"` — mit einer
+  Kategorien-Achse liefert die Band-Skala keine Koordinaten und recharts
+  verwirft das Band lautlos (leere `<g class="recharts-reference-area">`).
+  So gelöst im Übersichts-Chart der Vorsorge und im Ausweis-Chart
+  (`PensionFundStatement.tsx`).
 
 ## Geldfluss-Visualisierung
 

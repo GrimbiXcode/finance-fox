@@ -6,6 +6,10 @@
  *   Pensionskassen; Freizügigkeitskonten werden nur verzinst), Verzinsung
  *   interest_rate_bp p.a. auf den Monat umgelegt. Jahresrente = Guthaben ×
  *   conversion_rate_bp/10000, Monatsrente = Jahresrente/12.
+ *   Hat eine Pensionskasse Abstufungen (tiers) UND einen versicherten
+ *   Jahreslohn, ersetzt der Stufensatz × Lohn das flache yearly_savings —
+ *   die Stufe richtet sich nach dem Alter des Benutzers im jeweiligen
+ *   Simulationsmonat (Geburtsmonat zählt bereits zum neuen Alter).
  * - Säule 3a: gleiche Akkumulation mit yearly_deposit; Start = Sync-Saldo des
  *   verknüpften Kontos (abzüglich in Sparzielen verplanter Anteile), sonst
  *   current_balance. Fiktive Entnahme: Endkapital über 20 Jahre (capital/240).
@@ -15,12 +19,23 @@
  * Alle Beträge in Cent; Zwischenschritte werden monatlich auf Cent gerundet.
  */
 
+export interface PensionFundTierInput {
+  ageFrom: number;
+  /** Sparbeitragssatz der Stufe (AN+AG vorsummiert), in Basispunkten */
+  rateBp: number;
+}
+
 export interface PensionFundInput {
   kind: "pension_fund" | "vested_benefits";
+  name: string;
   currentCapital: number;
   yearlySavings: number;
   interestRateBp: number;
   conversionRateBp: number;
+  /** Versicherter Jahreslohn (Cent) — Basis der Abstufungs-Beiträge */
+  insuredSalary: number | null;
+  /** Abstufungen nach Alter, aufsteigend nach ageFrom (leer = flaches Sparen) */
+  tiers: PensionFundTierInput[];
 }
 
 export interface PensionPillar3Input {
@@ -64,6 +79,21 @@ export interface PensionForecastResult {
   currentNet: number | null;
   /** Ersatzrate in Prozent (gerundet); null ohne Lohnangaben */
   replacementRate: number | null;
+  /** Aufschlüsselung der Säule 2 pro Kasse (Endkapital, Monatsrente, Stufen) */
+  funds: {
+    name: string;
+    capital: number;
+    monthlyPension: number;
+    /** Im Simulationsfenster wirksame Abstufungen (jede Stufe einmal) */
+    phases: {
+      ageFrom: number;
+      fromYear: number;
+      rateBp: number;
+      yearlyContribution: number;
+    }[];
+  }[];
+  /** Jahres-Snapshots pro Kasse — gleiche Jahre wie series */
+  fundSeries: { name: string; points: { year: number; capital: number }[] }[];
   warnings: string[];
 }
 
@@ -77,6 +107,37 @@ const AHV_FULL_YEARS = 44;
 /** Monatsschritt der Akkumulation: Einzahlung + Monatszins, auf Cent gerundet */
 function accumulateMonth(capital: number, yearlyAdd: number, rateBp: number) {
   return Math.round(capital + yearlyAdd / 12 + (capital * rateBp) / 10000 / 12);
+}
+
+/** Nutzt die Kasse Abstufungen statt des flachen yearly_savings? */
+function usesTiers(fund: PensionFundInput) {
+  return (
+    fund.kind === "pension_fund" &&
+    fund.tiers.length > 0 &&
+    fund.insuredSalary != null &&
+    fund.insuredSalary > 0
+  );
+}
+
+/** Index der wirksamen Stufe: grösstes ageFrom ≤ Alter (-1 = noch keine) */
+function tierIndexAt(tiers: PensionFundTierInput[], age: number) {
+  let idx = -1;
+  for (let t = 0; t < tiers.length; t++) {
+    if (tiers[t].ageFrom <= age) idx = t;
+    else break;
+  }
+  return idx;
+}
+
+/** Jahresbeitrag (Cent) einer Kasse im Simulationsmonat mit gegebenem Alter */
+function yearlyContributionFor(fund: PensionFundInput, age: number) {
+  if (fund.kind !== "pension_fund") return 0; // Freizügigkeit: nur Zins
+  if (usesTiers(fund)) {
+    const idx = tierIndexAt(fund.tiers, age);
+    if (idx < 0) return 0; // alle Stufen liegen in der Zukunft
+    return Math.round((fund.tiers[idx].rateBp * fund.insuredSalary!) / 10000);
+  }
+  return fund.yearlySavings;
 }
 
 export function computeChForecast(
@@ -102,8 +163,43 @@ export function computeChForecast(
     )
   );
 
-  // Säule 2: pro Konto akkumulieren (Freizügigkeit nur mit Zins)
-  const fundCapitals = input.funds.map(f => f.currentCapital);
+  // Säule 2: pro Konto akkumulieren (Freizügigkeit nur mit Zins).
+  // Abstufungen defensiv sortieren (Vertrag: aufsteigend nach ageFrom).
+  const funds = input.funds.map(f => ({
+    ...f,
+    tiers: [...f.tiers].sort((a, b) => a.ageFrom - b.ageFrom),
+  }));
+  const fundCapitals = funds.map(f => f.currentCapital);
+
+  // Alter in einem Simulationsmonat (0 = aktueller Monat) — der Geburtsmonat
+  // zählt bereits zum neuen Alter.
+  const ageAt = (i: number) => {
+    const simYear = now.getFullYear() + Math.floor((now.getMonth() + i) / 12);
+    const simMonth = ((now.getMonth() + i) % 12) + 1; // 1-basiert
+    return simYear - birthYear - (simMonth < birthMonth ? 1 : 0);
+  };
+  const yearAt = (i: number) =>
+    now.getFullYear() + Math.floor((now.getMonth() + i) / 12);
+
+  // Wirksame Stufen pro Kasse mitverfolgen (für die phases-Aufschlüsselung)
+  const fundPhases = funds.map(
+    (): PensionForecastResult["funds"][number]["phases"] => []
+  );
+  const lastTierIdx = funds.map((f, fi) => {
+    if (!usesTiers(f)) return -2; // kein Stufen-Modus
+    const idx = tierIndexAt(f.tiers, ageAt(0));
+    if (idx >= 0) {
+      fundPhases[fi].push({
+        ageFrom: f.tiers[idx].ageFrom,
+        fromYear: yearAt(0),
+        rateBp: f.tiers[idx].rateBp,
+        yearlyContribution: Math.round(
+          (f.tiers[idx].rateBp * f.insuredSalary!) / 10000
+        ),
+      });
+    }
+    return idx;
+  });
   // Säule 3a: Start = Sync-Saldo (abzügl. verplanter Anteile) oder Saldo
   const pillar3Capitals = input.pillar3.map(p => {
     let start = p.currentBalance;
@@ -122,22 +218,47 @@ export function computeChForecast(
   });
 
   const series: PensionForecastResult["series"] = [];
+  const fundSeries: PensionForecastResult["fundSeries"] = funds.map(f => ({
+    name: f.name,
+    points: [],
+  }));
   const sum = (list: number[]) => list.reduce((a, b) => a + b, 0);
   const snapshot = (year: number) => {
     const pillar2 = sum(fundCapitals);
     const pillar3 = sum(pillar3Capitals);
     series.push({ year, pillar2, pillar3, total: pillar2 + pillar3 });
+    for (let f = 0; f < fundCapitals.length; f++) {
+      fundSeries[f].points.push({ year, capital: fundCapitals[f] });
+    }
   };
   snapshot(now.getFullYear());
 
   for (let i = 1; i <= months; i++) {
-    for (let f = 0; f < input.funds.length; f++) {
-      const fund = input.funds[f];
+    const age = ageAt(i);
+    for (let f = 0; f < funds.length; f++) {
+      const fund = funds[f];
       fundCapitals[f] = accumulateMonth(
         fundCapitals[f],
-        fund.kind === "pension_fund" ? fund.yearlySavings : 0,
+        yearlyContributionFor(fund, age),
         fund.interestRateBp
       );
+      // Stufenwechsel protokollieren (jede neu wirksame Stufe einmal)
+      if (usesTiers(fund)) {
+        const idx = tierIndexAt(fund.tiers, age);
+        if (idx > lastTierIdx[f]) {
+          for (let t = Math.max(0, lastTierIdx[f] + 1); t <= idx; t++) {
+            fundPhases[f].push({
+              ageFrom: fund.tiers[t].ageFrom,
+              fromYear: yearAt(i),
+              rateBp: fund.tiers[t].rateBp,
+              yearlyContribution: Math.round(
+                (fund.tiers[t].rateBp * fund.insuredSalary!) / 10000
+              ),
+            });
+          }
+          lastTierIdx[f] = idx;
+        }
+      }
     }
     for (let p = 0; p < input.pillar3.length; p++) {
       pillar3Capitals[p] = accumulateMonth(
@@ -147,13 +268,13 @@ export function computeChForecast(
       );
     }
     const monthIndex = (now.getMonth() + i) % 12; // 0-basiert, 11 = Dezember
-    const year = now.getFullYear() + Math.floor((now.getMonth() + i) / 12);
+    const year = yearAt(i);
     if (monthIndex === 11 || i === months) snapshot(year);
   }
 
   // Säule 2: Jahresrente = Guthaben × Umwandlungssatz, Monatsrente = /12
   const pillar2Capital = sum(fundCapitals);
-  const yearlyPension2 = input.funds.reduce(
+  const yearlyPension2 = funds.reduce(
     (total, f, i) => total + (fundCapitals[i] * f.conversionRateBp) / 10000,
     0
   );
@@ -161,6 +282,15 @@ export function computeChForecast(
     capital: pillar2Capital,
     monthlyPension: Math.round(yearlyPension2 / 12),
   };
+  // Aufschlüsselung pro Kasse: Endkapital, eigene Monatsrente, wirksame Stufen
+  const fundsResult: PensionForecastResult["funds"] = funds.map((f, i) => ({
+    name: f.name,
+    capital: fundCapitals[i],
+    monthlyPension: Math.round(
+      (fundCapitals[i] * f.conversionRateBp) / 10000 / 12
+    ),
+    phases: fundPhases[i],
+  }));
 
   // Säule 3a: Endkapital + fiktive Entnahme über 20 Jahre
   const pillar3Capital = sum(pillar3Capitals);
@@ -206,6 +336,8 @@ export function computeChForecast(
     monthlyRetirementIncome,
     currentNet: input.currentNet,
     replacementRate,
+    funds: fundsResult,
+    fundSeries,
     warnings,
   };
 }

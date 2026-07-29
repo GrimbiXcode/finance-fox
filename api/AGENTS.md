@@ -45,7 +45,12 @@ retirementAge), `pension_salaries` (Lohn-Timeline, Unique (user_id,
 valid_from) `YYYY-MM`; gültig = letzter Eintrag ≤ Monat),
 `pension_deductions` (mode percent in **Basispunkten** / absolute in Cent,
 active-Flag), `pension_ahv` (1:1), `pension_funds` (Säule 2, kind
-pension_fund/vested_benefits, Sätze in Basispunkten), `pension_pillar3`
+pension_fund/vested_benefits, Sätze in Basispunkten; nullable
+Versicherungsausweis-Felder employer, insured_salary,
+coordination_deduction, buy_in_potential, disability_pension, death_benefit
+— Beträge in Cent), `pension_fund_tiers` (Sparbeitrags-Abstufungen einer
+Kasse nach Alter, AN/AG-Sätze in Basispunkten; Update mit
+Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
 (Säule 3a, optional `accountId`-Link auf ein Finanz-Konto),
 `pension_attachments`, `pension_changes` (Änderungshistorie, Muster
 `transaction_changes`, deutsche Feldnamen, Beträge roh in Cent).
@@ -61,7 +66,7 @@ pension_fund/vested_benefits, Sätze in Basispunkten), `pension_pillar3`
   (`pension.<entity>.<verb>`, best effort, **nie** sensible Werte wie die
   AHV-Nummer im Detail). Lesen über `pension.listChanges` mit Backend-
   Pagination: Input `{entity?, limit (max 100, Default 25), cursor
-  (Offset, Default 0)}`, Rückgabe `{entries, total, nextCursor}` — das UI
+(Offset, Default 0)}`, Rückgabe `{entries, total, nextCursor}` — das UI
   blättert per „Mehr laden" (`useInfiniteQuery`).
 - **Prognose**: länderabhängige Engine über die Factory
   `getPensionCalculator(country)` in `lib/pension/index.ts` (wirft bei
@@ -70,6 +75,12 @@ pension_fund/vested_benefits, Sätze in Basispunkten), `pension_pillar3`
   gerundet): Säule 2 mit Umwandlungssatz, Säule 3a mit fiktiver Entnahme
   über 20 Jahre (capital/240), AHV aus hinterlegter Rente oder grober
   Schätzung (Vollrente 302400 Cent × Beitragsjahre/44, `estimated`).
+  Hat eine Pensionskasse Abstufungen (`pension_fund_tiers`) UND einen
+  versicherten Jahreslohn, ersetzt Stufensatz × Lohn das flache
+  `yearlySavings` (Stufe nach Alter im Simulationsmonat); die Antwort
+  enthält zusätzlich `funds` (pro Kasse Endkapital, Monatsrente, wirksame
+  Stufen als `phases`) und `fundSeries` (Jahres-Snapshots pro Kasse,
+  gleiche Jahre wie `series`).
   Der Endpunkt akzeptiert optional `retirementAge` (50–75) als Override
   für Was-wäre-wenn-Rechnungen (Default: Profil-Wert).
 - **3a-Konto-Link**: Sync-Saldo (Logik wie `listAccounts`) minus in

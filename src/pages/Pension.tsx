@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import {
-  AlertTriangle, Building2, History, Landmark, MinusCircle, Pencil, PiggyBank,
+  AlertTriangle, Building2, FileText, History, Landmark, MinusCircle, Pencil, PiggyBank,
   Plus, ShieldCheck, Trash2, TrendingUp, Wallet,
 } from 'lucide-react';
 import {
-  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,7 @@ import {
 import { SearchableSelect } from '@/components/SearchableSelect';
 import PensionAttachments from '@/components/PensionAttachments';
 import PensionFundDialog, { type DialogFund } from '@/components/PensionFundDialog';
+import PensionFundStatement from '@/components/PensionFundStatement';
 import PensionPillar3Dialog, { type DialogPillar3 } from '@/components/PensionPillar3Dialog';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '../../api/router';
@@ -84,6 +85,11 @@ const MONEY_FIELDS = new Set([
   'Jährliches Sparen',
   'Jährliche Einzahlung',
   'Erwartete Monatsrente',
+  'Versicherter Jahreslohn',
+  'Koordinationsabzug',
+  'Einkaufspotenzial',
+  'Invalidenrente/Jahr',
+  'Todesfallkapital',
 ]);
 
 /** Werte im Verlauf lesbar formatieren (Beträge in Cent, Datum/Monat ISO) */
@@ -292,10 +298,20 @@ function OverviewSection({
   const hypo = hypValid ? hypoQuery.data : undefined;
 
   const chartData = (forecast?.series ?? []).map((s) => ({
-    year: String(s.year),
+    // Numerische Jahres-Achse: mit einer Kategorien-Achse liefert die
+    // Band-Skala für die ReferenceArea-Bänder keine Koordinaten (NaN)
+    year: s.year,
     'Säule 2': Math.round(s.pillar2 / 100),
     'Säule 3a': Math.round(s.pillar3 / 100),
   }));
+
+  // Phasen-Bänder der Sparbeitrags-Abstufungen: nur wenn genau eine Kasse
+  // Stufen hat — bei mehreren Kassen bliebe das Haupt-Chart unlesbar, die
+  // Bänder stehen dann nur im Versicherungsausweis der jeweiligen Kasse
+  const fundsWithPhases = (forecast?.funds ?? []).filter((f) => f.phases.length > 0);
+  const phaseBands = fundsWithPhases.length === 1 ? fundsWithPhases[0].phases : [];
+  const firstYear = forecast?.series.length ? forecast.series[0].year : null;
+  const lastYear = forecast?.series.length ? forecast.series[forecast.series.length - 1].year : null;
 
   return (
     <Card>
@@ -445,7 +461,16 @@ function OverviewSection({
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="year" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                    <XAxis
+                      dataKey="year"
+                      type="number"
+                      domain={firstYear !== null && lastYear !== null ? [firstYear, lastYear] : undefined}
+                      tickCount={Math.min(12, chartData.length)}
+                      tickFormatter={(v: number) => String(v)}
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 11 }}
+                    />
                     <YAxis
                       tickLine={false}
                       axisLine={false}
@@ -458,6 +483,22 @@ function OverviewSection({
                         name,
                       ]}
                     />
+                    {phaseBands.map((p, i) => (
+                      <ReferenceArea
+                        ifOverflow="hidden"
+                        key={`${p.ageFrom}-${p.fromYear}`}
+                        x1={p.fromYear}
+                        x2={phaseBands[i + 1]?.fromYear ?? lastYear ?? p.fromYear}
+                        fill="#6366f1"
+                        fillOpacity={0.05}
+                        label={{
+                          value: `${formatBp(p.rateBp)} %`,
+                          position: 'insideTop',
+                          fontSize: 10,
+                          fill: '#64748b',
+                        }}
+                      />
+                    ))}
                     <Area type="monotone" dataKey="Säule 2" stackId="1" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
                     <Area type="monotone" dataKey="Säule 3a" stackId="1" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.4} />
                   </AreaChart>
@@ -1141,7 +1182,15 @@ function AhvCard({ ahv }: { ahv: AhvRow | null }) {
 
 /* --------------------------- Pensionskasse (2. Säule) ---------------------- */
 
-function FundsSection({ funds }: { funds: DialogFund[] }) {
+function FundsSection({
+  funds,
+  forecast,
+  retirementAge,
+}: {
+  funds: DialogFund[];
+  forecast: Forecast | undefined;
+  retirementAge: number;
+}) {
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1165,28 +1214,58 @@ function FundsSection({ funds }: { funds: DialogFund[] }) {
             </CardContent>
           </Card>
         )}
-        {funds.map((f) => (
+        {funds.map((f) => {
+          // Prognose-Daten der Kasse: forecast.funds/fundSeries enthalten keinen
+          // id-Schlüssel — das Mapping läuft über den Namen (stabiler Schlüssel)
+          const forecastFund = forecast?.funds.find((ff) => ff.name === f.name);
+          const series = forecast?.fundSeries.find((fs) => fs.name === f.name);
+          return (
           <Card key={f.id}>
             <CardHeader className="flex flex-row items-start justify-between pb-2">
               <div className="space-y-1">
                 <CardTitle className="text-base">{f.name}</CardTitle>
-                <Badge variant="secondary">
-                  {f.kind === 'pension_fund' ? 'Pensionskasse' : 'Freizügigkeitskonto'}
-                </Badge>
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge variant="secondary">
+                    {f.kind === 'pension_fund' ? 'Pensionskasse' : 'Freizügigkeitskonto'}
+                  </Badge>
+                  {f.tiers.length > 0 && (
+                    <Badge variant="outline" className="text-[10px]">Abstufungen</Badge>
+                  )}
+                </div>
               </div>
-              <PensionFundDialog
-                fund={f}
-                trigger={
-                  <Button variant="ghost" size="icon" title="Vorsorgekonto bearbeiten">
-                    <Pencil className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                }
-              />
+              <div className="flex items-center">
+                <PensionFundStatement
+                  fund={f}
+                  forecastFund={forecastFund}
+                  fundSeries={series?.points}
+                  retirementDate={forecast?.retirementDate}
+                  retirementAge={retirementAge}
+                  trigger={
+                    <Button variant="ghost" size="icon" title="Versicherungsausweis anzeigen">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  }
+                />
+                <PensionFundDialog
+                  fund={f}
+                  trigger={
+                    <Button variant="ghost" size="icon" title="Vorsorgekonto bearbeiten">
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  }
+                />
+              </div>
             </CardHeader>
             <CardContent className="space-y-1.5 text-sm">
               <div className="flex items-baseline justify-between">
                 <span className="text-xl font-bold">{formatCents(f.currentCapital)}</span>
               </div>
+              {f.employer && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Arbeitgeber</span>
+                  <span className="font-medium">{f.employer}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Jährliches Sparen</span>
                 <span className="font-medium">{formatCents(f.yearlySavings)}</span>
@@ -1202,7 +1281,8 @@ function FundsSection({ funds }: { funds: DialogFund[] }) {
               {f.notes && <p className="pt-1 text-xs text-muted-foreground">{f.notes}</p>}
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -1395,7 +1475,11 @@ export default function Pension() {
             <DeductionsSection deductions={deductionsQuery.data ?? []} />
           </div>
           <AhvCard ahv={ahvQuery.data ?? null} />
-          <FundsSection funds={fundsQuery.data ?? []} />
+          <FundsSection
+            funds={fundsQuery.data ?? []}
+            forecast={forecastQuery.data}
+            retirementAge={profile.retirementAge}
+          />
           <Pillar3Section pillars={pillar3Query.data ?? []} />
           <HistoryCard />
         </>

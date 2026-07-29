@@ -8,6 +8,7 @@ import { getDb, initDb } from "./queries/connection";
 import {
   categories,
   goalSources,
+  pensionFundTiers,
   recurring,
   savingsGoals,
   users,
@@ -392,6 +393,122 @@ describe("Säule 2 (funds)", () => {
       memberCaller.pension.deleteFund({ id: fremdeId })
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  it("speichert Versicherungsausweis-Felder und Abstufungen", async () => {
+    const caller = callerFor(admin);
+    const created = await caller.pension.addFund({
+      name: "PK Ausweis",
+      employer: "Muster AG",
+      insuredSalary: 9500000,
+      coordinationDeduction: 2645000,
+      buyInPotential: 12000000,
+      disabilityPension: 3500000,
+      deathBenefit: 50000000,
+      // bewusst unsortiert übergeben — die Rückgabe ist aufsteigend
+      tiers: [
+        { ageFrom: 35, employeeRateBp: 1000, employerRateBp: 1000 },
+        { ageFrom: 25, employeeRateBp: 700, employerRateBp: 700 },
+      ],
+    });
+    const fund = (await caller.pension.listFunds()).find(
+      f => f.id === created.id
+    )!;
+    expect(fund.employer).toBe("Muster AG");
+    expect(fund.insuredSalary).toBe(9500000);
+    expect(fund.coordinationDeduction).toBe(2645000);
+    expect(fund.buyInPotential).toBe(12000000);
+    expect(fund.disabilityPension).toBe(3500000);
+    expect(fund.deathBenefit).toBe(50000000);
+    expect(fund.tiers).toEqual([
+      { ageFrom: 25, employeeRateBp: 700, employerRateBp: 700 },
+      { ageFrom: 35, employeeRateBp: 1000, employerRateBp: 1000 },
+    ]);
+  });
+
+  it("ersetzt Abstufungen beim Update, null entfernt Ausweis-Felder", async () => {
+    const caller = callerFor(admin);
+    const created = await caller.pension.addFund({
+      name: "PK Stufen",
+      insuredSalary: 8000000,
+      tiers: [{ ageFrom: 25, employeeRateBp: 500, employerRateBp: 500 }],
+    });
+    const fundOf = async () =>
+      (await caller.pension.listFunds()).find(f => f.id === created.id)!;
+
+    // Ersetzen: alte Stufe weg, neue da
+    await caller.pension.updateFund({
+      id: created.id,
+      tiers: [
+        { ageFrom: 25, employeeRateBp: 700, employerRateBp: 700 },
+        { ageFrom: 45, employeeRateBp: 1500, employerRateBp: 1500 },
+      ],
+    });
+    expect((await fundOf()).tiers).toEqual([
+      { ageFrom: 25, employeeRateBp: 700, employerRateBp: 700 },
+      { ageFrom: 45, employeeRateBp: 1500, employerRateBp: 1500 },
+    ]);
+
+    // Weglassen lässt die Abstufungen unverändert
+    await caller.pension.updateFund({ id: created.id, name: "PK Stufen neu" });
+    expect((await fundOf()).tiers).toHaveLength(2);
+
+    // null entfernt das Feld, undefined lässt es unverändert
+    await caller.pension.updateFund({ id: created.id, insuredSalary: null });
+    expect((await fundOf()).insuredSalary).toBeNull();
+
+    // leeres Array löscht alle Stufen
+    await caller.pension.updateFund({ id: created.id, tiers: [] });
+    expect((await fundOf()).tiers).toEqual([]);
+  });
+
+  it("validiert Abstufungen (Duplikat beim Alter, Satz-Limit)", async () => {
+    const caller = callerFor(admin);
+    await expect(
+      caller.pension.addFund({
+        name: "PK Duplikat",
+        tiers: [
+          { ageFrom: 25, employeeRateBp: 500, employerRateBp: 500 },
+          { ageFrom: 25, employeeRateBp: 700, employerRateBp: 700 },
+        ],
+      })
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Pro Alter nur eine Stufe.",
+    });
+    await expect(
+      caller.pension.addFund({
+        name: "PK Satz",
+        tiers: [{ ageFrom: 25, employeeRateBp: 10001, employerRateBp: 0 }],
+      })
+    ).rejects.toThrow();
+  });
+
+  it("schreibt Änderungen der Ausweis-Felder in die Historie", async () => {
+    const caller = callerFor(admin);
+    const created = await caller.pension.addFund({ name: "PK Historie" });
+    await caller.pension.updateFund({
+      id: created.id,
+      insuredSalary: 9000000,
+    });
+    const changes = (await caller.pension.listChanges({ entity: "fund" }))
+      .entries;
+    expect(changes[0].changes).toEqual([
+      { field: "Versicherter Jahreslohn", from: null, to: 9000000 },
+    ]);
+  });
+
+  it("löscht Abstufungen kaskadierend beim Löschen der Kasse", async () => {
+    const caller = callerFor(admin);
+    const created = await caller.pension.addFund({
+      name: "PK Kaskade",
+      tiers: [{ ageFrom: 25, employeeRateBp: 500, employerRateBp: 500 }],
+    });
+    await caller.pension.deleteFund({ id: created.id });
+    const rest = await getDb().query.pensionFundTiers.findMany({
+      where: eq(pensionFundTiers.fundId, created.id),
+    });
+    expect(rest).toEqual([]);
+  });
 });
 
 describe("Säule 3a (pillar3)", () => {
@@ -663,14 +780,24 @@ describe("Vorsorge-Anhänge (HTTP-Routen)", () => {
   it("listet Anhänge über pension.listAttachments (nur eigene)", async () => {
     const caller = callerFor(admin);
     const created = await caller.pension.addFund({ name: "Listen-PK" });
-    await uploadPension(buildSessionCookie(admin.id, false), "fund", created.id, {
-      body: PNG_BYTES,
-      filename: "reglement.png",
-    });
-    await uploadPension(buildSessionCookie(admin.id, false), "fund", created.id, {
-      body: PNG_BYTES,
-      filename: "auszug.png",
-    });
+    await uploadPension(
+      buildSessionCookie(admin.id, false),
+      "fund",
+      created.id,
+      {
+        body: PNG_BYTES,
+        filename: "reglement.png",
+      }
+    );
+    await uploadPension(
+      buildSessionCookie(admin.id, false),
+      "fund",
+      created.id,
+      {
+        body: PNG_BYTES,
+        filename: "auszug.png",
+      }
+    );
     const liste = await caller.pension.listAttachments({
       entityType: "fund",
       entityId: created.id,

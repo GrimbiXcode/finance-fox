@@ -397,7 +397,31 @@ export const pensionFunds = sqliteTable("pension_funds", {
   // Umwandlungssatz in Basispunkten (680 = 6,8 %)
   conversionRateBp: integer("conversion_rate_bp").notNull().default(680),
   notes: text("notes").notNull().default(""),
+  // Versicherungsausweis-Felder (alle optional, Beträge in Cent)
+  employer: text("employer"), // Arbeitgeber
+  insuredSalary: integer("insured_salary"), // versicherter Jahreslohn
+  coordinationDeduction: integer("coordination_deduction"), // Koordinationsabzug
+  buyInPotential: integer("buy_in_potential"), // Einkaufspotenzial
+  disabilityPension: integer("disability_pension"), // Invalidenrente pro Jahr
+  deathBenefit: integer("death_benefit"), // Todesfallkapital
 });
+
+/**
+ * Sparbeitrags-Abstufungen einer Pensionskasse nach Alter — Sätze in
+ * Basispunkten, getrennt nach Arbeitnehmer-/Arbeitgeberanteil.
+ */
+export const pensionFundTiers = sqliteTable(
+  "pension_fund_tiers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    fundId: integer("fund_id").notNull(),
+    ageFrom: integer("age_from").notNull(),
+    employeeRateBp: integer("employee_rate_bp").notNull().default(0),
+    employerRateBp: integer("employer_rate_bp").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("pension_fund_tiers_fund_idx").on(t.fundId)]
+);
 
 /**
  * Säule 3a (n pro Benutzer). Bei account_id-Verknüpfung mit einem Finanz-Konto

@@ -33,10 +33,13 @@ const BASE_INPUT = {
   funds: [
     {
       kind: "pension_fund" as const,
+      name: "PK",
       currentCapital: 120000,
       yearlySavings: 12000,
       interestRateBp: 1200,
       conversionRateBp: 680,
+      insuredSalary: null,
+      tiers: [],
     },
   ],
   pillar3: [
@@ -103,10 +106,13 @@ describe("CH-Prognose (computeChForecast)", () => {
       funds: [
         {
           kind: "vested_benefits",
+          name: "FZ-Konto",
           currentCapital: 100000,
           yearlySavings: 12000, // wird ignoriert
           interestRateBp: 600, // 6 % p.a. → 0,5 %/Monat
           conversionRateBp: 680,
+          insuredSalary: null,
+          tiers: [],
         },
       ],
       pillar3: [],
@@ -160,6 +166,125 @@ describe("CH-Prognose (computeChForecast)", () => {
         w => w.includes("Eigenheim") && w.includes("Viac 3a")
       )
     ).toBe(true);
+  });
+});
+
+describe("Abstufungen der Pensionskasse (tiers)", () => {
+  const TIER_FUND = {
+    kind: "pension_fund" as const,
+    name: "PK",
+    currentCapital: 0,
+    yearlySavings: 0, // wird durch die Abstufungen ersetzt
+    interestRateBp: 0,
+    conversionRateBp: 680,
+    insuredSalary: 10000000, // 100'000 versicherter Jahreslohn
+    tiers: [
+      { ageFrom: 25, rateBp: 700 },
+      { ageFrom: 36, rateBp: 1000 },
+    ],
+  };
+
+  it("wechselt die Beitragsrate exakt im Monat des Stufenalters", () => {
+    // Geboren Januar 1991 → im Januar 2026 (now) 35, ab Januar 2027 36.
+    // Monate Feb–Dez 2026 (11×) Stufe 7 %, Rentenmonat Jan 2027 Stufe 10 %.
+    const result = computeChForecast({
+      ...BASE_INPUT,
+      funds: [TIER_FUND],
+      pillar3: [],
+      ahv: null,
+      currentNet: null,
+    });
+    expect(result.funds).toHaveLength(1);
+    expect(result.funds[0].phases).toEqual([
+      { ageFrom: 25, fromYear: 2026, rateBp: 700, yearlyContribution: 700000 },
+      {
+        ageFrom: 36,
+        fromYear: 2027,
+        rateBp: 1000,
+        yearlyContribution: 1000000,
+      },
+    ]);
+    // 11 × round(700000/12) aufsummiert + round(1000000/12), monatlich gerundet
+    expect(result.funds[0].capital).toBe(724996);
+    expect(result.pillar2.capital).toBe(result.funds[0].capital);
+
+    // Vergleich: flache 7 %-Stufe ohne Sprung ergibt weniger Endkapital
+    const flach = computeChForecast({
+      ...BASE_INPUT,
+      funds: [{ ...TIER_FUND, tiers: [{ ageFrom: 25, rateBp: 700 }] }],
+      pillar3: [],
+      ahv: null,
+      currentNet: null,
+    });
+    expect(flach.funds[0].phases).toEqual([
+      { ageFrom: 25, fromYear: 2026, rateBp: 700, yearlyContribution: 700000 },
+    ]);
+    expect(flach.pillar2.capital).toBeLessThan(result.pillar2.capital);
+  });
+
+  it("fällt ohne versicherten Lohn oder ohne Stufen auf yearlySavings zurück", () => {
+    const fund = {
+      kind: "pension_fund" as const,
+      name: "PK",
+      currentCapital: 120000,
+      yearlySavings: 12000,
+      interestRateBp: 1200,
+      conversionRateBp: 680,
+      insuredSalary: 10000000,
+      tiers: [{ ageFrom: 25, rateBp: 1000 }],
+    };
+    const flach = computeChForecast(BASE_INPUT); // gleiche flache Werte
+    const ohneLohn = computeChForecast({
+      ...BASE_INPUT,
+      funds: [{ ...fund, insuredSalary: null }],
+    });
+    const ohneTiers = computeChForecast({
+      ...BASE_INPUT,
+      funds: [{ ...fund, tiers: [] }],
+    });
+    expect(ohneLohn.pillar2).toEqual(flach.pillar2);
+    expect(ohneTiers.pillar2).toEqual(flach.pillar2);
+    expect(ohneLohn.funds[0].phases).toEqual([]);
+    expect(ohneTiers.funds[0].phases).toEqual([]);
+  });
+
+  it("schlüsselt Endkapital und Monatsrente pro Kasse auf (funds)", () => {
+    const result = computeChForecast({
+      ...BASE_INPUT,
+      funds: [
+        { ...BASE_INPUT.funds[0], name: "PK A" },
+        {
+          kind: "vested_benefits" as const,
+          name: "FZ",
+          currentCapital: 50000,
+          yearlySavings: 0,
+          interestRateBp: 600,
+          conversionRateBp: 680,
+          insuredSalary: null,
+          tiers: [],
+        },
+      ],
+    });
+    expect(result.funds).toHaveLength(2);
+    const [pk, fz] = result.funds;
+    expect(pk.name).toBe("PK A");
+    expect(pk.capital).toBe(147900); // wie im Basistest
+    // Summe der Einzelkapitale = Säule-2-Gesamtkapital
+    expect(pk.capital + fz.capital).toBe(result.pillar2.capital);
+    // Monatsrente pro Kasse: Kapital × Umwandlungssatz / 12
+    expect(pk.monthlyPension).toBe(838);
+    expect(fz.monthlyPension).toBe(Math.round((fz.capital * 680) / 10000 / 12));
+    expect(pk.phases).toEqual([]);
+    expect(fz.phases).toEqual([]);
+  });
+
+  it("liefert Jahres-Snapshots pro Kasse, deckungsgleich mit series (fundSeries)", () => {
+    const result = computeChForecast(BASE_INPUT);
+    expect(result.fundSeries).toHaveLength(1);
+    expect(result.fundSeries[0].name).toBe("PK");
+    expect(result.fundSeries[0].points).toEqual(
+      result.series.map(s => ({ year: s.year, capital: s.pillar2 }))
+    );
   });
 });
 

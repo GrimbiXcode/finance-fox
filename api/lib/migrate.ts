@@ -257,8 +257,24 @@ export function ensureSchema() {
       yearly_savings INTEGER NOT NULL DEFAULT 0,
       interest_rate_bp INTEGER NOT NULL DEFAULT 0,
       conversion_rate_bp INTEGER NOT NULL DEFAULT 680,
-      notes TEXT NOT NULL DEFAULT ''
+      notes TEXT NOT NULL DEFAULT '',
+      employer TEXT,
+      insured_salary INTEGER,
+      coordination_deduction INTEGER,
+      buy_in_potential INTEGER,
+      disability_pension INTEGER,
+      death_benefit INTEGER
     )`,
+    `CREATE TABLE IF NOT EXISTS pension_fund_tiers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fund_id INTEGER NOT NULL,
+      age_from INTEGER NOT NULL,
+      employee_rate_bp INTEGER NOT NULL DEFAULT 0,
+      employer_rate_bp INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS pension_fund_tiers_fund_idx
+      ON pension_fund_tiers (fund_id)`,
     `CREATE TABLE IF NOT EXISTS pension_pillar3 (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -386,6 +402,39 @@ export function ensureSchema() {
   }
   if (!budgetCols.some(col => col[1] === "created_at")) {
     db.run("ALTER TABLE budgets ADD COLUMN created_at INTEGER" as never);
+  }
+  // Pensionskassen: Versicherungsausweis-Felder an Bestands-DBs nachrüsten
+  // (alle nullable, Beträge in Cent; Abstufungen liegen in pension_fund_tiers)
+  const pensionFundCols = raw
+    .prepare("PRAGMA table_info(pension_funds)")
+    .raw()
+    .all();
+  for (const [col, ddl] of [
+    ["employer", "ALTER TABLE pension_funds ADD COLUMN employer TEXT"],
+    [
+      "insured_salary",
+      "ALTER TABLE pension_funds ADD COLUMN insured_salary INTEGER",
+    ],
+    [
+      "coordination_deduction",
+      "ALTER TABLE pension_funds ADD COLUMN coordination_deduction INTEGER",
+    ],
+    [
+      "buy_in_potential",
+      "ALTER TABLE pension_funds ADD COLUMN buy_in_potential INTEGER",
+    ],
+    [
+      "disability_pension",
+      "ALTER TABLE pension_funds ADD COLUMN disability_pension INTEGER",
+    ],
+    [
+      "death_benefit",
+      "ALTER TABLE pension_funds ADD COLUMN death_benefit INTEGER",
+    ],
+  ] as const) {
+    if (!pensionFundCols.some(c => c[1] === col)) {
+      db.run(ddl as never);
+    }
   }
   // Offene Sparziele: target_amount wird nullable (NULL = ohne Zielbetrag).
   // NOT NULL lässt sich per ALTER nicht entfernen — Bestands-Tabellen daher

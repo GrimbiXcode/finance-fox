@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { accountPermissions, accounts } from "@db/schema";
+import { accountOwners, accountPermissions, accounts } from "@db/schema";
 import type { Db } from "../queries/connection";
 import type { SessionUser } from "../context";
 
@@ -13,18 +13,21 @@ type AccountRow = typeof accounts.$inferSelect;
 type PermissionRow = typeof accountPermissions.$inferSelect;
 
 /**
- * Reine Regel: welche Zugriffsstufe hat `user` auf `account`?
- * - Gemeinschaftskonto (ownerId NULL): jeder eingeloggte Nutzer darf bearbeiten.
- * - Privates Konto: Besitzer darf bearbeiten; Admins (nicht Besitzer) dürfen
- *   nur ansehen (reine Verwaltungsübersicht); andere Mitglieder nur mit
- *   Freigabe-Zeile in account_permissions.
+ * Reine Regel: welche Zugriffsstufe hat `user` auf ein Konto mit den
+ * Besitzer-UserIds `ownerIds`?
+ * - Gemeinschaftskonto (keine Besitzer): jeder eingeloggte Nutzer darf
+ *   bearbeiten.
+ * - Privates Konto (1..n Besitzer mit gleichen Rechten): Besitzer dürfen
+ *   bearbeiten; Admins (nicht Besitzer) dürfen nur ansehen (reine
+ *   Verwaltungsübersicht); andere Mitglieder nur mit Freigabe-Zeile in
+ *   account_permissions.
  */
 export function accessLevelFor(
-  account: Pick<AccountRow, "ownerId">,
+  ownerIds: number[],
   user: SessionUser,
-  permission?: Pick<PermissionRow, "canEdit">,
+  permission?: Pick<PermissionRow, "canEdit">
 ): AccessLevel {
-  if (account.ownerId === null || account.ownerId === user.id) return "edit";
+  if (ownerIds.length === 0 || ownerIds.includes(user.id)) return "edit";
   if (user.role === "admin") return "view";
   if (permission) return permission.canEdit ? "edit" : "view";
   return "none";
@@ -33,24 +36,45 @@ export function accessLevelFor(
 export type VisibleAccount = AccountRow & {
   access: "view" | "edit";
   isOwner: boolean;
+  /** Besitzer-UserIds (leer = Gemeinschaftskonto) */
+  owners: number[];
 };
+
+/** Besitzer-UserIds eines Kontos (leer = Gemeinschaftskonto) */
+export async function ownerIdsOf(db: Db, accountId: number): Promise<number[]> {
+  const rows = await db
+    .select({ userId: accountOwners.userId })
+    .from(accountOwners)
+    .where(eq(accountOwners.accountId, accountId));
+  return rows.map(r => r.userId);
+}
 
 /** Alle für `user` sichtbaren Konten (mindestens "view"), annotiert */
 export async function listVisibleAccounts(
   db: Db,
-  user: SessionUser,
+  user: SessionUser
 ): Promise<VisibleAccount[]> {
-  const [accs, perms] = await Promise.all([
+  const [accs, perms, ownerRows] = await Promise.all([
     db.select().from(accounts),
-    db.select().from(accountPermissions)
+    db
+      .select()
+      .from(accountPermissions)
       .where(eq(accountPermissions.userId, user.id)),
+    db.select().from(accountOwners),
   ]);
-  const permByAccount = new Map(perms.map((p) => [p.accountId, p]));
+  const permByAccount = new Map(perms.map(p => [p.accountId, p]));
+  const ownersByAccount = new Map<number, number[]>();
+  for (const o of ownerRows) {
+    const list = ownersByAccount.get(o.accountId);
+    if (list) list.push(o.userId);
+    else ownersByAccount.set(o.accountId, [o.userId]);
+  }
   const visible: VisibleAccount[] = [];
   for (const a of accs) {
-    const access = accessLevelFor(a, user, permByAccount.get(a.id));
+    const owners = ownersByAccount.get(a.id) ?? [];
+    const access = accessLevelFor(owners, user, permByAccount.get(a.id));
     if (access === "none") continue;
-    visible.push({ ...a, access, isOwner: a.ownerId === user.id });
+    visible.push({ ...a, access, isOwner: owners.includes(user.id), owners });
   }
   return visible;
 }
@@ -58,9 +82,9 @@ export async function listVisibleAccounts(
 /** IDs aller für `user` sichtbaren Konten (zum Filtern von Buchungen etc.) */
 export async function visibleAccountIds(
   db: Db,
-  user: SessionUser,
+  user: SessionUser
 ): Promise<Set<number>> {
-  return new Set((await listVisibleAccounts(db, user)).map((a) => a.id));
+  return new Set((await listVisibleAccounts(db, user)).map(a => a.id));
 }
 
 /**
@@ -69,7 +93,7 @@ export async function visibleAccountIds(
  */
 export function touchesVisibleAccount(
   visible: Set<number>,
-  tx: { accountId: number; toAccountId: number | null },
+  tx: { accountId: number; toAccountId: number | null }
 ): boolean {
   return (
     visible.has(tx.accountId) ||
@@ -86,21 +110,28 @@ export async function requireAccountAccess(
   db: Db,
   user: SessionUser,
   accountId: number,
-  minLevel: AccessLevel,
+  minLevel: AccessLevel
 ): Promise<AccountRow> {
-  const account = await db.query.accounts
-    .findFirst({ where: eq(accounts.id, accountId) });
-  const permission = account
-    ? await db.query.accountPermissions.findFirst({
-      where: and(
-        eq(accountPermissions.accountId, accountId),
-        eq(accountPermissions.userId, user.id),
-      ),
-    })
-    : undefined;
-  const level = account ? accessLevelFor(account, user, permission) : "none";
+  const account = await db.query.accounts.findFirst({
+    where: eq(accounts.id, accountId),
+  });
+  const [permission, owners] = account
+    ? await Promise.all([
+        db.query.accountPermissions.findFirst({
+          where: and(
+            eq(accountPermissions.accountId, accountId),
+            eq(accountPermissions.userId, user.id)
+          ),
+        }),
+        ownerIdsOf(db, accountId),
+      ])
+    : [undefined, []];
+  const level = account ? accessLevelFor(owners, user, permission) : "none";
   if (!account || LEVEL_RANK[level] < LEVEL_RANK[minLevel]) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Konto nicht gefunden." });
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Konto nicht gefunden.",
+    });
   }
   return account;
 }

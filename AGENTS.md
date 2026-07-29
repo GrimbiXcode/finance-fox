@@ -395,13 +395,24 @@ Wichtige Konventionen:
   entity-Filter, userName/userColor gejoint). UI: Card „Aktivitäten" am Ende
   der Einstellungen-Seite (deutsches Action-Mapping, Entity-Filter,
   „Mehr laden"). Tests: `api/auditLog.test.ts`.
-- **Konten-Sichtbarkeit**: `accounts.ownerId` NULL = Gemeinschaftskonto (alle
-  dürfen lesen/bearbeiten), sonst privat (Besitzer + Freigaben aus
-  `account_permissions`, Admins nur lesend). Zugriffsprüfung immer
-  serverseitig über die Helper in `api/lib/accountAccess.ts`
-  (`requireAccountAccess`, `visibleAccountIds`) — nicht nur im Frontend
-  ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen) sind
-  pro anfragendem Nutzer gefiltert.
+- **Konten-Sichtbarkeit**: Besitzerliste in der Tabelle `account_owners`
+  (accountId, userId; 1..n Besitzer mit gleichen Rechten). Keine Zeilen =
+  Gemeinschaftskonto (alle dürfen lesen/bearbeiten), sonst privat (Besitzer +
+  Freigaben aus `account_permissions`, Admins nur lesend). Die alte Spalte
+  `accounts.owner_id` bleibt physisch bestehen, wird aber nicht mehr gelesen —
+  `ensureSchema` migriert sie einmalig guardiert nach `account_owners`
+  (Migration: Konto gehört dem Ersteller; nur wenn `account_owners` leer ist
+  UND Konten mit `owner_id` existieren). Zugriffsprüfung immer serverseitig
+  über die Helper in `api/lib/accountAccess.ts` (`accessLevelFor`,
+  `ownerIdsOf`, `requireAccountAccess`, `visibleAccountIds`) — nicht nur im
+  Frontend ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen)
+  sind pro anfragendem Nutzer gefiltert. `finance.listAccounts` liefert pro
+  Konto `owners: number[]`; die Besitzerliste ersetzt
+  `finance.setAccountOwners` komplett (mindestens 1 Besitzer, nur Besitzer
+  oder Admin, Selbstentfernung erlaubt; Freigaben neuer Besitzer werden
+  entfernt). UI: Besitzer-Checkboxen in der Sichtbarkeits-Sektion des
+  AccountDialog (nur für Besitzer), Besitzer-Namen klein auf der Konto-Karte.
+  Tests: `api/accountAccess.test.ts`, `api/accountOwners.test.ts`.
 - **Wiederkehrende Umbuchungen**: `recurring.type` kann auch `transfer` sein
   (Dauerauftrag zwischen Konten) — dann ist `recurring.to_account_id` gesetzt
   (Pflicht, ≠ `account_id`, Kategorie irrelevant). Rechte wie bei Buchungen:
@@ -485,6 +496,18 @@ Wichtige Konventionen:
 - **PWA**: Grundgerüst ohne Service Worker — `public/manifest.webmanifest`
   plus Icons in `public/icons/` (Quell-SVG `icon.svg`, PNGs daraus gerendert),
   eingebunden in `index.html`.
+- **Auswahlfelder**: Datengetriebene Selects (Konten mit Bank im Label,
+  Kategorien, Personen, Banken, Kontotypen, Tags, Projekte, Sparziel-Konto-
+  Verknüpfung) nutzen `src/components/SearchableSelect.tsx` (Popover +
+  cmdk-Command: Suchfeld „Suchen…", leere Trefferliste „Nichts gefunden.",
+  Check-Mark auf der gewählten Option, Trigger im SelectTrigger-Styling;
+  API `{value, onValueChange, options: {value, label}[], placeholder?,
+  disabled?, className?}`). Kleine Enum-Selects (Buchungsart, Intervall,
+  Status, Zeitraum/Modus, Rolle) bleiben native Selects — eine Suche bei
+  2–4 Optionen wäre UX-Rauschen. Alle SelectTrigger bekommen Truncation
+  (`min-w-0 [&>span]:truncate`, in Dialog-Grids zusätzlich `w-full`) und ein
+  `title`-Attribut mit dem Label der gewählten Option (SearchableSelect
+  bringt beides eingebaut mit).
 - **UI-State in `localStorage`**: Darstellungsart der Konten-Seite
   (Karten/Tabelle) unter dem Key `ff-accounts-view`, der Dauerbuchungen-Seite
   unter `ff-recurring-view`; eingeklappte Seitenleiste unter

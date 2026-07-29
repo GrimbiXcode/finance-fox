@@ -5,7 +5,7 @@ import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
 import { accessLevelFor } from "./lib/accountAccess";
 import {
-  accountPermissions, accounts, recurring, transactions, users,
+  accountOwners, accountPermissions, accounts, recurring, transactions, users,
 } from "@db/schema";
 import type { SessionUser, TrpcContext } from "./context";
 
@@ -45,10 +45,21 @@ async function insertAccount(ownerId: number | null): Promise<number> {
     name: `Konto ${nameCounter}`,
     type: "checking",
     initialBalance: 0,
-    ownerId,
     createdAt: new Date(),
   }).returning({ id: accounts.id });
-  return rows[0].id;
+  const id = rows[0].id;
+  if (ownerId !== null) {
+    await getDb().insert(accountOwners)
+      .values({ accountId: id, userId: ownerId });
+  }
+  return id;
+}
+
+/** Besitzer-UserIds eines Kontos aus account_owners lesen */
+async function ownerIds(accountId: number): Promise<number[]> {
+  const rows = await getDb().select().from(accountOwners)
+    .where(eq(accountOwners.accountId, accountId));
+  return rows.map(r => r.userId);
 }
 
 async function accountName(id: number): Promise<string> {
@@ -78,17 +89,25 @@ beforeAll(async () => {
 });
 
 describe("accessLevelFor (reine Regel)", () => {
-  it("Gemeinschaftskonto: jeder hat edit", () => {
-    expect(accessLevelFor({ ownerId: null }, stranger)).toBe("edit");
+  it("Gemeinschaftskonto (keine Besitzer): jeder hat edit", () => {
+    expect(accessLevelFor([], stranger)).toBe("edit");
   });
 
   it("privates Konto: Besitzer edit, Admin view, Freigabe view/edit, sonst none", () => {
-    const acc = { ownerId: owner.id };
-    expect(accessLevelFor(acc, owner)).toBe("edit");
-    expect(accessLevelFor(acc, admin)).toBe("view");
-    expect(accessLevelFor(acc, viewer, { canEdit: false })).toBe("view");
-    expect(accessLevelFor(acc, editor, { canEdit: true })).toBe("edit");
-    expect(accessLevelFor(acc, stranger)).toBe("none");
+    const owners = [owner.id];
+    expect(accessLevelFor(owners, owner)).toBe("edit");
+    expect(accessLevelFor(owners, admin)).toBe("view");
+    expect(accessLevelFor(owners, viewer, { canEdit: false })).toBe("view");
+    expect(accessLevelFor(owners, editor, { canEdit: true })).toBe("edit");
+    expect(accessLevelFor(owners, stranger)).toBe("none");
+  });
+
+  it("mehrere Besitzer haben gleiche Rechte (edit)", () => {
+    const owners = [owner.id, viewer.id];
+    expect(accessLevelFor(owners, owner)).toBe("edit");
+    expect(accessLevelFor(owners, viewer)).toBe("edit");
+    expect(accessLevelFor(owners, admin)).toBe("view");
+    expect(accessLevelFor(owners, stranger)).toBe("none");
   });
 });
 
@@ -98,7 +117,7 @@ describe("listAccounts (Sichtbarkeit)", () => {
     const list = await callerFor(stranger).finance.listAccounts();
     const acc = list.find((a) => a.id === id);
     expect(acc).toMatchObject({
-      access: "edit", isOwner: false, ownerId: null,
+      access: "edit", isOwner: false, owners: [],
     });
   });
 
@@ -110,7 +129,9 @@ describe("listAccounts (Sichtbarkeit)", () => {
     const byId = (list: { id: number }[]) => list.find((a) => a.id === id);
 
     const ownerAcc = byId(await callerFor(owner).finance.listAccounts());
-    expect(ownerAcc).toMatchObject({ access: "edit", isOwner: true });
+    expect(ownerAcc).toMatchObject({
+      access: "edit", isOwner: true, owners: [owner.id],
+    });
 
     const adminAcc = byId(await callerFor(admin).finance.listAccounts());
     expect(adminAcc).toMatchObject({ access: "view", isOwner: false });
@@ -134,7 +155,7 @@ describe("listAccounts (Sichtbarkeit)", () => {
     });
     const list = await callerFor(owner).finance.listAccounts();
     const acc = list.find((a) => a.name === "Privates Anlagekonto");
-    expect(acc).toMatchObject({ ownerId: owner.id, isOwner: true });
+    expect(acc).toMatchObject({ owners: [owner.id], isOwner: true });
     // Für andere Mitglieder ohne Freigabe nicht sichtbar
     const strangerList = await callerFor(stranger).finance.listAccounts();
     expect(strangerList.find((a) => a.name === "Privates Anlagekonto"))
@@ -189,11 +210,12 @@ describe("deleteAccount (Namensbestätigung + Rechte)", () => {
     await expect(callerFor(editor).finance.deleteAccount({ id, name }))
       .rejects.toMatchObject({ code: "NOT_FOUND" });
 
-    // Besitzer mit korrektem Namen: OK, Freigaben werden mitgelöscht
+    // Besitzer mit korrektem Namen: OK, Freigaben und Besitzer werden mitgelöscht
     await callerFor(owner).finance.deleteAccount({ id, name });
     const rest = await getDb().select().from(accountPermissions)
       .where(eq(accountPermissions.accountId, id));
     expect(rest).toHaveLength(0);
+    expect(await ownerIds(id)).toEqual([]);
     expect(await getDb().query.accounts
       .findFirst({ where: eq(accounts.id, id) })).toBeUndefined();
   });
@@ -369,12 +391,10 @@ describe("setAccountPrivacy", () => {
   it("Gemeinschaftskonto: jedes Mitglied darf privat stellen und wird Besitzer", async () => {
     const id = await insertAccount(null);
     await callerFor(stranger).finance.setAccountPrivacy({ id, private: true });
-    const acc = await getDb().query.accounts
-      .findFirst({ where: eq(accounts.id, id) });
-    expect(acc?.ownerId).toBe(stranger.id);
+    expect(await ownerIds(id)).toEqual([stranger.id]);
   });
 
-  it("privat → gemeinsam: nur Besitzer oder Admin, Freigaben werden entfernt", async () => {
+  it("privat → gemeinsam: nur Besitzer oder Admin, Besitzer und Freigaben werden entfernt", async () => {
     const id = await insertAccount(owner.id);
     await setPermission(id, viewer.id, true);
 
@@ -387,9 +407,7 @@ describe("setAccountPrivacy", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
 
     await callerFor(owner).finance.setAccountPrivacy({ id, private: false });
-    const acc = await getDb().query.accounts
-      .findFirst({ where: eq(accounts.id, id) });
-    expect(acc?.ownerId).toBeNull();
+    expect(await ownerIds(id)).toEqual([]);
     const perms = await getDb().select().from(accountPermissions)
       .where(eq(accountPermissions.accountId, id));
     expect(perms).toHaveLength(0);

@@ -216,7 +216,6 @@ describe("Trigger: Budget-Überschreitung in createTransaction", () => {
         name: "Budget-Konto",
         type: "checking",
         initialBalance: 0,
-        ownerId: null,
         createdAt: new Date(),
       })
       .returning({ id: accounts.id });
@@ -303,7 +302,6 @@ describe("Trigger: fällige wiederkehrende Buchungen", () => {
         name: "Recurring-Konto",
         type: "checking",
         initialBalance: 0,
-        ownerId: null,
         createdAt: new Date(),
       })
       .returning({ id: accounts.id });

@@ -86,7 +86,7 @@ beforeAll(async () => {
       createdAt: new Date(),
     });
   }
-  // Gemeinschaftskonto (ownerId null) + privates Konto von admin
+  // Gemeinschaftskonto (keine Besitzer) + privates Konto von admin
   await callerFor(admin).finance.createAccount({
     name: "Gemeinschaft",
     type: "checking",

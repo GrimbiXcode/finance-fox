@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AccountDialog from '@/components/AccountDialog';
 import { trpc } from '@/providers/trpc';
@@ -110,7 +110,7 @@ function BalanceHistory({ accountId }: { accountId: number }) {
 }
 
 export default function Accounts() {
-  const { accounts, accountTypes, banks, transactions } = useFinanceData();
+  const { accounts, accountTypes, banks, transactions, users } = useFinanceData();
   const [openId, setOpenId] = useState<number | null>(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [bankFilter, setBankFilter] = useState('all');
@@ -118,6 +118,11 @@ export default function Accounts() {
   const [view, setView] = useState<ViewMode>(readViewMode);
   const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
+  const userName = new Map(users.map((u) => [u.id, u.name]));
+
+  /** Besitzer-Namen eines Kontos kommagetrennt (für die Kartenansicht) */
+  const ownerNames = (a: AccountRow) =>
+    a.owners.map((id) => userName.get(id) ?? '?').join(', ');
 
   const switchView = (v: ViewMode) => {
     setView(v);
@@ -185,21 +190,27 @@ export default function Accounts() {
             value={search} onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-44 min-w-0 [&>span]:truncate"><SelectValue placeholder="Kontotyp" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle Typen</SelectItem>
-            {accountTypes.map((t) => <SelectItem key={t.key} value={t.key}>{t.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={bankFilter} onValueChange={setBankFilter}>
-          <SelectTrigger className="w-44 min-w-0 [&>span]:truncate"><SelectValue placeholder="Bank" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle Banken</SelectItem>
-            <SelectItem value="none">Ohne Bank</SelectItem>
-            {banks.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={typeFilter}
+          onValueChange={setTypeFilter}
+          placeholder="Kontotyp"
+          className="w-44"
+          options={[
+            { value: 'all', label: 'Alle Typen' },
+            ...accountTypes.map((t) => ({ value: t.key, label: t.name })),
+          ]}
+        />
+        <SearchableSelect
+          value={bankFilter}
+          onValueChange={setBankFilter}
+          placeholder="Bank"
+          className="w-44"
+          options={[
+            { value: 'all', label: 'Alle Banken' },
+            { value: 'none', label: 'Ohne Bank' },
+            ...banks.map((b) => ({ value: String(b.id), label: b.name })),
+          ]}
+        />
         <div className="ml-auto flex rounded-lg border bg-muted/40 p-1">
           <Button
             variant="ghost" size="icon" title="Kartenansicht"
@@ -274,10 +285,13 @@ export default function Accounts() {
                 <div className={cn('text-2xl font-bold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant="secondary">{txCount} Buchungen</Badge>
-                  {a.ownerId !== null && <Badge variant="outline">Privat</Badge>}
+                  {a.owners.length > 0 && <Badge variant="outline">Privat</Badge>}
                   {a.access === 'view' && <Badge variant="outline">nur lesend</Badge>}
                   <span>Anfangsbestand: {formatCents(a.initialBalance)}</span>
                 </div>
+                {a.owners.length > 0 && (
+                  <div className="mt-1 text-xs text-muted-foreground">Besitzer: {ownerNames(a)}</div>
+                )}
                 {(a.bankId !== null || a.iban) && (
                   <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                     {a.bankId !== null && <div>{bankName.get(a.bankId) ?? 'Unbekannte Bank'}</div>}
@@ -319,7 +333,7 @@ export default function Accounts() {
                       <div>
                         <div className="font-medium">{a.name}</div>
                         <div className="flex gap-1">
-                          {a.ownerId !== null && <Badge variant="outline" className="text-[10px]">Privat</Badge>}
+                          {a.owners.length > 0 && <Badge variant="outline" className="text-[10px]">Privat</Badge>}
                           {a.access === 'view' && <Badge variant="outline" className="text-[10px]">nur lesend</Badge>}
                         </div>
                       </div>

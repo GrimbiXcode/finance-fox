@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { appRouter } from "./router";
 import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
-import { accountPermissions, accounts, transactions, users } from "@db/schema";
+import { accountOwners, accountPermissions, accounts, transactions, users } from "@db/schema";
 import type { SessionUser, TrpcContext } from "./context";
 
 const owner: SessionUser = {
@@ -38,10 +38,14 @@ async function insertAccount(
     name: `Verlauf-Konto ${nameCounter}`,
     type: "checking",
     initialBalance,
-    ownerId,
     createdAt: new Date(),
   }).returning({ id: accounts.id });
-  return rows[0].id;
+  const id = rows[0].id;
+  if (ownerId !== null) {
+    await getDb().insert(accountOwners)
+      .values({ accountId: id, userId: ownerId });
+  }
+  return id;
 }
 
 /** Buchung direkt in der DB anlegen */

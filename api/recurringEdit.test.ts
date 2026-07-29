@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { appRouter } from "./router";
 import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
-import { accounts, categories, recurring, users } from "@db/schema";
+import { accountOwners, accounts, categories, recurring, users } from "@db/schema";
 import type { SessionUser, TrpcContext } from "./context";
 
 const admin: SessionUser = {
@@ -36,10 +36,14 @@ async function insertAccount(ownerId: number | null): Promise<number> {
     name: `Konto ${nameCounter}`,
     type: "checking",
     initialBalance: 0,
-    ownerId,
     createdAt: new Date(),
   }).returning({ id: accounts.id });
-  return rows[0].id;
+  const id = rows[0].id;
+  if (ownerId !== null) {
+    await getDb().insert(accountOwners)
+      .values({ accountId: id, userId: ownerId });
+  }
+  return id;
 }
 
 /** Dauerbuchung über die API anlegen und die ID zurückgeben */

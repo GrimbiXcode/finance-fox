@@ -63,12 +63,34 @@ export const accounts = sqliteTable("accounts", {
   // Key aus account_types (Builtin oder Custom-Typ)
   type: text("type").notNull(),
   initialBalance: integer("initial_balance").notNull().default(0), // Cent
-  // NULL = Gemeinschaftskonto (für alle sicht-/editierbar), sonst Besitzer-User
-  ownerId: integer("owner_id"),
+  // Besitzer stehen in account_owners (leer = Gemeinschaftskonto). Die alte
+  // Spalte owner_id bleibt physisch in der DB bestehen (ensureSchema migriert
+  // nicht rückwärts), wird aber nicht mehr gelesen.
   bankId: integer("bank_id"),
   iban: text("iban"), // normalisiert: ohne Leerzeichen, Großbuchstaben
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+/**
+ * Besitzerliste eines Kontos (1..n Personen mit gleichen Rechten).
+ * Keine Zeilen = Gemeinschaftskonto (für alle sicht-/bearbeitbar);
+ * mindestens eine Zeile = privates Konto (Besitzer + account_permissions-
+ * Freigaben, Admins nur lesend). Migration aus accounts.owner_id in
+ * ensureSchema — die bisherigen Besitzer waren zugleich die Ersteller
+ * ihrer Privatkonten.
+ */
+export const accountOwners = sqliteTable(
+  "account_owners",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull(),
+    userId: integer("user_id").notNull(),
+  },
+  t => [
+    uniqueIndex("account_owners_unique_idx").on(t.accountId, t.userId),
+    index("account_owners_account_idx").on(t.accountId),
+  ]
+);
 
 /** Individuelle Freigaben privater Konten für andere Haushaltsmitglieder */
 export const accountPermissions = sqliteTable(

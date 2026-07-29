@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
+  accountOwners,
   accountPermissions,
   accounts,
   accountTypes,
@@ -42,6 +43,7 @@ import {
 } from "./lib/csv";
 import {
   listVisibleAccounts,
+  ownerIdsOf,
   requireAccountAccess,
   touchesVisibleAccount,
   visibleAccountIds,
@@ -350,10 +352,16 @@ export const financeRouter = createRouter({
           initialBalance: input.initialBalance,
           bankId: input.bankId ?? null,
           iban: normalizeIban(input.iban),
-          ownerId: input.private ? ctx.user.id : null,
           createdAt: new Date(),
         })
         .returning({ id: accounts.id });
+      if (input.private) {
+        // Privates Konto: der anlegende Nutzer wird (erster) Besitzer
+        await db.insert(accountOwners).values({
+          accountId: inserted[0].id,
+          userId: ctx.user.id,
+        });
+      }
       logAudit(
         db,
         ctx.user.id,
@@ -419,10 +427,11 @@ export const financeRouter = createRouter({
       const account = await db.query.accounts.findFirst({
         where: eq(accounts.id, input.id),
       });
+      const owners = account ? await ownerIdsOf(db, input.id) : [];
       const mayDelete =
         account &&
-        (account.ownerId === null ||
-          account.ownerId === ctx.user.id ||
+        (owners.length === 0 ||
+          owners.includes(ctx.user.id) ||
           ctx.user.role === "admin");
       // NOT_FOUND statt FORBIDDEN: Existenz privater Konten soll nicht leaken
       if (!account || !mayDelete) {
@@ -467,6 +476,9 @@ export const financeRouter = createRouter({
         tx.delete(accountPermissions)
           .where(eq(accountPermissions.accountId, input.id))
           .run();
+        tx.delete(accountOwners)
+          .where(eq(accountOwners.accountId, input.id))
+          .run();
         tx.delete(accounts).where(eq(accounts.id, input.id)).run();
       });
       logAudit(
@@ -484,8 +496,8 @@ export const financeRouter = createRouter({
    * Konto privat stellen / wieder freigeben.
    * Privat stellen: bei Gemeinschaftskonto jedes Mitglied (wird Besitzer),
    * sonst nur Besitzer/Admin (No-op bei bereits privatem Konto).
-   * Freigeben (privat → gemeinsam): nur Besitzer oder Admin; individuelle
-   * Freigaben werden dabei entfernt.
+   * Freigeben (privat → gemeinsam): nur Besitzer oder Admin; Besitzerliste
+   * und individuelle Freigaben werden dabei entfernt.
    */
   setAccountPrivacy: authedQuery
     .input(
@@ -505,21 +517,23 @@ export const financeRouter = createRouter({
           message: "Konto nicht gefunden.",
         });
       }
+      const owners = await ownerIdsOf(db, input.id);
       const isOwnerOrAdmin =
-        account.ownerId === ctx.user.id || ctx.user.role === "admin";
+        owners.includes(ctx.user.id) || ctx.user.role === "admin";
       if (input.private) {
-        if (account.ownerId === null) {
-          await db
-            .update(accounts)
-            .set({ ownerId: ctx.user.id })
-            .where(eq(accounts.id, input.id));
+        if (owners.length === 0) {
+          // Gemeinschaftskonto privat stellen: der Nutzer wird Besitzer
+          await db.insert(accountOwners).values({
+            accountId: input.id,
+            userId: ctx.user.id,
+          });
         } else if (!isOwnerOrAdmin) {
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Konto nicht gefunden.",
           });
         }
-      } else if (account.ownerId !== null) {
+      } else if (owners.length > 0) {
         if (!isOwnerOrAdmin) {
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -527,9 +541,8 @@ export const financeRouter = createRouter({
           });
         }
         db.transaction(tx => {
-          tx.update(accounts)
-            .set({ ownerId: null })
-            .where(eq(accounts.id, input.id))
+          tx.delete(accountOwners)
+            .where(eq(accountOwners.accountId, input.id))
             .run();
           tx.delete(accountPermissions)
             .where(eq(accountPermissions.accountId, input.id))
@@ -543,6 +556,80 @@ export const financeRouter = createRouter({
         "account",
         input.id,
         `${account.name}: ${input.private ? "privat" : "gemeinsam"}`
+      );
+      return { ok: true };
+    }),
+
+  /**
+   * Besitzerliste eines privaten Kontos komplett ersetzen (1..n Personen
+   * mit gleichen Rechten, mindestens eine). Nur Besitzer oder Admin;
+   * Besitzer dürfen sich selbst entfernen, solange ein Besitzer bleibt.
+   */
+  setAccountOwners: authedQuery
+    .input(
+      z.object({
+        accountId: z.number().int().positive(),
+        userIds: z.array(z.number().int().positive()),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const account = await db.query.accounts.findFirst({
+        where: eq(accounts.id, input.accountId),
+      });
+      const owners = account ? await ownerIdsOf(db, input.accountId) : [];
+      const allowed =
+        account && (owners.includes(ctx.user.id) || ctx.user.role === "admin");
+      // NOT_FOUND statt FORBIDDEN: Existenz privater Konten soll nicht leaken
+      if (!account || !allowed) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Konto nicht gefunden.",
+        });
+      }
+      const userIds = [...new Set(input.userIds)];
+      if (userIds.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Ein Konto braucht mindestens eine:n Besitzer:in.",
+        });
+      }
+      const found = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(inArray(users.id, userIds));
+      if (found.length !== userIds.length) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Benutzer nicht gefunden.",
+        });
+      }
+      db.transaction(tx => {
+        tx.delete(accountOwners)
+          .where(eq(accountOwners.accountId, input.accountId))
+          .run();
+        for (const userId of userIds) {
+          tx.insert(accountOwners)
+            .values({ accountId: input.accountId, userId })
+            .run();
+        }
+        // Freigaben neuer Besitzer sind gegenstandslos — mit entfernen
+        tx.delete(accountPermissions)
+          .where(
+            and(
+              eq(accountPermissions.accountId, input.accountId),
+              inArray(accountPermissions.userId, userIds)
+            )
+          )
+          .run();
+      });
+      logAudit(
+        db,
+        ctx.user.id,
+        "account.owners",
+        "account",
+        input.accountId,
+        `${account.name}: ${userIds.length} Besitzer`
       );
       return { ok: true };
     }),
@@ -561,7 +648,8 @@ export const financeRouter = createRouter({
       const account = await db.query.accounts.findFirst({
         where: eq(accounts.id, input.accountId),
       });
-      if (!account || account.ownerId !== ctx.user.id) {
+      const owners = account ? await ownerIdsOf(db, input.accountId) : [];
+      if (!account || !owners.includes(ctx.user.id)) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Konto nicht gefunden.",
@@ -576,10 +664,10 @@ export const financeRouter = createRouter({
           message: "Benutzer nicht gefunden.",
         });
       }
-      if (target.id === account.ownerId) {
+      if (owners.includes(target.id)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Für den Besitzer kann keine Freigabe gesetzt werden.",
+          message: "Für Besitzer:innen kann keine Freigabe gesetzt werden.",
         });
       }
       if (input.level === "none") {
@@ -624,9 +712,10 @@ export const financeRouter = createRouter({
       const account = await db.query.accounts.findFirst({
         where: eq(accounts.id, input.accountId),
       });
+      const owners = account ? await ownerIdsOf(db, input.accountId) : [];
       const allowed =
         account &&
-        (account.ownerId === ctx.user.id || ctx.user.role === "admin");
+        (owners.includes(ctx.user.id) || ctx.user.role === "admin");
       if (!account || !allowed) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -2956,6 +3045,7 @@ export const financeRouter = createRouter({
       tx.delete(savingsGoals).where(ne(savingsGoals.id, -1)).run();
       tx.delete(categories).where(ne(categories.id, -1)).run();
       tx.delete(accountPermissions).where(ne(accountPermissions.id, -1)).run();
+      tx.delete(accountOwners).where(ne(accountOwners.id, -1)).run();
       tx.delete(accounts).where(ne(accounts.id, -1)).run();
     });
     logAudit(

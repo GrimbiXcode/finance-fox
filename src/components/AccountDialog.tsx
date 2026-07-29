@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
 import { amountPlaceholder, currencySymbol, formatCents, parseEuro } from '@/lib/finance';
@@ -26,7 +27,7 @@ export interface DialogAccount {
   initialBalance: number;
   bankId: number | null;
   iban: string | null;
-  ownerId: number | null;
+  owners: number[]; // Besitzer-UserIds (leer = Gemeinschaftskonto)
   access: 'view' | 'edit';
   isOwner: boolean;
 }
@@ -57,6 +58,8 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
   const [bankId, setBankId] = useState<number | null>(account?.bankId ?? null);
   const [iban, setIban] = useState(account?.iban ?? '');
   const [isPrivate, setIsPrivate] = useState(false);
+  // Besitzer-Auswahl (privates Konto): lokale Kopie der UserIds
+  const [ownerIds, setOwnerIds] = useState<number[]>(account?.owners ?? []);
   const [confirmName, setConfirmName] = useState('');
   // Inline-Bereiche für "+ Neuer Typ" / "+ Neue Bank"
   const [newTypeOpen, setNewTypeOpen] = useState(false);
@@ -66,7 +69,17 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
   // Kontoabgleich: eingegebener Ist-Saldo als Text (locale-bewusst geparst)
   const [actualBalance, setActualBalance] = useState('');
 
-  const isPrivateAccount = !!account && account.ownerId !== null;
+  const isPrivateAccount = !!account && account.owners.length > 0;
+
+  // Besitzer-Auswahl mit dem Serverstand synchronisieren (z. B. nach dem
+  // Umschalten Gemeinschaft → Privat wird der aktuelle User Besitzer) —
+  // „State während des Renderns anpassen"-Muster statt useEffect
+  const ownersKey = (account?.owners ?? []).join(',');
+  const [prevOwnersKey, setPrevOwnersKey] = useState(ownersKey);
+  if (prevOwnersKey !== ownersKey) {
+    setPrevOwnersKey(ownersKey);
+    setOwnerIds(account?.owners ?? []);
+  }
 
   // Freigaben nur laden, wenn der Besitzer ein privates Konto bearbeitet
   const permissions = trpc.finance.listAccountPermissions.useQuery(
@@ -94,6 +107,14 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
       toast.success('Freigabe gespeichert.');
       utils.finance.listAccountPermissions.invalidate({ accountId: account?.id ?? 0 });
       utils.finance.listAccounts.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const setOwners = trpc.finance.setAccountOwners.useMutation({
+    onSuccess: () => {
+      toast.success('Besitzer gespeichert.');
+      utils.finance.listAccountPermissions.invalidate({ accountId: account?.id ?? 0 });
+      invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -140,12 +161,39 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
   const difference = signedActual - sollBalance;
 
   // Andere aktive Mitglieder (Besitzer und man selbst ausgeklammert)
-  const members = users.filter((u) => u.active && u.id !== account?.ownerId && u.id !== user?.id);
+  const members = users.filter(
+    (u) => u.active && !(account?.owners ?? []).includes(u.id) && u.id !== user?.id,
+  );
+  // Alle aktiven Mitglieder für die Besitzer-Auswahl
+  const activeUsers = users.filter((u) => u.active);
+
+  const ownersChanged =
+    [...ownerIds].sort().join(',') !== [...(account?.owners ?? [])].sort().join(',');
+
+  /** Besitzer-Häkchen setzen/entfernen (mindestens 1 Besitzer wird erzwungen) */
+  const toggleOwner = (id: number, checked: boolean) =>
+    setOwnerIds((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
+
+  const saveOwners = () => {
+    if (!account) return;
+    if (ownerIds.length === 0) {
+      toast.error('Ein Konto braucht mindestens eine:n Besitzer:in.');
+      return;
+    }
+    setOwners.mutate({ accountId: account.id, userIds: ownerIds });
+  };
 
   const permLevel = (userId: number): 'none' | 'view' | 'edit' => {
     const p = permissions.data?.find((row) => row.userId === userId);
     if (!p) return 'none';
     return p.canEdit ? 'edit' : 'view';
+  };
+
+  // Anzeige-Labels der Freigabe-Stufen (für Hover-Titel am Trigger)
+  const PERM_LABELS: Record<'none' | 'view' | 'edit', string> = {
+    none: 'Kein Zugriff',
+    view: 'Ansehen',
+    edit: 'Ansehen & Bearbeiten',
   };
 
   const submit = () => {
@@ -179,14 +227,11 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Typ</Label>
-            <Select value={type} onValueChange={setType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {accountTypes.map((t) => (
-                  <SelectItem key={t.key} value={t.key}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={type}
+              onValueChange={setType}
+              options={accountTypes.map((t) => ({ value: t.key, label: t.name }))}
+            />
             {newTypeOpen ? (
               <div className="flex gap-2">
                 <Input
@@ -223,18 +268,15 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Bank (optional)</Label>
-            <Select
+            {/* Sentinel „none" = keine Bank (intern null) */}
+            <SearchableSelect
               value={bankId === null ? 'none' : String(bankId)}
               onValueChange={(v) => setBankId(v === 'none' ? null : Number(v))}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Keine Bank</SelectItem>
-                {banks.map((b) => (
-                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              options={[
+                { value: 'none', label: 'Keine Bank' },
+                ...banks.map((b) => ({ value: String(b.id), label: b.name })),
+              ]}
+            />
             {newBankOpen ? (
               <div className="flex gap-2">
                 <Input
@@ -289,7 +331,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
               <div>
                 <Label htmlFor="privacy" className="cursor-pointer">Privates Konto</Label>
                 <p className="text-xs text-muted-foreground">
-                  Nur du (und freigegebene Mitglieder) sehen dieses Konto.
+                  Nur Besitzer:innen (und freigegebene Mitglieder) sehen dieses Konto.
                 </p>
               </div>
               <Switch
@@ -300,29 +342,63 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
               />
             </div>
             {isPrivateAccount && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Zugriff für andere Mitglieder</p>
-                {members.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Keine weiteren aktiven Mitglieder im Haushalt.</p>
-                )}
-                {members.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between gap-3">
-                    <span className="text-sm" style={{ color: u.color }}>{u.name}</span>
-                    <Select
-                      value={permLevel(u.id)}
-                      disabled={setPermission.isPending}
-                      onValueChange={(v) =>
-                        setPermission.mutate({ accountId: account.id, userId: u.id, level: v as 'none' | 'view' | 'edit' })}
-                    >
-                      <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Kein Zugriff</SelectItem>
-                        <SelectItem value="view">Ansehen</SelectItem>
-                        <SelectItem value="edit">Ansehen &amp; Bearbeiten</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Besitzer:innen (voller Zugriff, dürfen Freigaben verwalten)
+                  </p>
+                  {activeUsers.map((u) => (
+                    <div key={u.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`owner-${u.id}`}
+                        checked={ownerIds.includes(u.id)}
+                        disabled={setOwners.isPending}
+                        onCheckedChange={(checked) => toggleOwner(u.id, checked === true)}
+                      />
+                      <Label htmlFor={`owner-${u.id}`} className="cursor-pointer">
+                        <span style={{ color: u.color }}>{u.name}</span>
+                      </Label>
+                    </div>
+                  ))}
+                  {ownerIds.length === 0 && (
+                    <p className="text-xs text-destructive">
+                      Ein Konto braucht mindestens eine:n Besitzer:in.
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!ownersChanged || ownerIds.length === 0 || setOwners.isPending}
+                    onClick={saveOwners}
+                  >
+                    Besitzer speichern
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Zugriff für andere Mitglieder</p>
+                  {members.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Keine weiteren aktiven Mitglieder im Haushalt.</p>
+                  )}
+                  {members.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between gap-3">
+                      <span className="text-sm" style={{ color: u.color }}>{u.name}</span>
+                      <Select
+                        value={permLevel(u.id)}
+                        disabled={setPermission.isPending}
+                        onValueChange={(v) =>
+                          setPermission.mutate({ accountId: account.id, userId: u.id, level: v as 'none' | 'view' | 'edit' })}
+                      >
+                        <SelectTrigger className="w-48 min-w-0 [&>span]:truncate" title={PERM_LABELS[permLevel(u.id)]}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Kein Zugriff</SelectItem>
+                          <SelectItem value="view">Ansehen</SelectItem>
+                          <SelectItem value="edit">Ansehen &amp; Bearbeiten</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

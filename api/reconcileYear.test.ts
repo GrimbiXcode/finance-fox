@@ -4,7 +4,7 @@ import { appRouter } from "./router";
 import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
 import {
-  accountPermissions, accounts, categories, transactions, users,
+  accountOwners, accountPermissions, accounts, categories, transactions, users,
 } from "@db/schema";
 import type { SessionUser, TrpcContext } from "./context";
 
@@ -41,10 +41,14 @@ async function insertAccount(
     name: `Konto ${nameCounter}`,
     type: "checking",
     initialBalance,
-    ownerId,
     createdAt: new Date(),
   }).returning({ id: accounts.id });
-  return rows[0].id;
+  const id = rows[0].id;
+  if (ownerId !== null) {
+    await getDb().insert(accountOwners)
+      .values({ accountId: id, userId: ownerId });
+  }
+  return id;
 }
 
 async function insertCategory(

@@ -62,6 +62,15 @@ export function ensureSchema() {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS account_perm_unique_idx
       ON account_permissions (account_id, user_id)`,
+    `CREATE TABLE IF NOT EXISTS account_owners (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS account_owners_unique_idx
+      ON account_owners (account_id, user_id)`,
+    `CREATE INDEX IF NOT EXISTS account_owners_account_idx
+      ON account_owners (account_id)`,
     `CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -222,6 +231,25 @@ export function ensureSchema() {
   }
   if (!accountCols.some(col => col[1] === "iban")) {
     db.run("ALTER TABLE accounts ADD COLUMN iban TEXT" as never);
+  }
+  // Migration: Konto gehört dem Ersteller — die bisherigen Einzel-Besitzer
+  // (accounts.owner_id) waren zugleich die Ersteller ihrer Privatkonten und
+  // werden in die Besitzerliste account_owners übernommen. Guardiert: nur
+  // wenn account_owners noch leer ist UND Konten mit owner_id existieren
+  // (idempotent; die Spalte owner_id selbst bleibt physisch bestehen).
+  const ownerRowCount = raw
+    .prepare("SELECT COUNT(*) FROM account_owners")
+    .raw()
+    .all()[0][0] as number;
+  const legacyOwnerCount = raw
+    .prepare("SELECT COUNT(*) FROM accounts WHERE owner_id IS NOT NULL")
+    .raw()
+    .all()[0][0] as number;
+  if (ownerRowCount === 0 && legacyOwnerCount > 0) {
+    db.run(
+      `INSERT INTO account_owners (account_id, user_id)
+       SELECT id, owner_id FROM accounts WHERE owner_id IS NOT NULL` as never
+    );
   }
   // 2FA/TOTP: Secret und Aktivierungs-Flag an Bestands-DBs nachrüsten
   const userCols = raw.prepare("PRAGMA table_info(users)").raw().all();

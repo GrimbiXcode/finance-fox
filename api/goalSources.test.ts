@@ -9,6 +9,7 @@ import {
 } from "./lib/goalProgress";
 import {
   accounts,
+  accountOwners,
   goalContributions,
   goalSources,
   recurring,
@@ -68,11 +69,15 @@ async function createAccount(
       name,
       type: "savings",
       initialBalance,
-      ownerId,
       createdAt: new Date(),
     })
     .returning({ id: accounts.id });
-  return rows[0].id;
+  const id = rows[0].id;
+  if (ownerId !== null) {
+    await getDb().insert(accountOwners)
+      .values({ accountId: id, userId: ownerId });
+  }
+  return id;
 }
 
 async function createGoalDb(

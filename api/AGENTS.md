@@ -1,0 +1,322 @@
+# api/AGENTS.md — Backend (Hono + tRPC)
+
+Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
+
+## Struktur
+
+- `boot.ts` — Einstieg (Hono); enthält auch die Admin-Binärrouten
+  `GET /api/backup` und `POST /api/backup/restore` sowie die Beleg-Routen
+  `POST/GET/DELETE /api/attachments*`. Request-Body-Limit: 50 MB.
+- `router.ts` — `appRouter: { ping, auth, finance, forecast }`. Der Frontend-
+  Client importiert den Typ `AppRouter` direkt von hier
+  (`src/providers/trpc.tsx`) — Typänderungen wirken sofort auf den Client.
+- `middleware.ts` — tRPC-Setup: `publicQuery` / `authedQuery` / `adminQuery`.
+  Alle fachlichen Endpunkte nutzen `authedQuery` (Login erforderlich);
+  Admin-only über `adminQuery`. Deutsche `TRPCError`-Meldungen.
+- `context.ts` — `TrpcContext`, Session-User aus Cookie.
+- `authRouter.ts` — Setup-Wizard, Login, Einladungen, Passwort-Reset.
+  Einladungs-/Reset-Links sind Hash-Routen (`#/einladung/<token>`,
+  `#/reset/<token>`) und landen im Server-Log (kein E-Mail-Versand).
+- `financeRouter.ts` — Konten (inkl. Besitz/Sichtbarkeit, Kontotypen,
+  Banken), Transaktionen (inkl. CSV-Export/-Import), Kategorien, Tags,
+  Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele.
+- `forecastRouter.ts` — Prognosen.
+- `lib/` — `env.ts`, `session.ts`, `migrate.ts` (`ensureSchema`),
+  `recurringJob.ts`, `accountAccess.ts`, `accountTypes.ts`, `csv.ts`,
+  `camt.ts`, `budgets.ts`, `attachments.ts`, `goalProgress.ts`, `http.ts`,
+  `vite.ts` (statische Auslieferung in Produktion), `audit.ts`, `notify.ts`,
+  `totp.ts`.
+- `queries/connection.ts` — sql.js-DB mit better-sqlite3-kompatiblem Proxy,
+  `initDb()` / `getDb()` / `markDirty()`.
+
+## Auth & 2FA
+
+- **Session**: E-Mail/Passwort (bcryptjs), HMAC-signiertes HttpOnly-Cookie
+  `hh_session` (30 Tage, `lib/session.ts`) — kein JWT-Paket.
+- **2FA/TOTP (opt-in pro Benutzer)**: RFC 6238 (SHA1, 30 s, 6 Stellen) ohne
+  Bibliothek über node:crypto in `lib/totp.ts` (Base32, `generateSecret`,
+  `totpCode`, `verifyTotp` mit ±1-Fenster, otpauth-URL).
+  `users.totpSecret`/`totpEnabled`; Endpunkte `auth.setupTotp`/`enableTotp`/
+  `disableTotp` (Deaktivieren nur mit Passwort). Bei aktiviertem TOTP liefert
+  `auth.login` kein Cookie, sondern `{requiresTotp, totpToken}` — kurzlebiger
+  `auth_tokens`-Eintrag mit purpose `totp` (5 Min., einmalig, auch falscher
+  Code verbraucht ihn); `auth.verifyTotpLogin` setzt dann das Session-Cookie.
+  `auth.me` liefert `totpEnabled`. Tests: `api/totp.test.ts`.
+
+## Konten-Sichtbarkeit & Rechte
+
+- Besitzerliste in der Tabelle `account_owners` (accountId, userId; 1..n
+  Besitzer mit gleichen Rechten). Keine Zeilen = Gemeinschaftskonto (alle
+  dürfen lesen/bearbeiten), sonst privat (Besitzer + Freigaben aus
+  `account_permissions`, Admins nur lesend). Die alte Spalte
+  `accounts.owner_id` bleibt physisch bestehen, wird aber nicht mehr gelesen —
+  `ensureSchema` migriert sie einmalig guardiert nach `account_owners`
+  (Konto gehört dem Ersteller; nur wenn `account_owners` leer ist UND Konten
+  mit `owner_id` existieren).
+- Zugriffsprüfung immer serverseitig über die Helper in
+  `lib/accountAccess.ts` (`accessLevelFor`, `ownerIdsOf`,
+  `requireAccountAccess`, `visibleAccountIds`) — nicht nur im Frontend
+  ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen) sind pro
+  anfragendem Nutzer gefiltert.
+- `finance.listAccounts` liefert pro Konto `owners: number[]`; die
+  Besitzerliste ersetzt `finance.setAccountOwners` komplett (mindestens 1
+  Besitzer, nur Besitzer oder Admin, Selbstentfernung erlaubt; Freigaben
+  neuer Besitzer werden entfernt). Tests: `api/accountAccess.test.ts`,
+  `api/accountOwners.test.ts`.
+- **Kontotypen**: `accounts.type` speichert den KEY aus der Tabelle
+  `account_types` — Builtin-Keys `checking`/`cash`/`savings` (in
+  `ensureSchema` per INSERT OR IGNORE geseedet, nicht löschbar) plus
+  benutzerdefinierte Typen (`custom_<zufalls-id>`). Neue Typen/Banken werden
+  im Konto-Dialog angelegt (`finance.createAccountType`/`createBank`),
+  verwaltet in den Einstellungen; Löschen nur, wenn nicht mehr verwendet.
+  Konten haben optional `bankId` (Tabelle `banks`) und `iban` (normalisiert:
+  ohne Leerzeichen, Großbuchstaben — Validierung in `lib/accountTypes.ts`).
+- **Kontoabgleich**: `finance.reconcileAccount` bucht die Differenz zwischen
+  Ist- und berechnetem Soll-Saldo (Logik wie `listAccounts`) als
+  Korrekturbuchung ohne Kategorie (Einnahme/Ausgabe, erfordert `edit`); bei
+  Differenz 0 wird nichts gebucht.
+- **Saldo-Verlauf**: `finance.accountBalanceHistory` (erfordert `view`)
+  liefert pro Konto eine sparsame Punkteserie `[{date, balance}]`:
+  Startpunkt (Zeitraum-Beginn mit Saldo aus allen früheren Buchungen), jeder
+  Tag mit Saldo-Änderung, Endpunkt heute — Vorzeichenlogik wie
+  `listAccounts`; zukünftige Buchungen bleiben außen vor. Input `months`
+  (3/6/12, Default 12; 0 = komplette Historie ab erster Buchung). Tests:
+  `api/balanceHistory.test.ts`.
+
+## Transaktionen
+
+- **CSV-Import/-Export**: Format in `lib/csv.ts` (für de-Locales Semikolon +
+  Dezimalkomma, sonst Komma + Dezimalpunkt, RFC-4180-Quoting; der Import
+  erkennt das Trennzeichen automatisch). Kategorien werden rein per Name
+  gematcht — bei Namensgleichheit gewinnt die erste passende Kategorie.
+- **CAMT.053-Import**: `finance.importCamt` importiert ISO-20022-XML-
+  Kontoauszüge (max 10 MB, `edit`-Recht nötig) auf ein Konto — Gutschriften
+  als Einnahmen, Belastungen als Ausgaben (ohne Kategorie), Notiz aus
+  Gegenpartei + Verwendungszweck. Dubletten-Schutz über die Kombination
+  Konto/Datum/Betrag/Notiz; Rückgabe `{imported, duplicates, errors}` analog
+  zum CSV-Import. Parser in `lib/camt.ts` (stringbasiert,
+  namespace-agnostisch, ohne XML-Bibliothek).
+- **Bearbeiten (Änderungshistorie)**: `finance.updateTransaction` nimmt
+  partielle Updates entgegen (undefined = unverändert, bei
+  categoryId/toAccountId/projectId zusätzlich null = entfernen; Splits/Tags
+  werden ersetzt, wenn mitgegeben). Die Buchungsart **type ist
+  unveränderlich** (dafür löschen + neu anlegen) und nicht Teil des Inputs.
+  Rechte: `edit` auf dem aktuellen Konto, beim Verschieben (accountId-
+  Wechsel) zusätzlich `edit` auf dem Zielkonto; Validierung wie
+  `createTransaction` (Splits-Summe = Betrag, Kategorie/Projekt/Tags
+  existieren, Zielkonto ≠ Quellkonto), Budget-Kipp-Prüfung analog. Jede echte
+  Änderung landet als Eintrag in `transaction_changes` (transactionId,
+  userId, comment Default '', changes = JSON-Text `[{field, from, to}]` —
+  serverseitiges Feld-Diff mit aufgelösten Namen, Beträge in Cent); ohne
+  Änderung kein Eintrag (ein Kommentar allein erzeugt keinen). Audit
+  `transaction.updated` nur bei echter Änderung. Lesen über
+  `finance.listTransactionChanges` (`view`-Recht, absteigend,
+  userName/userColor-Join); `listTransactions` liefert pro Buchung
+  `changeCount` (batched). Kaskaden räumen `transaction_changes` ab. Tests:
+  `api/transactionEdit.test.ts`.
+- **Stornieren**: `transactions.stornoOfId` (die Storno-Buchung zeigt aufs
+  Original; guardiertes ALTER in `ensureSchema`).
+  `finance.reverseTransaction` ({id, note?}, `edit` aufs Buchungskonto) legt
+  eine Gegenbuchung mit heutigem Datum an: Ausgabe ↔ Einnahme getauscht,
+  Umbuchung mit getauschten Konten; Betrag/Kategorie/Projekt/Person/Splits
+  wie im Original, Notiz = note-Input oder „Storno: <Originalnotiz>". Guards:
+  bereits storniert bzw. Storno-Buchung selbst → CONFLICT. Original und
+  Gegenbuchung bleiben sichtbar (Badges „Storniert"/„Storno"). Damit sich die
+  Aufteilungs-Wirkung exakt aufhebt, zählen in `memberBalances`
+  (`src/lib/finance.ts`) Einnahmen MIT Splits umgekehrt wie Ausgaben. Audit
+  `transaction.reversed`. Tests: `api/transactionReverse.test.ts`.
+
+## Dauerbuchungen (recurring)
+
+- **Umbuchungen**: `recurring.type` kann auch `transfer` sein (Dauerauftrag
+  zwischen Konten) — dann ist `recurring.to_account_id` gesetzt (Pflicht, ≠
+  `account_id`, Kategorie irrelevant). Rechte wie bei Buchungen: `edit` aufs
+  Quellkonto, mindestens `view` aufs Zielkonto; Sichtbarkeit in
+  `listRecurring`/Prognose, wenn Quell- ODER Zielkonto sichtbar ist. In der
+  Saldo-Prognose sind Transfers zwischen zwei sichtbaren Konten neutral, bei
+  nur einer sichtbaren Seite wirken sie als Ab-/Zufluss (nicht in
+  `recurringIncome`/`recurringExpense`). Tests: `api/recurringTransfer.test.ts`.
+- **Bearbeiten**: `finance.updateRecurring` nimmt partielle Updates entgegen
+  (undefined = unverändert, bei categoryId zusätzlich null = entfernen); die
+  Art **type ist unveränderlich**. Validierung wie `createRecurring`, Rechte:
+  `edit` auf dem aktuellen Konto, bei Konto-Wechsel `edit` aufs neue, bei
+  Transfer-Zielwechsel `view` aufs Ziel; der Cron-Job verbucht ab dem neuen
+  `nextDate`. Audit `recurring.updated`. Tests: `api/recurringEdit.test.ts`.
+- **Enddatum**: `recurring.endDate` (TEXT, nullable, YYYY-MM-DD) = letztes
+  verbuchtes Vorkommen, NULL = kein Ende. `createRecurring`/`updateRecurring`
+  nehmen `endDate` optional entgegen (Update: null = entfernen) und verlangen
+  endDate ≥ wirksame `nextDate` (BAD_REQUEST). Der Cron-Job
+  (`lib/recurringJob.ts`) verbucht nur Vorkommen ≤ endDate; `nextDate` bleibt
+  danach auf dem ersten Vorkommen jenseits des Enddatums stehen. Ablauf
+  (endDate < heute) = „archiviert". Logik in `src/lib/recurring.ts`
+  (`isRecurringArchived`, `sortRecurring`). Tests:
+  `api/recurringEndDate.test.ts`.
+
+## Kategorien & Budgets
+
+- **Hierarchie**: `categories.parentId` NULL = Oberkategorie, sonst Verweis
+  auf die Oberkategorie — genau EINE Ebene (Unterkategorien dürfen keine
+  Kinder haben, geprüft in `finance.createCategory`). Unterkategorien erben
+  Typ und Farbe der Oberkategorie; Oberkategorien mit Kindern können nicht
+  gelöscht werden (CONFLICT). `listCategories` bleibt flach, das Frontend
+  baut den Baum selbst.
+- **Bearbeiten**: `finance.updateCategory` ({id, name, color, parentId?})
+  ändert Name/Farbe/Einordnung — der Typ ist unveränderlich. parentId:
+  undefined = unverändert, null = zur Oberkategorie machen, Zahl = unter
+  diese Oberkategorie hängen (Verschieben/Hochstufen nur ohne eigene
+  Unterkategorien, sonst CONFLICT). Namens-Duplikate (case-insensitiv, andere
+  ID) → CONFLICT; beim Verschieben erbt die Kategorie die Farbe der neuen
+  Oberkategorie. Audit `category.updated`. Tests: `api/categoryEdit.test.ts`.
+- **Budgets**: `budgets.period` = `monthly` (Kalendermonat) oder `yearly`
+  (Kalenderjahr), `budgets.rollover` (nur bei monthly) überträgt
+  unverbrauchtes Budget in Folgemonate, `budgets.createdAt` ist der
+  Rollover-Anker (NULL bei Bestandsbudgets = 1. Januar des laufenden Jahres).
+  Effektives Limit = amount × Monate-seit-Anker − Ausgaben der abgelaufenen
+  Monate seit Anker, mindestens 0. Auswertung zentral in `lib/budgets.ts`
+  (`computeBudgetStatuses`) — Ausgaben einer Budget-Kategorie inkl. aller
+  Unterkategorien, mit Sichtbarkeitsfilter; genutzt von
+  `finance.listBudgetStatus` und `forecast.budgetForecast`.
+
+## Splits, Projekte, Tags
+
+- **Aufteilungsvorlagen**: Tabelle `split_templates` (Name unique, `shares`
+  als JSON-Text `[{userId, weight}]`, Gewichte positiv, userIds validiert).
+  Endpunkte `finance.listSplitTemplates`/`createSplitTemplate`/
+  `deleteSplitTemplate`. Die gewichtete Verteilung rechnet
+  `sharesFromWeights` in `contracts/splitShares.ts` (Rundung auf Cent,
+  Restdifferenz auf dem ersten Anteil) — geteilt zwischen Frontend und Tests.
+- **Projekte (Kostenaufteilung)**: Tabelle `projects` (Name unique, Farbe);
+  `transactions.projectId` NULL = laufender Haushalt, sonst Projekt-Buchung
+  (z. B. Urlaub). Endpunkte `finance.listProjects`/`createProject`/
+  `deleteProject` — Löschen gesperrt (CONFLICT mit Anzahl), solange Buchungen
+  referenzieren. `createTransaction` nimmt optional `projectId` (Existenz
+  wird geprüft). Tests: `api/projectsSplits.test.ts`.
+- **Tags/Labels**: Tabellen `tags` (Name unique, Farbe) und
+  `transaction_tags` (Unique-Index (transactionId, tagId)) — mehrere Tags pro
+  Buchung, haushaltsweit (keine Konto-Bindung, keine Sichtbarkeitslogik; die
+  Buchungsfilter über die Kontorechte greifen wie bisher). Endpunkte
+  `finance.listTags`/`createTag` (Name getrimmt, Duplikat case-insensitiv
+  CONFLICT; Farbe automatisch = am seltensten verwendete Farbe der Palette
+  `TAG_COLORS` in `contracts/types.ts`)/`deleteTag` (löst Zuordnungen still
+  mit auf — bewusst KEIN CONFLICT)/`setTransactionTags` (Ersetzen-Semantik,
+  erfordert `edit` auf dem Buchungskonto). `createTransaction` nimmt optional
+  `tagIds`, `listTransactions` liefert pro Buchung `tags` gebatcht. Kaskaden:
+  deleteTransaction/deleteAccount/resetFinanceData räumen `transaction_tags`
+  ab (Reset löscht auch die Tags selbst). Audit: `tag.created`/`tag.deleted`/
+  `transaction.tags`. Tests: `api/tags.test.ts`.
+
+## Sparziele
+
+- **Quellen (Sparziele 2.0)**: Tabelle `goal_sources` (goalId, accountId,
+  mode `full`/`absolute`/`percent`, value NULL bzw. Cent > 0 bzw. 1–100,
+  createdAt) — max. EINE Quelle pro Konto und Ziel (Duplikat → CONFLICT).
+  Fortschrittsformel pro Quelle (Saldo wie `listAccounts`): full
+  `max(0, saldo)`, absolute `min(value, max(0, saldo))`, percent
+  `round(max(0, saldo) × value / 100)`; Gesamt = Σ sichtbarer Quellen +
+  `savedAmount` + Σ Beiträge (Alt-Bestand „Manuell (Bestand)"). Zentrale
+  Logik in `lib/goalProgress.ts` (`accountBalances`,
+  `computeGoalProgress(db, user | null, goal)` — `user null` = ungefilterte
+  Systemperspektive für Benachrichtigungen, sonst nur Quellen mit sichtbarem
+  Konto, `hasHiddenSources` ohne Betrags-/Namens-Leak); geteilt von
+  `finance.listGoals` (liefert `totalSaved`, `percent`, `sources[]`,
+  `hasHiddenSources`), `forecast.goalForecast` und den Meilenstein-
+  Benachrichtigungen. Endpunkte `finance.addGoalSource` (Ziel existiert,
+  `view` aufs Konto, Modus-Validierung, Meilenstein-Vergleich) /
+  `deleteGoalSource` (`view` aufs verknüpfte Konto). **Gesperrt**:
+  `updateGoalSaved` und `addGoalContribution` → BAD_REQUEST („Manuelle
+  Einzahlungen sind nicht mehr möglich — verknüpfe das Sparziel mit einem
+  Konto."); `listGoalContributions` bleibt für den Bestand lesbar.
+  `forecast.goalForecast` simuliert pro Ziel monatlich (max. 120 Monate) die
+  Salden der verknüpften Konten mit den wiederkehrenden Buchungen (Vorgehen
+  wie `forecast.balance` inkl. Sichtbarkeitsfilter): ETA = erster Monat mit
+  Fortschritt ≥ Ziel (sonst null), `monthlyRate` = Ø Fortschrittsänderung
+  der nächsten 3 simulierten Monate. Kaskaden: `deleteGoal`,
+  `deleteAccount` und `resetFinanceData` löschen Quellen mit. Tests:
+  `api/goalSources.test.ts`.
+- **Anteils-Exklusivität**: ein Kontobetrag darf nicht doppelt verplant
+  werden — die Summe der Verpflichtungen (commitment: full → max(0, Saldo),
+  absolute → value ungekappt, percent → round(max(0, Saldo) × value/100))
+  aller `goal_sources` eines Kontos (zielübergreifend) darf max(0, Saldo)
+  nicht übersteigen; full ist zusätzlich exklusiv (nur auf quellenfreien
+  Konten, blockiert jede weitere Quelle). Logik: `commitmentOf`/
+  `availableForAccount` in `lib/goalProgress.ts`; geprüft in
+  `finance.addGoalSource` (CONFLICT bei full-Konflikt, sonst BAD_REQUEST „Nur
+  noch X verfügbar"), lesbar über `finance.goalSourceAvailability`
+  ({accountId}, view-Recht). Nachträgliche Saldoänderungen können die Summe
+  über den Saldo heben — gewollt, die Kappung in `sourceAmount` greift dann
+  in der Fortschrittsanzeige.
+- **Offene Sparziele (ohne Zielbetrag)**: `savings_goals.target_amount` ist
+  nullable — NULL = offenes Ziel, der Fortschritt zeigt dann nur den
+  angesparten Betrag. `createGoal`/`updateGoal` nehmen `targetAmount` nullish
+  entgegen (gesetzt weiterhin positiv); `listGoals` liefert `percent: null`,
+  Meilenstein-Benachrichtigungen und ETA/remaining in `forecast.goalForecast`
+  entfallen (Guards an den computeGoalProgress-Aufrufern bzw. in
+  `notifyGoalMilestones`). Bestands-DBs: guardierte Tabellen-Neuerstellung in
+  `ensureSchema` (PRAGMA notnull-Flag, NOT NULL lässt sich per ALTER nicht
+  entfernen). Tests: `api/openGoals.test.ts`.
+- **Beiträge (Alt-Bestand)**: Tabelle `goal_contributions` (goalId, userId,
+  amount in Cent positiv, note, createdAt) — seit Sparziele 2.0
+  schreibgeschützt; zählt zusammen mit `savings_goals.savedAmount` als
+  Herkunft „Manuell (Bestand)" in den Fortschritt. Lesen über
+  `finance.listGoalContributions` (mit Name/Farbe des Zahlers), Löschen
+  weiterhin via `deleteGoalContribution` (nur eigener Beitrag oder Admin).
+  `deleteGoal` und `resetFinanceData` löschen Beiträge kaskadierend mit.
+
+## Prognosen & Auswertungen
+
+- **Szenario-Planung**: `forecast.balance` nimmt optional `incomePct`
+  (Skalierung der wiederkehrenden Einnahmen in %, 100 = unverändert, 50–200)
+  und `excludeCategoryId` entgegen. Das Szenario wirkt NUR auf zukünftige
+  wiederkehrende Größen: Einnahmen werden skaliert, wiederkehrende Ausgaben
+  der gewählten Oberkategorie inkl. Unterkategorien entfallen; Historie,
+  Ist-Buchungen und variable Durchschnitte bleiben unverändert. Die Antwort
+  enthält die wirksamen Parameter im Feld `scenario`. Tests:
+  `api/scenario.test.ts`.
+- **Jahresvergleich**: `finance.yearComparison` liefert pro Ausgaben-
+  Oberkategorie (Unterkategorien aufgerollt, Sichtbarkeitsfilter) die Summen
+  von Jahr und Vorjahr; Ausgaben ohne Kategorie als Zeile `categoryId: null`.
+  Tests: `api/reconcileYear.test.ts`.
+
+## Benachrichtigungen & Audit-Log
+
+- **Benachrichtigungen (opt-in)**: Versand via ntfy und/oder generischem
+  Webhook, zentral `sendNotification` in `lib/notify.ts` (Konfiguration in
+  `app_settings`: `notify_ntfy_url`, `notify_webhook_url`, `notify_events` —
+  Admin-Endpunkte `finance.getNotifySettings`/`setNotifySettings`/
+  `sendTestNotification`). Nur http/https-URLs; Versandfehler werden nur
+  geloggt, nie den Hauptflow brechen. Trigger: Budget-Kipppunkt >100 % in
+  `finance.createTransaction`, Sammelmeldung am Ende von `runRecurringJob`,
+  Sparziel-Meilensteine (25/50/75/100 %, ungefilterter Haushalts-
+  Gesamtfortschritt vor/nach) in `finance.createTransaction` (Buchung auf
+  einem ziel-verknüpften Konto) und `finance.addGoalSource`. Tests:
+  `api/notify.test.ts`.
+- **Aktivitäts-/Audit-Log**: Tabelle `audit_log` (userId NULL = System bzw.
+  Vorgänge vor dem Login, action nach Konvention `<entity>.<verb>` wie
+  `transaction.created`, entity, entityId, kurzes deutsches Detail — niemals
+  Passwörter/Codes/Tokens). Schreiben über `logAudit` aus `lib/audit.ts`
+  (best effort, fängt Fehler intern ab; akzeptiert db- wie tx-Handle, damit
+  der Eintrag im selben Transaktionskontext landet). Instrumentiert sind die
+  fachlichen Mutationen in `financeRouter.ts` und `authRouter.ts` (Login
+  Erfolg/Fehlschlag, Logout, TOTP, Benutzer-Verwaltung, Profil, Passwort).
+  Lesen für alle Mitglieder über `finance.listAuditLog` (neueste zuerst,
+  Limit max 500, optionaler entity-Filter, userName/userColor gejoint).
+  Tests: `api/auditLog.test.ts`.
+
+## Beleg-Anhänge
+
+Metadaten in `transaction_attachments`, Dateien mit UUID-Dateinamen im
+Verzeichnis `ATTACHMENTS_DIR` (Default: `<DB-Verzeichnis>/attachments`, bei
+In-Memory-DB `./data/attachments`). Upload/Download/Löschen über die
+Hono-Routen in `boot.ts` mit Konto-Rechten (`edit` für Upload/Löschen, `view`
+für Download — via `requireAccountAccess`); erlaubt sind Bilder
+(JPEG/PNG/WebP/GIF) und PDF bis 10 MB. Kaskaden (deleteTransaction,
+deleteAccount, resetFinanceData) löschen Zeilen UND Dateien über
+`deleteAttachmentsForTransactions` aus `lib/attachments.ts`. Tests:
+`api/attachments.test.ts`.
+
+## Währung & App-Einstellungen
+
+Haushaltsweite Währung in `app_settings` (Key `currency`, ISO-4217-Code,
+Default `EUR`); Änderung nur durch Admins (`finance.setCurrency`). Die 20
+unterstützten Währungen stehen in `contracts/types.ts` (`CURRENCIES`).
+Tests: `api/appSettings.test.ts`.

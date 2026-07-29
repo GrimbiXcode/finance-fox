@@ -6,9 +6,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
@@ -96,14 +94,12 @@ function CamtImportForm({ close }: { close: () => void }) {
           </div>
           <div className="space-y-2">
             <Label>Zielkonto</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
-              <SelectContent>
-                {editableAccounts.map((a) => (
-                  <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={accountId}
+              onValueChange={setAccountId}
+              placeholder="Konto wählen"
+              options={editableAccounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+            />
             {editableAccounts.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 Du hast auf kein Konto Schreibzugriff.

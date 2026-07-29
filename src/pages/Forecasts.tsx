@@ -11,6 +11,7 @@ import { Slider } from '@/components/ui/slider';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { trpc } from '@/providers/trpc';
 import { currencySymbol, formatCents, formatMonth, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
@@ -91,7 +92,9 @@ export default function Forecasts() {
           </p>
         </div>
         <Select value={months} onValueChange={setMonths}>
-          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-44 min-w-0 [&>span]:truncate" title={`${months} Monate voraus`}>
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="6">6 Monate voraus</SelectItem>
             <SelectItem value="12">12 Monate voraus</SelectItem>
@@ -135,15 +138,15 @@ export default function Forecasts() {
             </div>
             <div className="space-y-2">
               <span className="text-sm text-muted-foreground">Ausgabenkategorie weglassen</span>
-              <Select value={excludeCat} onValueChange={setExcludeCat}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Keine</SelectItem>
-                  {rootExpenseCats.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* Sentinel „none" = keine Kategorie auslassen */}
+              <SearchableSelect
+                value={excludeCat}
+                onValueChange={setExcludeCat}
+                options={[
+                  { value: 'none', label: 'Keine' },
+                  ...rootExpenseCats.map((c) => ({ value: String(c.id), label: c.name })),
+                ]}
+              />
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

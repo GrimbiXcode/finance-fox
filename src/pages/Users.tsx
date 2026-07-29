@@ -107,7 +107,12 @@ export default function UsersPage() {
                   <div className="space-y-2">
                     <Label>Rolle</Label>
                     <Select value={role} onValueChange={(v) => setRole(v as 'admin' | 'member')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger
+                        className="w-full min-w-0 [&>span]:truncate"
+                        title={role === 'admin' ? 'Administrator' : 'Mitglied'}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="member">Mitglied</SelectItem>
                         <SelectItem value="admin">Administrator</SelectItem>

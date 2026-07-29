@@ -47,6 +47,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { Switch } from "@/components/ui/switch";
 import { CURRENCIES, type CurrencyCode } from "@contracts/types";
 import { useAuth } from "@/providers/auth";
@@ -242,23 +243,16 @@ function CategoryEditDialog({
         </div>
         <div className="space-y-2">
           <Label>Oberkategorie</Label>
-          <Select
+          {/* Sentinel „none" = Oberkategorie bleiben/werden (intern leerer String) */}
+          <SearchableSelect
             value={parent || "none"}
             onValueChange={v => setParent(v === "none" ? "" : v)}
             disabled={hasChildren}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Keine (Oberkategorie)</SelectItem>
-              {roots.map(r => (
-                <SelectItem key={r.id} value={String(r.id)}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={[
+              { value: "none", label: "Keine (Oberkategorie)" },
+              ...roots.map(r => ({ value: String(r.id), label: r.name })),
+            ]}
+          />
           {hasChildren && (
             <p className="text-xs text-muted-foreground">
               Kategorien mit Unterkategorien können nicht verschoben werden.
@@ -664,7 +658,10 @@ export default function Settings() {
             onValueChange={v => setCurrencyChoice(v as CurrencyCode)}
             disabled={user?.role !== "admin"}
           >
-            <SelectTrigger className="w-64">
+            <SelectTrigger
+              className="w-64 min-w-0 [&>span]:truncate"
+              title={`${currency} — ${CURRENCIES.find(c => c.code === currency)?.name ?? ""}`}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -968,7 +965,7 @@ export default function Settings() {
               value={catName}
               onChange={e => setCatName(e.target.value)}
             />
-            <Select
+            <SearchableSelect
               value={catParent || "none"}
               onValueChange={v => {
                 const parentId = v === "none" ? "" : v;
@@ -977,25 +974,24 @@ export default function Settings() {
                 const parent = catRoots.find(c => String(c.id) === parentId);
                 if (parent) setCatType(parent.type);
               }}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Oberkategorie</SelectItem>
-                {catRoots.map(c => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    Unter: {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              className="w-48"
+              options={[
+                { value: "none", label: "Oberkategorie" },
+                ...catRoots.map(c => ({
+                  value: String(c.id),
+                  label: `Unter: ${c.name}`,
+                })),
+              ]}
+            />
             <Select
               value={catType}
               onValueChange={v => setCatType(v as "income" | "expense")}
               disabled={catParent !== ""}
             >
-              <SelectTrigger className="w-32">
+              <SelectTrigger
+                className="w-32 min-w-0 [&>span]:truncate"
+                title={catType === "expense" ? "Ausgabe" : "Einnahme"}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1296,7 +1292,16 @@ export default function Settings() {
               <History className="h-5 w-5" /> Aktivitäten
             </CardTitle>
             <Select value={auditFilter} onValueChange={setAuditFilter}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger
+                className="w-44 min-w-0 [&>span]:truncate"
+                title={
+                  auditFilter === "all"
+                    ? "Alle Bereiche"
+                    : auditFilter === "system"
+                      ? "System"
+                      : (AUDIT_ENTITY_GROUPS.find(([key]) => key === auditFilter)?.[1] ?? auditFilter)
+                }
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

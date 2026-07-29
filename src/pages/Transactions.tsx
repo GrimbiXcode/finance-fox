@@ -12,6 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from '@/components/ui/popover';
@@ -146,7 +147,12 @@ export default function Transactions() {
               <Input placeholder="Suchen…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Typ" /></SelectTrigger>
+              <SelectTrigger
+                className="w-full min-w-0 [&>span]:truncate"
+                title={{ all: 'Alle Typen', income: 'Einnahmen', expense: 'Ausgaben', transfer: 'Umbuchungen' }[typeFilter]}
+              >
+                <SelectValue placeholder="Typ" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Alle Typen</SelectItem>
                 <SelectItem value="income">Einnahmen</SelectItem>
@@ -154,34 +160,42 @@ export default function Transactions() {
                 <SelectItem value="transfer">Umbuchungen</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={accountFilter} onValueChange={setAccountFilter}>
-              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Konto" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Konten</SelectItem>
-                {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Kategorie" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Kategorien</SelectItem>
-                {categories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={userFilter} onValueChange={setUserFilter}>
-              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Person" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Personen</SelectItem>
-                {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={tagFilter} onValueChange={setTagFilter}>
-              <SelectTrigger className="w-full min-w-0 [&>span]:truncate"><SelectValue placeholder="Tag" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Tags</SelectItem>
-                {tags.map((tag) => <SelectItem key={tag.id} value={String(tag.id)}>{tag.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={accountFilter}
+              onValueChange={setAccountFilter}
+              placeholder="Konto"
+              options={[
+                { value: 'all', label: 'Alle Konten' },
+                ...accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) })),
+              ]}
+            />
+            <SearchableSelect
+              value={categoryFilter}
+              onValueChange={setCategoryFilter}
+              placeholder="Kategorie"
+              options={[
+                { value: 'all', label: 'Alle Kategorien' },
+                ...categories.map((c) => ({ value: String(c.id), label: c.name })),
+              ]}
+            />
+            <SearchableSelect
+              value={userFilter}
+              onValueChange={setUserFilter}
+              placeholder="Person"
+              options={[
+                { value: 'all', label: 'Alle Personen' },
+                ...users.map((u) => ({ value: String(u.id), label: u.name })),
+              ]}
+            />
+            <SearchableSelect
+              value={tagFilter}
+              onValueChange={setTagFilter}
+              placeholder="Tag"
+              options={[
+                { value: 'all', label: 'Alle Tags' },
+                ...tags.map((tag) => ({ value: String(tag.id), label: tag.name })),
+              ]}
+            />
           </div>
         </CardContent>
       </Card>

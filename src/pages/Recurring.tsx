@@ -17,6 +17,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
@@ -133,7 +134,9 @@ function RecurringForm({
           <div className="space-y-2">
             <Label>Intervall</Label>
             <Select value={values.interval} onValueChange={(v) => set('interval', v as Interval)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full min-w-0 [&>span]:truncate" title={intervalLabel[values.interval]}>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {Object.entries(intervalLabel).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}
               </SelectContent>
@@ -143,54 +146,53 @@ function RecurringForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>{values.type === 'transfer' ? 'Von Konto' : 'Konto'}</Label>
-            <Select value={values.accountId} onValueChange={(v) => set('accountId', v)}>
-              <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={values.accountId}
+              onValueChange={(v) => set('accountId', v)}
+              placeholder="Konto wählen"
+              options={accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+            />
           </div>
           {values.type === 'transfer' ? (
             <div className="space-y-2">
               <Label>Nach Konto</Label>
-              <Select value={values.toAccountId} onValueChange={(v) => set('toAccountId', v)}>
-                <SelectTrigger><SelectValue placeholder="Zielkonto" /></SelectTrigger>
-                <SelectContent>
-                  {accounts.filter((a) => String(a.id) !== values.accountId).map((a) => (
-                    <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={values.toAccountId}
+                onValueChange={(v) => set('toAccountId', v)}
+                placeholder="Zielkonto"
+                options={accounts
+                  .filter((a) => String(a.id) !== values.accountId)
+                  .map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+              />
             </div>
           ) : (
             <div className="space-y-2">
               <Label>Kategorie</Label>
-              {/* Sentinel „none" statt leerem String — Radix Select erlaubt keinen leeren value;
-                  intern bleibt „keine Kategorie" der leere String (submit mappt auf undefined/null) */}
-              <Select
+              {/* Sentinel „none" statt leerem String — intern bleibt „keine
+                  Kategorie" der leere String (submit mappt auf undefined/null) */}
+              <SearchableSelect
                 value={values.categoryId || 'none'}
                 onValueChange={(v) => set('categoryId', v === 'none' ? '' : v)}
-              >
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Keine Kategorie</SelectItem>
-                  {categories.filter((c) => c.type === values.type).map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Optional"
+                options={[
+                  { value: 'none', label: 'Keine Kategorie' },
+                  ...categories
+                    .filter((c) => c.type === values.type)
+                    .map((c) => ({ value: String(c.id), label: c.name })),
+                ]}
+              />
             </div>
           )}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Person</Label>
-            <Select value={values.userId} onValueChange={(v) => set('userId', v)}>
-              <SelectTrigger><SelectValue placeholder={user?.name} /></SelectTrigger>
-              <SelectContent>
-                {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={values.userId}
+              onValueChange={(v) => set('userId', v)}
+              placeholder={user?.name}
+              options={users.map((u) => ({ value: String(u.id), label: u.name }))}
+            />
           </div>
           <div className="space-y-2">
             <Label>Nächste Fälligkeit</Label>
@@ -408,7 +410,12 @@ export default function Recurring() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-40 min-w-0 [&>span]:truncate"><SelectValue placeholder="Typ" /></SelectTrigger>
+          <SelectTrigger
+            className="w-40 min-w-0 [&>span]:truncate"
+            title={{ all: 'Alle Typen', expense: 'Ausgaben', income: 'Einnahmen', transfer: 'Umbuchungen' }[typeFilter]}
+          >
+            <SelectValue placeholder="Typ" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle Typen</SelectItem>
             <SelectItem value="expense">Ausgaben</SelectItem>
@@ -416,15 +423,23 @@ export default function Recurring() {
             <SelectItem value="transfer">Umbuchungen</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={accountFilter} onValueChange={setAccountFilter}>
-          <SelectTrigger className="w-44 min-w-0 [&>span]:truncate"><SelectValue placeholder="Konto" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle Konten</SelectItem>
-            {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={accountFilter}
+          onValueChange={setAccountFilter}
+          placeholder="Konto"
+          className="w-44"
+          options={[
+            { value: 'all', label: 'Alle Konten' },
+            ...accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) })),
+          ]}
+        />
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-36 min-w-0 [&>span]:truncate"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger
+            className="w-36 min-w-0 [&>span]:truncate"
+            title={{ all: 'Alle Status', active: 'Aktiv', paused: 'Pausiert', archived: 'Archiviert' }[statusFilter]}
+          >
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle Status</SelectItem>
             <SelectItem value="active">Aktiv</SelectItem>
@@ -432,13 +447,16 @@ export default function Recurring() {
             <SelectItem value="archived">Archiviert</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={userFilter} onValueChange={setUserFilter}>
-          <SelectTrigger className="w-40 min-w-0 [&>span]:truncate"><SelectValue placeholder="Person" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle Personen</SelectItem>
-            {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={userFilter}
+          onValueChange={setUserFilter}
+          placeholder="Person"
+          className="w-40"
+          options={[
+            { value: 'all', label: 'Alle Personen' },
+            ...users.map((u) => ({ value: String(u.id), label: u.name })),
+          ]}
+        />
         <span className="text-sm text-muted-foreground">
           {filtered.length} von {recurring.length} Dauerbuchungen
         </span>

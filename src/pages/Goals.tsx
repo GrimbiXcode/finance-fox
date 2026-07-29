@@ -12,6 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { amountPlaceholder, currencySymbol, formatCents, formatDate, formatMonth, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
@@ -264,14 +265,15 @@ function GoalCard({ goal, accounts, banks, forecast }: {
                 <div className="grid gap-4 py-2">
                   <div className="space-y-2">
                     <Label>Konto</Label>
-                    <Select value={linkAccount} onValueChange={setLinkAccount}>
-                      <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
-                      <SelectContent>
-                        {linkableAccounts.map((a) => (
-                          <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={linkAccount}
+                      onValueChange={setLinkAccount}
+                      placeholder="Konto wählen"
+                      options={linkableAccounts.map((a) => ({
+                        value: String(a.id),
+                        label: accountLabel(a, banks),
+                      }))}
+                    />
                     {linkableAccounts.length === 0 && (
                       <p className="text-xs text-muted-foreground">
                         Alle sichtbaren Konten sind bereits verknüpft.
@@ -292,7 +294,12 @@ function GoalCard({ goal, accounts, banks, forecast }: {
                   <div className="space-y-2">
                     <Label>Modus</Label>
                     <Select value={linkMode} onValueChange={(v) => setLinkMode(v as typeof linkMode)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger
+                        className="w-full min-w-0 [&>span]:truncate"
+                        title={{ full: 'Ganzes Konto', absolute: 'Absoluter Betrag', percent: 'Prozent vom Saldo' }[linkMode]}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="full">Ganzes Konto</SelectItem>
                         <SelectItem value="absolute">Absoluter Betrag</SelectItem>

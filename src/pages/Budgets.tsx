@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { amountPlaceholder, currencySymbol, formatCents, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
@@ -78,23 +79,27 @@ export default function Budgets() {
             <div className="grid gap-4 py-2">
               <div className="space-y-2">
                 <Label>Kategorie</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger><SelectValue placeholder="Kategorie wählen" /></SelectTrigger>
-                  <SelectContent>
-                    {groupedCategories.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.parentId ? `\u00A0\u00A0${c.name}` : c.name}
-                        {usedCategoryIds.has(c.id) ? ' (überschreiben)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={categoryId}
+                  onValueChange={setCategoryId}
+                  placeholder="Kategorie wählen"
+                  options={groupedCategories.map((c) => ({
+                    value: String(c.id),
+                    // Unterkategorien eingerückt; Suffix bei bestehendem Budget
+                    label: `${c.parentId ? '\u00A0\u00A0' : ''}${c.name}${usedCategoryIds.has(c.id) ? ' (überschreiben)' : ''}`,
+                  }))}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Zeitraum</Label>
                   <Select value={period} onValueChange={(v) => setPeriod(v as 'monthly' | 'yearly')}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger
+                      className="w-full min-w-0 [&>span]:truncate"
+                      title={period === 'monthly' ? 'Monat' : 'Jahr'}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="monthly">Monat</SelectItem>
                       <SelectItem value="yearly">Jahr</SelectItem>

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
@@ -426,52 +427,53 @@ export default function TransactionDialog({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Von Konto</Label>
-                <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
-                  <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={String(effectiveAccountId || '')}
+                  onValueChange={setAccountId}
+                  placeholder="Konto wählen"
+                  options={accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Nach Konto</Label>
-                <Select value={String(effectiveToAccountId || '')} onValueChange={setToAccountId}>
-                  <SelectTrigger><SelectValue placeholder="Zielkonto" /></SelectTrigger>
-                  <SelectContent>
-                    {accounts.filter((a) => a.id !== effectiveAccountId).map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={String(effectiveToAccountId || '')}
+                  onValueChange={setToAccountId}
+                  placeholder="Zielkonto"
+                  options={accounts
+                    .filter((a) => a.id !== effectiveAccountId)
+                    .map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                />
               </div>
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Konto</Label>
-                <Select value={String(effectiveAccountId || '')} onValueChange={setAccountId}>
-                  <SelectTrigger><SelectValue placeholder="Konto wählen" /></SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => <SelectItem key={a.id} value={String(a.id)}>{accountLabel(a, banks)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={String(effectiveAccountId || '')}
+                  onValueChange={setAccountId}
+                  placeholder="Konto wählen"
+                  options={accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Kategorie</Label>
-                {/* Sentinel „none" statt leerem String — Radix Select erlaubt keinen leeren value;
-                    intern bleibt „keine Kategorie" der leere String (submit mappt auf undefined/null) */}
-                <Select
+                {/* Sentinel „none" statt leerem String — intern bleibt „keine
+                    Kategorie" der leere String (submit mappt auf undefined/null) */}
+                <SearchableSelect
                   value={categoryId || 'none'}
                   onValueChange={(v) => setCategoryId(v === 'none' ? '' : v)}
-                >
-                  <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Keine Kategorie</SelectItem>
-                    {groupedCategories.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.parentId ? `\u00A0\u00A0${c.name}` : c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Optional"
+                  options={[
+                    { value: 'none', label: 'Keine Kategorie' },
+                    ...groupedCategories.map((c) => ({
+                      value: String(c.id),
+                      // Unterkategorien eingerückt (Gruppierung wie bisher)
+                      label: c.parentId ? `\u00A0\u00A0${c.name}` : c.name,
+                    })),
+                  ]}
+                />
                 {newCatOpen ? (
                   <div className="space-y-2">
                     <div className="flex gap-2">
@@ -539,7 +541,7 @@ export default function TransactionDialog({
                 {splitEnabled && (
                   <div className="flex items-center gap-2">
                     <Select value="" onValueChange={applyTemplate}>
-                      <SelectTrigger className="h-8 w-36 text-xs">
+                      <SelectTrigger className="h-8 w-36 min-w-0 text-xs [&>span]:truncate" title="Vorlage…">
                         <SelectValue placeholder="Vorlage…" />
                       </SelectTrigger>
                       <SelectContent>
@@ -621,12 +623,11 @@ export default function TransactionDialog({
                 )}
                 <div className="space-y-2">
                   <Label>{type === 'expense' ? 'Bezahlt von' : 'Person'}</Label>
-                  <Select value={String(effectiveUserId || '')} onValueChange={setUserId}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={String(effectiveUserId || '')}
+                    onValueChange={setUserId}
+                    options={users.map((u) => ({ value: String(u.id), label: u.name }))}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="note">Notiz</Label>
@@ -635,20 +636,15 @@ export default function TransactionDialog({
                 {projects.length > 0 && (
                   <div className="space-y-2">
                     <Label>Projekt</Label>
-                    <Select value={projectId || 'household'} onValueChange={(v) => setProjectId(v === 'household' ? '' : v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="household">Haushalt</SelectItem>
-                        {projects.map((p) => (
-                          <SelectItem key={p.id} value={String(p.id)}>
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-                              {p.name}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/* Sentinel „household" = laufender Haushalt (intern leerer String) */}
+                    <SearchableSelect
+                      value={projectId || 'household'}
+                      onValueChange={(v) => setProjectId(v === 'household' ? '' : v)}
+                      options={[
+                        { value: 'household', label: 'Haushalt' },
+                        ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+                      ]}
+                    />
                   </div>
                 )}
                 <div className="space-y-2 sm:col-span-2">

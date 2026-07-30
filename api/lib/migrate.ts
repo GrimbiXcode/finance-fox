@@ -234,12 +234,15 @@ export function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS pension_deductions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
+      salary_id INTEGER,
       name TEXT NOT NULL,
       mode TEXT NOT NULL,
       value INTEGER NOT NULL,
       active INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL
     )`,
+    `CREATE INDEX IF NOT EXISTS pension_deductions_salary_idx
+      ON pension_deductions (salary_id)`,
     `CREATE TABLE IF NOT EXISTS pension_ahv (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL UNIQUE,
@@ -263,7 +266,8 @@ export function ensureSchema() {
       coordination_deduction INTEGER,
       buy_in_potential INTEGER,
       disability_pension INTEGER,
-      death_benefit INTEGER
+      death_benefit INTEGER,
+      value_date TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS pension_fund_tiers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,10 +435,22 @@ export function ensureSchema() {
       "death_benefit",
       "ALTER TABLE pension_funds ADD COLUMN death_benefit INTEGER",
     ],
+    ["value_date", "ALTER TABLE pension_funds ADD COLUMN value_date TEXT"],
   ] as const) {
     if (!pensionFundCols.some(c => c[1] === col)) {
       db.run(ddl as never);
     }
+  }
+  // Lohnabzüge: salary_id für eintragsbezogene Abzüge nachrüsten
+  // (NULL = global, gilt für alle Löhne — Bestandszeilen bleiben global)
+  const pensionDeductionCols = raw
+    .prepare("PRAGMA table_info(pension_deductions)")
+    .raw()
+    .all();
+  if (!pensionDeductionCols.some(c => c[1] === "salary_id")) {
+    db.run(
+      "ALTER TABLE pension_deductions ADD COLUMN salary_id INTEGER" as never
+    );
   }
   // Offene Sparziele: target_amount wird nullable (NULL = ohne Zielbetrag).
   // NOT NULL lässt sich per ALTER nicht entfernen — Bestands-Tabellen daher

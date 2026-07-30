@@ -17,7 +17,8 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   `PensionFundDialog.tsx`/`PensionPillar3Dialog.tsx` (Vorsorge-Dialoge),
   `PensionFundStatement.tsx` (Versicherungsausweis-Dialog einer Kasse:
   Kennzahlen, Abstufungs-Tabelle + Stufen-Balken, Projektions-Chart mit
-  Phasen-Bändern, Risikoleistungen),
+  Phasen-Bändern, Risikoleistungen; Kopf zeigt „Angaben per <Stichtag>",
+  wenn die Kasse einen valueDate-Stichtag hat, sonst „Stand: heute"),
   `PensionAttachments.tsx` (Anhänge von Vorsorge-Datensätzen),
   `ui/` (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
@@ -161,7 +162,10 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   hypothetisches Rentenalter — eigene `forecast`-Query mit
   `retirementAge`-Override, zeigt hypothetische Renten/Ersatzrate im
   Vergleich), Lohn & Abzüge (Lohn-Timeline als Tabelle mit
-  `type="month"`-Dialog, Abzüge mit Aktiv-Switch, „Als Dauerbuchung
+  `type="month"`-Dialog — Netto-Spalte clientseitig aus Brutto minus
+  globalen + eintragsbezogenen Abzügen, Badge „eigene Abzüge", Zeilen-Editor
+  für eintragsbezogene Abzüge im Lohn-Dialog —, globale Abzüge in eigener
+  Karte mit Aktiv-Switch, „Als Dauerbuchung
   übernehmen"-Dialog), AHV (Anzeige-Card + Bearbeiten-Dialog + Anhänge),
   Pensionskasse und Säule 3a (Karten-Grids mit Dialogen
   `PensionFundDialog`/`PensionPillar3Dialog`, Löschen in der Gefahrenzone;

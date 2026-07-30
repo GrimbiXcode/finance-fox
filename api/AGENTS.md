@@ -44,19 +44,25 @@ Tabellen: `pension_profiles` (1:1, country Default "CH", birthDate,
 retirementAge), `pension_salaries` (Lohn-Timeline, Unique (user_id,
 valid_from) `YYYY-MM`; gültig = letzter Eintrag ≤ Monat),
 `pension_deductions` (mode percent in **Basispunkten** / absolute in Cent,
-active-Flag), `pension_ahv` (1:1), `pension_funds` (Säule 2, kind
+active-Flag; `salary_id` NULL = global für alle Löhne, gesetzt = nur für
+diesen Lohneintrag — Ersetzen-Semantik über `addSalary`/`updateSalary`
+(Feld `deductions`), Kaskade beim Löschen des Lohns, Historie als
+Kurzform-Diff im Feld „Abzüge" wie `tiersToText` bei den Kassen), `pension_ahv` (1:1), `pension_funds` (Säule 2, kind
 pension_fund/vested_benefits, Sätze in Basispunkten; nullable
 Versicherungsausweis-Felder employer, insured_salary,
 coordination_deduction, buy_in_potential, disability_pension, death_benefit
-— Beträge in Cent), `pension_fund_tiers` (Sparbeitrags-Abstufungen einer
+— Beträge in Cent — sowie `value_date` (TEXT YYYY-MM-DD, Stichtag der
+Angaben)), `pension_fund_tiers` (Sparbeitrags-Abstufungen einer
 Kasse nach Alter, AN/AG-Sätze in Basispunkten; Update mit
 Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
 (Säule 3a, optional `accountId`-Link auf ein Finanz-Konto),
 `pension_attachments`, `pension_changes` (Änderungshistorie, Muster
 `transaction_changes`, deutsche Feldnamen, Beträge roh in Cent).
 
-- **Netto-Berechnung** in `lib/pension/netSalary.ts` (`salaryForMonth`,
-  `computeNet`); `pension.transferNetSalary` legt das aktuelle Netto als
+- **Netto-Berechnung** in `lib/pension/netSalary.ts` (`salaryForMonth`/
+  `salaryEntryForMonth`, `computeNet`, `deductionsForSalary` — aktive globale
+  Abzüge plus die des gültigen Lohneintrags); `pension.transferNetSalary`
+  legt das aktuelle Netto als
   monatliche wiederkehrende Einnahme an (Notiz „Nettolohn (Vorsorge)",
   nextDate = 1. des Folgemonats, erfordert `edit` auf dem Konto).
 - **Historie**: `lib/pension/history.ts` (`recordPensionChange`) — Eintrag
@@ -80,7 +86,11 @@ Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
   `yearlySavings` (Stufe nach Alter im Simulationsmonat); die Antwort
   enthält zusätzlich `funds` (pro Kasse Endkapital, Monatsrente, wirksame
   Stufen als `phases`) und `fundSeries` (Jahres-Snapshots pro Kasse,
-  gleiche Jahre wie `series`).
+  gleiche Jahre wie `series`). Hat eine Kasse einen Stichtag
+  (`value_date`), gilt das Guthaben per diesem Datum und die Akkumulation
+  beginnt erst ab dessen Folgemonat — rückwirkend, wenn der Stichtag in
+  der Vergangenheit liegt (der Serien-Startpunkt enthält die
+  Nachholmonate bereits), verzögert bei zukünftigem Stichtag.
   Der Endpunkt akzeptiert optional `retirementAge` (50–75) als Override
   für Was-wäre-wenn-Rechnungen (Default: Profil-Wert).
 - **3a-Konto-Link**: Sync-Saldo (Logik wie `listAccounts`) minus in

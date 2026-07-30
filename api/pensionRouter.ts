@@ -24,7 +24,11 @@ import {
   recordPensionChange,
   type PensionFieldValue,
 } from "./lib/pension/history";
-import { computeNet, salaryForMonth } from "./lib/pension/netSalary";
+import {
+  computeNet,
+  deductionsForSalary,
+  salaryEntryForMonth,
+} from "./lib/pension/netSalary";
 import { pillar3AccountSync } from "./lib/pension/accountSync";
 import { getPensionCalculator } from "./lib/pension";
 
@@ -50,6 +54,7 @@ const SALARY_LABELS = {
   validFrom: "Gültig ab",
   grossMonthly: "Bruttolohn",
   note: "Notiz",
+  deductions: "Abzüge",
 };
 const DEDUCTION_LABELS = {
   name: "Name",
@@ -77,6 +82,7 @@ const FUND_LABELS = {
   buyInPotential: "Einkaufspotenzial",
   disabilityPension: "Invalidenrente/Jahr",
   deathBenefit: "Todesfallkapital",
+  valueDate: "Stichtag der Angaben",
   tiers: "Abstufungen",
 };
 const PILLAR3_LABELS = {
@@ -152,6 +158,33 @@ function tiersToText(
     .join(" · ");
 }
 
+/** Eintragsbezogener Abzug eines Lohns (Validierung wie addDeduction) */
+const salaryDeductionInput = z.object({
+  name: z.string().trim().min(1, "Name darf nicht leer sein."),
+  mode: z.enum(["percent", "absolute"]),
+  value: z.number().int(),
+  active: z.boolean().default(true),
+});
+type SalaryDeductionInput = z.infer<typeof salaryDeductionInput>;
+
+/**
+ * Lesbare Kurzform der Abzüge eines Lohneintrags für die Änderungshistorie
+ * (Prozent aus Basispunkten, absolute Beträge aus Cent — je 2 Dezimalstellen).
+ */
+function deductionsToText(
+  deductions: { name: string; mode: "percent" | "absolute"; value: number }[]
+): string | null {
+  if (deductions.length === 0) return null;
+  const fmt = (v: number) => (v / 100).toFixed(2).replace(".", ",");
+  return deductions
+    .map(d =>
+      d.mode === "percent"
+        ? `${d.name} ${fmt(d.value)} %`
+        : `${d.name} ${fmt(d.value)}`
+    )
+    .join(" · ");
+}
+
 /** Aktueller Monat als YYYY-MM (lokal) */
 function currentMonth(): string {
   const now = new Date();
@@ -180,6 +213,11 @@ function assertDeductionValue(mode: "percent" | "absolute", value: number) {
       message: "Absolute Abzüge müssen grösser als 0 sein.",
     });
   }
+}
+
+/** Werte eintragsbezogener Abzüge validieren (Regeln wie addDeduction) */
+function assertSalaryDeductions(deductions: SalaryDeductionInput[]) {
+  for (const d of deductions) assertDeductionValue(d.mode, d.value);
 }
 
 export const pensionRouter = createRouter({
@@ -292,10 +330,33 @@ export const pensionRouter = createRouter({
 
   listSalaries: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
-    return db.query.pensionSalaries.findMany({
+    const rows = await db.query.pensionSalaries.findMany({
       where: eq(pensionSalaries.userId, ctx.user.id),
       orderBy: (t, { asc }) => [asc(t.validFrom)],
     });
+    // Eintragsbezogene Abzüge gebatcht laden und anhängen
+    const ids = rows.map(r => r.id);
+    const deductionRows = ids.length
+      ? await db.query.pensionDeductions.findMany({
+          where: and(
+            eq(pensionDeductions.userId, ctx.user.id),
+            inArray(pensionDeductions.salaryId, ids)
+          ),
+          orderBy: (t, { asc }) => [asc(t.id)],
+        })
+      : [];
+    return rows.map(row => ({
+      ...row,
+      deductions: deductionRows
+        .filter(d => d.salaryId === row.id)
+        .map(d => ({
+          id: d.id,
+          name: d.name,
+          mode: d.mode,
+          value: d.value,
+          active: d.active,
+        })),
+    }));
   }),
 
   addSalary: authedQuery
@@ -304,10 +365,13 @@ export const pensionRouter = createRouter({
         validFrom: isoMonth,
         grossMonthly: z.number().int().positive(),
         note: z.string().max(500).default(""),
+        // Abzüge nur für diesen Lohneintrag (globale gelten zusätzlich)
+        deductions: z.array(salaryDeductionInput).optional(),
         comment: commentInput,
       })
     )
     .mutation(async ({ ctx, input }) => {
+      assertSalaryDeductions(input.deductions ?? []);
       const db = getDb();
       const duplicate = await db.query.pensionSalaries.findFirst({
         where: and(
@@ -330,17 +394,30 @@ export const pensionRouter = createRouter({
           note: input.note,
         })
         .returning({ id: pensionSalaries.id });
+      const salaryId = inserted[0].id;
+      for (const d of input.deductions ?? []) {
+        await db.insert(pensionDeductions).values({
+          userId: ctx.user.id,
+          salaryId,
+          name: d.name,
+          mode: d.mode,
+          value: d.value,
+          active: d.active,
+          createdAt: new Date(),
+        });
+      }
       const summary = `Lohn ab ${input.validFrom}: ${input.grossMonthly}`;
       await recordPensionChange(db, {
         userId: ctx.user.id,
         entity: "salary",
-        entityId: inserted[0].id,
+        entityId: salaryId,
         comment: input.comment,
         before: null,
         after: {
           validFrom: input.validFrom,
           grossMonthly: input.grossMonthly,
           note: input.note,
+          deductions: deductionsToText(input.deductions ?? []),
         },
         fieldLabels: SALARY_LABELS,
       });
@@ -349,10 +426,10 @@ export const pensionRouter = createRouter({
         ctx.user.id,
         "pension.salary.created",
         "pension",
-        inserted[0].id,
+        salaryId,
         summary
       );
-      return { id: inserted[0].id };
+      return { id: salaryId };
     }),
 
   updateSalary: authedQuery
@@ -362,10 +439,14 @@ export const pensionRouter = createRouter({
         validFrom: isoMonth.optional(),
         grossMonthly: z.number().int().positive().optional(),
         note: z.string().max(500).optional(),
+        // Eintragsbezogene Abzüge: mitgegeben = ersetzen, weggelassen =
+        // unverändert, leere Liste = alle des Eintrags löschen
+        deductions: z.array(salaryDeductionInput).optional(),
         comment: commentInput,
       })
     )
     .mutation(async ({ ctx, input }) => {
+      assertSalaryDeductions(input.deductions ?? []);
       const db = getDb();
       const row = await db.query.pensionSalaries.findFirst({
         where: and(
@@ -398,6 +479,14 @@ export const pensionRouter = createRouter({
           });
         }
       }
+      const oldDeductions = await db.query.pensionDeductions.findMany({
+        where: and(
+          eq(pensionDeductions.salaryId, row.id),
+          eq(pensionDeductions.userId, ctx.user.id)
+        ),
+        orderBy: (t, { asc }) => [asc(t.id)],
+      });
+      const newDeductions = input.deductions ?? oldDeductions;
       const changed = await recordPensionChange(db, {
         userId: ctx.user.id,
         entity: "salary",
@@ -407,10 +496,33 @@ export const pensionRouter = createRouter({
           validFrom: row.validFrom,
           grossMonthly: row.grossMonthly,
           note: row.note,
+          deductions: deductionsToText(oldDeductions),
         },
-        after: next,
+        after: { ...next, deductions: deductionsToText(newDeductions) },
         fieldLabels: SALARY_LABELS,
       });
+      // Abzüge: Ersetzen-Semantik (nur wenn mitgegeben)
+      if (input.deductions !== undefined) {
+        await db
+          .delete(pensionDeductions)
+          .where(
+            and(
+              eq(pensionDeductions.salaryId, row.id),
+              eq(pensionDeductions.userId, ctx.user.id)
+            )
+          );
+        for (const d of input.deductions) {
+          await db.insert(pensionDeductions).values({
+            userId: ctx.user.id,
+            salaryId: row.id,
+            name: d.name,
+            mode: d.mode,
+            value: d.value,
+            active: d.active,
+            createdAt: new Date(),
+          });
+        }
+      }
       if (changed > 0) {
         await db
           .update(pensionSalaries)
@@ -445,6 +557,13 @@ export const pensionRouter = createRouter({
         });
       }
       const summary = `Lohn ab ${row.validFrom}: ${row.grossMonthly}`;
+      const salaryDeductions = await db.query.pensionDeductions.findMany({
+        where: and(
+          eq(pensionDeductions.salaryId, row.id),
+          eq(pensionDeductions.userId, ctx.user.id)
+        ),
+        orderBy: (t, { asc }) => [asc(t.id)],
+      });
       await recordPensionChange(db, {
         userId: ctx.user.id,
         entity: "salary",
@@ -454,10 +573,20 @@ export const pensionRouter = createRouter({
           validFrom: row.validFrom,
           grossMonthly: row.grossMonthly,
           note: row.note,
+          deductions: deductionsToText(salaryDeductions),
         },
         after: null,
         fieldLabels: SALARY_LABELS,
       });
+      // Kaskade: eintragsbezogene Abzüge mitlöschen (globale bleiben)
+      await db
+        .delete(pensionDeductions)
+        .where(
+          and(
+            eq(pensionDeductions.salaryId, row.id),
+            eq(pensionDeductions.userId, ctx.user.id)
+          )
+        );
       await db.delete(pensionSalaries).where(eq(pensionSalaries.id, row.id));
       logAudit(
         db,
@@ -801,6 +930,8 @@ export const pensionRouter = createRouter({
         buyInPotential: nullableAmount,
         disabilityPension: nullableAmount,
         deathBenefit: nullableAmount,
+        // Stichtag der Angaben (YYYY-MM-DD) — Prognose akkumuliert ab diesem Datum
+        valueDate: isoDate.nullable().optional(),
         tiers: z.array(tierInput).optional(),
         comment: commentInput,
       })
@@ -817,6 +948,7 @@ export const pensionRouter = createRouter({
         buyInPotential: rest.buyInPotential ?? null,
         disabilityPension: rest.disabilityPension ?? null,
         deathBenefit: rest.deathBenefit ?? null,
+        valueDate: rest.valueDate ?? null,
       };
       const inserted = await db
         .insert(pensionFunds)
@@ -874,6 +1006,7 @@ export const pensionRouter = createRouter({
         buyInPotential: nullableAmount,
         disabilityPension: nullableAmount,
         deathBenefit: nullableAmount,
+        valueDate: isoDate.nullable().optional(),
         // Abstufungen: mitgegeben = ersetzen, weggelassen = unverändert
         tiers: z.array(tierInput).optional(),
         comment: commentInput,
@@ -923,6 +1056,8 @@ export const pensionRouter = createRouter({
           input.deathBenefit === undefined
             ? row.deathBenefit
             : input.deathBenefit,
+        valueDate:
+          input.valueDate === undefined ? row.valueDate : input.valueDate,
       };
       // Abstufungen: Ersetzen-Semantik (nur wenn mitgegeben)
       const oldTiers = await db.query.pensionFundTiers.findMany({
@@ -944,6 +1079,7 @@ export const pensionRouter = createRouter({
         buyInPotential: row.buyInPotential,
         disabilityPension: row.disabilityPension,
         deathBenefit: row.deathBenefit,
+        valueDate: row.valueDate,
         tiers: tiersToText(oldTiers),
       };
       const changed = await recordPensionChange(db, {
@@ -1329,6 +1465,7 @@ export const pensionRouter = createRouter({
         interestRateBp: f.interestRateBp,
         conversionRateBp: f.conversionRateBp,
         insuredSalary: f.insuredSalary,
+        valueDate: f.valueDate,
         tiers: tierRows
           .filter(t => t.fundId === f.id)
           .map(t => ({
@@ -1337,10 +1474,16 @@ export const pensionRouter = createRouter({
           })),
       }));
 
-      // Aktuelles Netto aus der Lohn-Timeline (für die Ersatzrate)
-      const gross = salaryForMonth(salaryRows, currentMonth());
+      // Aktuelles Netto aus der Lohn-Timeline (für die Ersatzrate) —
+      // globale Abzüge plus die Abzüge des gültigen Lohneintrags
+      const currentSalary = salaryEntryForMonth(salaryRows, currentMonth());
       const currentNet =
-        gross === null ? null : computeNet(gross, deductionRows);
+        currentSalary === null
+          ? null
+          : computeNet(
+              currentSalary.grossMonthly,
+              deductionsForSalary(deductionRows, currentSalary.id)
+            );
 
       // 3a-Verknüpfungen: Sync-Saldo minus in Sparzielen verplanter Anteile
       const pillar3 = await Promise.all(
@@ -1511,15 +1654,18 @@ export const pensionRouter = createRouter({
           where: eq(pensionDeductions.userId, ctx.user.id),
         }),
       ]);
-      const gross = salaryForMonth(salaryRows, currentMonth());
-      if (gross === null) {
+      const currentSalary = salaryEntryForMonth(salaryRows, currentMonth());
+      if (currentSalary === null) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
             "Es ist kein Lohn hinterlegt — bitte zuerst einen Lohn erfassen.",
         });
       }
-      const net = computeNet(gross, deductionRows);
+      const net = computeNet(
+        currentSalary.grossMonthly,
+        deductionsForSalary(deductionRows, currentSalary.id)
+      );
       if (net <= 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",

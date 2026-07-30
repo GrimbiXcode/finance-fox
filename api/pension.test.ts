@@ -8,6 +8,7 @@ import { getDb, initDb } from "./queries/connection";
 import {
   categories,
   goalSources,
+  pensionDeductions,
   pensionFundTiers,
   recurring,
   savingsGoals,
@@ -38,6 +39,14 @@ const third: SessionUser = {
   name: "Dritter",
   role: "member",
   color: "#f59e0b",
+};
+// Vierter Benutzer für die eintragsbezogenen Abzüge (Lohn pro Eintrag)
+const fourth: SessionUser = {
+  id: 4,
+  email: "vierter@example.com",
+  name: "Vierter",
+  role: "member",
+  color: "#0ea5e9",
 };
 
 function callerFor(user?: SessionUser) {
@@ -93,7 +102,7 @@ beforeAll(async () => {
 
   const db = getDb();
   await db.insert(users).values(
-    [admin, member, third].map(u => ({
+    [admin, member, third, fourth].map(u => ({
       id: u.id,
       email: u.email,
       name: u.name,
@@ -304,6 +313,200 @@ describe("Abzüge (deductions)", () => {
   });
 });
 
+describe("Eintragsbezogene Abzüge (pro Lohneintrag)", () => {
+  // Nutzt den vierten Benutzer (hat sonst keine Vorsorge-Daten)
+  let salaryId = 0;
+
+  it("legt einen Lohn mit eintragsbezogenen Abzügen an", async () => {
+    const caller = callerFor(fourth);
+    const created = await caller.pension.addSalary({
+      validFrom: "2020-01",
+      grossMonthly: 800000,
+      note: "Einstieg",
+      deductions: [
+        { name: "PK", mode: "absolute", value: 50000, active: true },
+        { name: "Bonus-Abzug", mode: "percent", value: 200, active: false },
+      ],
+    });
+    salaryId = created.id;
+    const row = (await caller.pension.listSalaries()).find(
+      s => s.id === salaryId
+    )!;
+    expect(row.deductions).toHaveLength(2);
+    expect(row.deductions[0]).toMatchObject({
+      name: "PK",
+      mode: "absolute",
+      value: 50000,
+      active: true,
+    });
+    expect(row.deductions[1]).toMatchObject({
+      name: "Bonus-Abzug",
+      mode: "percent",
+      value: 200,
+      active: false,
+    });
+    // listDeductions liefert die Abzüge mit ihrer salaryId
+    const deds = await caller.pension.listDeductions();
+    expect(deds.filter(d => d.salaryId === salaryId)).toHaveLength(2);
+    expect(deds.filter(d => d.salaryId === null)).toHaveLength(0);
+
+    // Die Anlage protokolliert die Abzüge in der Kurzform
+    const changes = (await caller.pension.listChanges({ entity: "salary" }))
+      .entries;
+    const eintrag = changes[0].changes.find(c => c.field === "Abzüge");
+    expect(eintrag?.to).toBe("PK 500,00 · Bonus-Abzug 2,00 %");
+  });
+
+  it("validiert eintragsbezogene Abzüge wie globale", async () => {
+    const caller = callerFor(fourth);
+    const base = { validFrom: "2021-01", grossMonthly: 500000 };
+    await expect(
+      caller.pension.addSalary({
+        ...base,
+        deductions: [{ name: "  ", mode: "absolute", value: 100 }],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.pension.addSalary({
+        ...base,
+        deductions: [{ name: "X", mode: "percent", value: 0 }],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.pension.addSalary({
+        ...base,
+        deductions: [{ name: "X", mode: "percent", value: 10001 }],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.pension.addSalary({
+        ...base,
+        deductions: [{ name: "X", mode: "absolute", value: 0 }],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // … und auch beim Update
+    await expect(
+      caller.pension.updateSalary({
+        id: salaryId,
+        deductions: [{ name: "X", mode: "percent", value: 0 }],
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("ersetzt Abzüge beim Update mit Diff-Feld „Abzüge“ in der Historie", async () => {
+    const caller = callerFor(fourth);
+    await caller.pension.updateSalary({
+      id: salaryId,
+      deductions: [
+        { name: "PK neu", mode: "percent", value: 700, active: true },
+      ],
+    });
+    const row = (await caller.pension.listSalaries()).find(
+      s => s.id === salaryId
+    )!;
+    expect(row.deductions).toHaveLength(1);
+    expect(row.deductions[0]).toMatchObject({
+      name: "PK neu",
+      mode: "percent",
+      value: 700,
+    });
+
+    const changes = (await caller.pension.listChanges({ entity: "salary" }))
+      .entries;
+    const diff = changes[0].changes.find(c => c.field === "Abzüge");
+    expect(diff?.from).toBe("PK 500,00 · Bonus-Abzug 2,00 %");
+    expect(diff?.to).toBe("PK neu 7,00 %");
+  });
+
+  it("lässt Abzüge bei weggelassenem Feld unverändert, [] löscht alle", async () => {
+    const caller = callerFor(fourth);
+    await caller.pension.updateSalary({ id: salaryId, note: "nur Notiz" });
+    let row = (await caller.pension.listSalaries()).find(
+      s => s.id === salaryId
+    )!;
+    expect(row.deductions).toHaveLength(1);
+
+    await caller.pension.updateSalary({ id: salaryId, deductions: [] });
+    row = (await caller.pension.listSalaries()).find(s => s.id === salaryId)!;
+    expect(row.deductions).toHaveLength(0);
+    const rest = await getDb().query.pensionDeductions.findMany({
+      where: eq(pensionDeductions.salaryId, salaryId),
+    });
+    expect(rest).toHaveLength(0);
+  });
+
+  it("löscht eintragsbezogene Abzüge beim Löschen des Lohns mit", async () => {
+    const caller = callerFor(fourth);
+    const created = await caller.pension.addSalary({
+      validFrom: "2022-01",
+      grossMonthly: 600000,
+      deductions: [
+        { name: "Einmal", mode: "absolute", value: 1000, active: true },
+      ],
+    });
+    const db = getDb();
+    const vorher = await db.query.pensionDeductions.findMany({
+      where: eq(pensionDeductions.salaryId, created.id),
+    });
+    expect(vorher).toHaveLength(1);
+    await caller.pension.deleteSalary({ id: created.id });
+    const nachher = await db.query.pensionDeductions.findMany({
+      where: eq(pensionDeductions.salaryId, created.id),
+    });
+    expect(nachher).toHaveLength(0);
+  });
+
+  it("rechnet Netto nur mit globalen und den Abzügen des gültigen Lohns", async () => {
+    const caller = callerFor(fourth);
+    // Abzug am ALTEN Lohneintrag (2020-01) — darf nicht zählen
+    await caller.pension.updateSalary({
+      id: salaryId,
+      deductions: [
+        { name: "Alter Abzug", mode: "absolute", value: 500000, active: true },
+      ],
+    });
+    // Neuer, aktuell gültiger Lohn mit eigenem aktivem + inaktivem Abzug
+    await caller.pension.addSalary({
+      validFrom: "2025-01",
+      grossMonthly: 900000,
+      deductions: [
+        { name: "PK aktuell", mode: "absolute", value: 40000, active: true },
+        { name: "Inaktiv", mode: "absolute", value: 777777, active: false },
+      ],
+    });
+    // Globaler Abzug — zählt für jeden Lohn
+    await caller.pension.addDeduction({
+      name: "AHV",
+      mode: "percent",
+      value: 530,
+    });
+
+    // 900000 − round(900000 × 530/10000) − 40000 = 900000 − 47700 − 40000
+    const result = await caller.pension.transferNetSalary({
+      accountId: sharedAccountId,
+    });
+    expect(result.amount).toBe(812300);
+  });
+
+  it("ist strikt privat — eintragsbezogene Abzüge anderer Benutzer sind geschützt", async () => {
+    const fremde = (await callerFor(fourth).pension.listSalaries()).flatMap(
+      s => s.deductions
+    );
+    expect(fremde.length).toBeGreaterThan(0);
+    const memberCaller = callerFor(member);
+    const fremdeId = fremde[0].id;
+    expect(
+      (await memberCaller.pension.listDeductions()).find(d => d.id === fremdeId)
+    ).toBeUndefined();
+    await expect(
+      memberCaller.pension.updateDeduction({ id: fremdeId, name: "Hack" })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      memberCaller.pension.deleteDeduction({ id: fremdeId })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
 describe("AHV (getAhv/updateAhv)", () => {
   it("legt AHV-Daten an (upsert) und aktualisiert sie", async () => {
     const caller = callerFor(admin);
@@ -341,6 +544,35 @@ describe("AHV (getAhv/updateAhv)", () => {
 });
 
 describe("Säule 2 (funds)", () => {
+  it("speichert den Stichtag der Angaben und entfernt ihn mit null", async () => {
+    const caller = callerFor(admin);
+    const created = await caller.pension.addFund({
+      name: "PK Stichtag",
+      currentCapital: 1000000,
+      valueDate: "2025-12-31",
+    });
+    let fund = (await caller.pension.listFunds()).find(
+      f => f.id === created.id
+    )!;
+    expect(fund.valueDate).toBe("2025-12-31");
+
+    // Historie erfasst das Feld mit deutschem Label
+    const aenderung = await caller.pension.updateFund({
+      id: created.id,
+      valueDate: "2026-03-31",
+    });
+    expect(aenderung.ok).toBe(true);
+    const changes = (await caller.pension.listChanges({ entity: "fund" }))
+      .entries;
+    expect(changes[0].changes).toEqual([
+      { field: "Stichtag der Angaben", from: "2025-12-31", to: "2026-03-31" },
+    ]);
+
+    await caller.pension.updateFund({ id: created.id, valueDate: null });
+    fund = (await caller.pension.listFunds()).find(f => f.id === created.id)!;
+    expect(fund.valueDate).toBeNull();
+  });
+
   it("CRUD mit Defaults und Historie nur bei echter Änderung", async () => {
     const caller = callerFor(admin);
     const created = await caller.pension.addFund({

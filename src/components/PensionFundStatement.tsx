@@ -87,7 +87,7 @@ export default function PensionFundStatement({
             </Badge>
           </div>
           <DialogDescription>
-            {fund.employer ? `${fund.employer} · ` : ''}Stand: {formatDate(todayISO())}
+            {fund.employer ? `${fund.employer} · ` : ''}{fund.valueDate ? `Angaben per ${formatDate(fund.valueDate)}` : `Stand: ${formatDate(todayISO())}`}
           </DialogDescription>
         </DialogHeader>
 

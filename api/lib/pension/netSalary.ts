@@ -15,6 +15,11 @@ export interface DeductionRow {
   active: boolean;
 }
 
+/** Abzug mit Gültigkeits-Scope: salaryId null = global, sonst nur dieser Lohn */
+export interface DeductionWithSalary extends DeductionRow {
+  salaryId: number | null;
+}
+
 /**
  * Gültiger Bruttolohn für einen Monat (YYYY-MM): der letzte Eintrag mit
  * validFrom ≤ Monat. null, wenn noch kein Eintrag greift.
@@ -23,13 +28,37 @@ export function salaryForMonth(
   salaries: SalaryRow[],
   month: string
 ): number | null {
-  let best: SalaryRow | null = null;
+  return salaryEntryForMonth(salaries, month)?.grossMonthly ?? null;
+}
+
+/**
+ * Wie salaryForMonth, liefert aber den ganzen Lohneintrag (inkl. id für
+ * eintragsbezogene Abzüge) statt nur dem Betrag.
+ */
+export function salaryEntryForMonth<T extends SalaryRow>(
+  salaries: T[],
+  month: string
+): T | null {
+  let best: T | null = null;
   for (const s of salaries) {
     if (s.validFrom <= month && (!best || s.validFrom > best.validFrom)) {
       best = s;
     }
   }
-  return best ? best.grossMonthly : null;
+  return best;
+}
+
+/**
+ * Abzüge, die für einen Lohneintrag gelten: die aktiven globalen
+ * (salaryId null) plus die aktiven eintragsbezogenen dieses Eintrags.
+ */
+export function deductionsForSalary<T extends DeductionWithSalary>(
+  allDeductions: T[],
+  salaryId: number
+): T[] {
+  return allDeductions.filter(
+    d => d.active && (d.salaryId === null || d.salaryId === salaryId)
+  );
 }
 
 /**

@@ -143,6 +143,31 @@ describe("CH-Prognose (computeChForecast)", () => {
     expect(fix.ahv).toEqual({ monthlyPension: 200000, estimated: false });
   });
 
+  it("rechnet mit Stichtag in der Vergangenheit rückwirkend ab diesem Datum", () => {
+    // Stichtag 6 Monate vor „heute" (Jan 2026) → 6 zusätzliche Akkumulationen
+    const result = computeChForecast({
+      ...BASE_INPUT,
+      funds: [{ ...BASE_INPUT.funds[0], valueDate: "2025-07-01" }],
+    });
+    expect(result.pillar2.capital).toBe(163151);
+    // der Startpunkt der Serie enthält bereits die rückwirkenden Beiträge
+    expect(result.fundSeries[0].points[0]).toEqual({
+      year: 2026,
+      capital: 133534,
+    });
+    // ohne Stichtag bleibt es beim bisherigen Ergebnis
+    expect(computeChForecast(BASE_INPUT).pillar2.capital).toBe(147900);
+  });
+
+  it("akkumuliert bei Stichtag in der Zukunft erst ab dessen Folgemonat", () => {
+    // Stichtag Juni 2026 → Akkumulation erst ab Juli (7 statt 12 Monate)
+    const result = computeChForecast({
+      ...BASE_INPUT,
+      funds: [{ ...BASE_INPUT.funds[0], valueDate: "2026-06-01" }],
+    });
+    expect(result.pillar2.capital).toBe(135869);
+  });
+
   it("zieht in Sparzielen verplante Anteile vom 3a-Sync-Saldo ab", () => {
     const result = computeChForecast({
       ...BASE_INPUT,

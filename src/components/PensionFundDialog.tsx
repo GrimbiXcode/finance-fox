@@ -43,6 +43,8 @@ export interface DialogFund {
   buyInPotential: number | null;
   disabilityPension: number | null;
   deathBenefit: number | null;
+  /** Stichtag der Angaben (YYYY-MM-DD) — Prognose akkumuliert ab diesem Datum */
+  valueDate: string | null;
   tiers: DialogFundTier[];
 }
 
@@ -99,6 +101,7 @@ function FundDialogForm({ fund, close }: { fund?: DialogFund; close: () => void 
   const [kind, setKind] = useState<'pension_fund' | 'vested_benefits'>(fund?.kind ?? 'pension_fund');
   const [employer, setEmployer] = useState(fund?.employer ?? '');
   const [capital, setCapital] = useState(centsInput(fund?.currentCapital ?? 0));
+  const [valueDate, setValueDate] = useState(fund?.valueDate ?? '');
   const [insuredSalary, setInsuredSalary] = useState(centsInput(fund?.insuredSalary));
   const [coordinationDeduction, setCoordinationDeduction] = useState(centsInput(fund?.coordinationDeduction));
   const [buyInPotential, setBuyInPotential] = useState(centsInput(fund?.buyInPotential));
@@ -180,6 +183,7 @@ function FundDialogForm({ fund, close }: { fund?: DialogFund; close: () => void 
       buyInPotential: nullableCents(buyInPotential),
       disabilityPension: nullableCents(disabilityPension),
       deathBenefit: nullableCents(deathBenefit),
+      valueDate: valueDate || null,
       tiers: parsedTiers,
     };
     if (isEdit && fund) {
@@ -232,6 +236,14 @@ function FundDialogForm({ fund, close }: { fund?: DialogFund; close: () => void 
           <div className="space-y-2">
             <Label>Guthaben ({currencySymbol()})</Label>
             <Input inputMode="decimal" placeholder={amountPlaceholder} value={capital} onChange={(e) => setCapital(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Stichtag der Angaben (optional)</Label>
+            <Input type="date" value={valueDate} onChange={(e) => setValueDate(e.target.value)} />
+            <p className="text-xs text-muted-foreground">
+              Das Guthaben gilt per diesem Datum (z. B. 31.12. des Ausweises) — die
+              Prognose rechnet ab dann. Leer = ab heute.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Versicherter Jahreslohn ({currencySymbol()})</Label>

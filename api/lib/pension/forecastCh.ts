@@ -5,7 +5,10 @@
  * - Säule 2: Start = current_capital, monatlich yearly_savings/12 dazu (nur
  *   Pensionskassen; Freizügigkeitskonten werden nur verzinst), Verzinsung
  *   interest_rate_bp p.a. auf den Monat umgelegt. Jahresrente = Guthaben ×
- *   conversion_rate_bp/10000, Monatsrente = Jahresrente/12.
+ *   conversion_rate_bp/10000, Monatsrente = Jahresrente/12. Hat eine Kasse
+ *   einen Stichtag (value_date), gilt das Guthaben per diesem Datum und die
+ *   Akkumulation beginnt erst ab dessen Folgemonat (rückwirkend, wenn der
+ *   Stichtag in der Vergangenheit liegt).
  *   Hat eine Pensionskasse Abstufungen (tiers) UND einen versicherten
  *   Jahreslohn, ersetzt der Stufensatz × Lohn das flache yearly_savings —
  *   die Stufe richtet sich nach dem Alter des Benutzers im jeweiligen
@@ -36,6 +39,14 @@ export interface PensionFundInput {
   insuredSalary: number | null;
   /** Abstufungen nach Alter, aufsteigend nach ageFrom (leer = flaches Sparen) */
   tiers: PensionFundTierInput[];
+  /**
+   * Stichtag der Angaben (YYYY-MM-DD, z. B. 31.12. des Ausweises) — das
+   * Guthaben gilt per diesem Datum; die Simulation akkumuliert ab dem
+   * Folgemonat des Stichtags (rückwirkend, wenn er in der Vergangenheit
+   * liegt, verzögert, wenn er in der Zukunft liegt). null/undefined = ab
+   * aktuellem Monat.
+   */
+  valueDate?: string | null;
 }
 
 export interface PensionPillar3Input {
@@ -171,15 +182,38 @@ export function computeChForecast(
   }));
   const fundCapitals = funds.map(f => f.currentCapital);
 
-  // Alter in einem Simulationsmonat (0 = aktueller Monat) — der Geburtsmonat
-  // zählt bereits zum neuen Alter.
+  // Alter in einem Simulationsmonat (0 = aktueller Monat, negative Werte =
+  // Monate davor) — der Geburtsmonat zählt bereits zum neuen Alter.
+  const floorMod = (a: number, b: number) => ((a % b) + b) % b;
   const ageAt = (i: number) => {
     const simYear = now.getFullYear() + Math.floor((now.getMonth() + i) / 12);
-    const simMonth = ((now.getMonth() + i) % 12) + 1; // 1-basiert
+    const simMonth = floorMod(now.getMonth() + i, 12) + 1; // 1-basiert
     return simYear - birthYear - (simMonth < birthMonth ? 1 : 0);
   };
   const yearAt = (i: number) =>
     now.getFullYear() + Math.floor((now.getMonth() + i) / 12);
+
+  // Stichtag der Angaben: Monatsindex, ab dem die Kasse akkumuliert
+  // (i < startI = vor dem Folgemonat des Stichtags → keine Akkumulation;
+  // startI <= 0 = Rückwirkung vor dem aktuellen Monat).
+  const fundStartI = funds.map(f => {
+    if (!f.valueDate) return 1;
+    const [vy, vm] = f.valueDate.split("-").map(Number);
+    if (!vy || !vm) return 1;
+    const off =
+      (now.getFullYear() - vy) * 12 + (now.getMonth() + 1 - vm); // vd → now
+    return 1 - off;
+  });
+  // Rückwirkende Akkumulation vom Stichtag bis zum aktuellen Monat
+  for (let f = 0; f < funds.length; f++) {
+    for (let k = fundStartI[f]; k <= 0; k++) {
+      fundCapitals[f] = accumulateMonth(
+        fundCapitals[f],
+        yearlyContributionFor(funds[f], ageAt(k)),
+        funds[f].interestRateBp
+      );
+    }
+  }
 
   // Wirksame Stufen pro Kasse mitverfolgen (für die phases-Aufschlüsselung)
   const fundPhases = funds.map(
@@ -237,11 +271,14 @@ export function computeChForecast(
     const age = ageAt(i);
     for (let f = 0; f < funds.length; f++) {
       const fund = funds[f];
-      fundCapitals[f] = accumulateMonth(
-        fundCapitals[f],
-        yearlyContributionFor(fund, age),
-        fund.interestRateBp
-      );
+      // vor dem Folgemonat des Stichtags wird nicht akkumuliert
+      if (i >= fundStartI[f]) {
+        fundCapitals[f] = accumulateMonth(
+          fundCapitals[f],
+          yearlyContributionFor(fund, age),
+          fund.interestRateBp
+        );
+      }
       // Stufenwechsel protokollieren (jede neu wirksame Stufe einmal)
       if (usesTiers(fund)) {
         const idx = tierIndexAt(fund.tiers, age);

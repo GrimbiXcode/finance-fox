@@ -361,17 +361,26 @@ export const pensionSalaries = sqliteTable(
   ]
 );
 
-/** Lohnabzüge (AHV/IV/EO, ALV, PK-Anteil etc.) für die Netto-Berechnung */
-export const pensionDeductions = sqliteTable("pension_deductions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id").notNull(),
-  name: text("name").notNull(),
-  mode: text("mode", { enum: ["percent", "absolute"] }).notNull(),
-  // percent: Basispunkte (530 = 5,30 %); absolute: Cent
-  value: integer("value").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
+/**
+ * Lohnabzüge (AHV/IV/EO, ALV, PK-Anteil etc.) für die Netto-Berechnung.
+ * salaryId NULL = globaler Abzug (gilt für alle Löhne), gesetzt = Abzug nur
+ * für diesen Lohneintrag (wird beim Löschen des Lohns kaskadiert).
+ */
+export const pensionDeductions = sqliteTable(
+  "pension_deductions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    salaryId: integer("salary_id"),
+    name: text("name").notNull(),
+    mode: text("mode", { enum: ["percent", "absolute"] }).notNull(),
+    // percent: Basispunkte (530 = 5,30 %); absolute: Cent
+    value: integer("value").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("pension_deductions_salary_idx").on(t.salaryId)]
+);
 
 /** Säule 1 (AHV, 1:1 pro Benutzer) — AHV-Nummer ist sensibel und optional */
 export const pensionAhv = sqliteTable("pension_ahv", {
@@ -404,6 +413,9 @@ export const pensionFunds = sqliteTable("pension_funds", {
   buyInPotential: integer("buy_in_potential"), // Einkaufspotenzial
   disabilityPension: integer("disability_pension"), // Invalidenrente pro Jahr
   deathBenefit: integer("death_benefit"), // Todesfallkapital
+  // Stichtag der Angaben (YYYY-MM-DD, z. B. 31.12. des Ausweises) — die
+  // Prognose akkumuliert ab diesem Datum; NULL = ab aktuellem Monat
+  valueDate: text("value_date"),
 });
 
 /**

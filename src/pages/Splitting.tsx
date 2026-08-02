@@ -158,14 +158,14 @@ export default function Splitting() {
             {users.map((u) => {
               const bal = balances.get(u.id) ?? 0;
               return (
-                <div key={u.id} className="flex items-center justify-between rounded-lg border px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: u.color }}>
+                <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: u.color }}>
                       {u.name.slice(0, 2).toUpperCase()}
                     </div>
-                    <span className="font-medium">{u.name}</span>
+                    <span className="truncate font-medium" title={u.name}>{u.name}</span>
                   </div>
-                  <span className={cn('text-lg font-bold', bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-500' : 'text-muted-foreground')}>
+                  <span className={cn('shrink-0 text-lg font-bold', bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-500' : 'text-muted-foreground')}>
                     {bal > 0 ? '+' : ''}{formatCents(bal)}
                   </span>
                 </div>
@@ -190,19 +190,19 @@ export default function Splitting() {
                 const from = userById(s.fromId);
                 const to = userById(s.toId);
                 return (
-                  <div key={idx} className="flex items-center justify-between rounded-lg border px-4 py-3">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: from?.color }}>
+                  <div key={idx} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: from?.color }}>
                         {from?.name.slice(0, 2).toUpperCase()}
                       </span>
                       {from?.name}
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: to?.color }}>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: to?.color }}>
                         {to?.name.slice(0, 2).toUpperCase()}
                       </span>
                       {to?.name}
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex shrink-0 items-center gap-3">
                       <span className="text-lg font-bold">{formatCents(s.amount)}</span>
                       <Button
                         size="sm"
@@ -244,8 +244,8 @@ export default function Splitting() {
             const project = projectById(t.projectId);
             return (
               <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3">
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-medium">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                     {t.note || 'Ausgabe'}
                     {project && (
                       <Badge variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${project.color}` }}>
@@ -257,8 +257,8 @@ export default function Splitting() {
                     {formatDate(t.date)} · bezahlt von {payer?.name}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex min-w-0 flex-wrap gap-1.5">
                     {t.splits.map((s) => {
                       const u = userById(s.userId);
                       return (
@@ -289,9 +289,9 @@ export default function Splitting() {
               <p className="text-sm text-muted-foreground">Noch keine Projekte angelegt.</p>
             )}
             {projects.map((p) => (
-              <div key={p.id} className="flex items-center justify-between rounded-lg border px-4 py-2">
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+              <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border px-4 py-2">
+                <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
                   {p.name}
                 </span>
                 <Button
@@ -341,8 +341,8 @@ export default function Splitting() {
             <div className="space-y-2 border-t pt-4">
               <p className="text-xs font-medium text-muted-foreground">Gespeicherte Aufteilungsvorlagen</p>
               {splitTemplates.map((t) => (
-                <div key={t.id} className="flex items-center justify-between rounded-lg border px-4 py-2">
-                  <span className="text-sm font-medium">{t.name}</span>
+                <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border px-4 py-2">
+                  <span className="min-w-0 text-sm font-medium">{t.name}</span>
                   <Button
                     variant="ghost"
                     size="icon"

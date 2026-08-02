@@ -175,7 +175,7 @@ export default function Dashboard() {
                 const cat = categories.find((c) => c.id === t.categoryId);
                 const user = users.find((u) => u.id === t.userId);
                 return (
-                  <div key={t.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? '#64748b' }} />
                       <div className="min-w-0">
@@ -208,14 +208,14 @@ export default function Dashboard() {
               {users.map((u) => {
                 const bal = balances.get(u.id) ?? 0;
                 return (
-                  <div key={u.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: u.color }}>
+                  <div key={u.id} className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: u.color }}>
                         {u.name.slice(0, 2).toUpperCase()}
                       </div>
-                      <span className="text-sm font-medium">{u.name}</span>
+                      <span className="truncate text-sm font-medium" title={u.name}>{u.name}</span>
                     </div>
-                    <span className={cn('text-sm font-semibold', bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-500' : 'text-muted-foreground')}>
+                    <span className={cn('shrink-0 text-sm font-semibold', bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-500' : 'text-muted-foreground')}>
                       {bal > 0 ? '+' : ''}{formatCents(bal)}
                     </span>
                   </div>

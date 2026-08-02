@@ -250,17 +250,17 @@ export default function Accounts() {
           const txCount = txCountOf(a.id);
           return (
             <Card key={a.id}>
-              <CardHeader className="flex flex-row items-start justify-between pb-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
+              <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
                     <Icon className="h-5 w-5" />
                   </div>
-                  <div>
-                    <CardTitle className="text-base">{a.name}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle className="text-base" title={a.name}>{a.name}</CardTitle>
                     <CardDescription>{typeName.get(a.type) ?? a.type}</CardDescription>
                   </div>
                 </div>
-                <div className="flex items-center">
+                <div className="flex shrink-0 items-center">
                   {a.access === 'edit' && (
                     <AccountDialog
                       account={a}

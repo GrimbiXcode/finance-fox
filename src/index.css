@@ -71,5 +71,12 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Lange Wörter ohne Trennmöglichkeit (Kontonamen, IBANs, E-Mails) dürfen
+       umbrechen, statt ihren Container über den Viewport hinaus zu dehnen.
+       `anywhere` (nicht `break-word`) — nur so schrumpft auch die Mindestbreite
+       von Flex-/Grid-Elementen mit. Elemente mit `whitespace-nowrap`
+       (Tabellenzellen, Badges, Buttons) bleiben unberührt: dort scrollt
+       weiterhin der jeweilige Container. */
+    overflow-wrap: anywhere;
   }
 }

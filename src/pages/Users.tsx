@@ -141,13 +141,13 @@ export default function UsersPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {(usersQuery.data ?? []).map((u) => (
           <Card key={u.id} className={!u.active ? 'opacity-60' : ''}>
-            <CardHeader className="flex flex-row items-start justify-between pb-2">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ backgroundColor: u.color }}>
+            <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ backgroundColor: u.color }}>
                   {u.name.slice(0, 2).toUpperCase()}
                 </div>
-                <div>
-                  <CardTitle className="text-base">{u.name}</CardTitle>
+                <div className="min-w-0">
+                  <CardTitle className="text-base" title={u.name}>{u.name}</CardTitle>
                   <CardDescription className="text-xs">{u.email}</CardDescription>
                 </div>
               </div>

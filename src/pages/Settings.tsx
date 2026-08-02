@@ -902,7 +902,7 @@ export default function Settings() {
           <div className="space-y-1.5">
             {catRoots.map(root => (
               <div key={root.id} className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="gap-1.5 py-1 pl-2 pr-1">
+                <Badge variant="secondary" className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1">
                   <span
                     className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: root.color }}
@@ -929,7 +929,7 @@ export default function Settings() {
                   <Badge
                     key={child.id}
                     variant="secondary"
-                    className="ml-4 gap-1.5 py-1 pl-2 pr-1"
+                    className="ml-4 max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                   >
                     <span className="text-muted-foreground">└</span>
                     <span
@@ -1055,7 +1055,7 @@ export default function Settings() {
               <Badge
                 key={tag.id}
                 variant="secondary"
-                className="gap-1.5 py-1 pl-2 pr-1"
+                className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
               >
                 <span
                   className="h-2 w-2 rounded-full"
@@ -1119,7 +1119,7 @@ export default function Settings() {
                 <Badge
                   key={t.id}
                   variant="secondary"
-                  className="gap-1.5 py-1 pl-2 pr-1"
+                  className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                 >
                   {t.name}
                   {t.builtin && (
@@ -1153,7 +1153,7 @@ export default function Settings() {
                 <Badge
                   key={b.id}
                   variant="secondary"
-                  className="gap-1.5 py-1 pl-2 pr-1"
+                  className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                 >
                   {b.name}
                   <button

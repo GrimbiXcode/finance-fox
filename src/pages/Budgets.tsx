@@ -150,11 +150,11 @@ export default function Budgets() {
             const carryover = b.period === 'monthly' && b.rollover && limit !== b.amount;
             return (
               <Card key={b.id}>
-                <CardHeader className="flex flex-row items-start justify-between pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cat?.color ?? '#94a3b8' }} />
-                    <div>
-                      <CardTitle className="text-base">{cat?.name ?? 'Unbekannt'}</CardTitle>
+                <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? '#94a3b8' }} />
+                    <div className="min-w-0">
+                      <CardTitle className="text-base" title={cat?.name}>{cat?.name ?? 'Unbekannt'}</CardTitle>
                       <CardDescription>
                         Limit: {formatCents(limit)} / {b.period === 'monthly' ? 'Monat' : 'Jahr'}
                         {b.period === 'monthly' && b.rollover && ' · inkl. Übertrag'}

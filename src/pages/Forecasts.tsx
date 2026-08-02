@@ -235,9 +235,9 @@ export default function Forecasts() {
               const pct = b.budget > 0 ? Math.min(100, Math.round((b.projected / b.budget) * 100)) : 0;
               return (
                 <div key={b.categoryId} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-sm">
+                    <span className="flex min-w-0 items-center gap-2 font-medium">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: b.color }} />
                       {b.categoryName}
                     </span>
                     <span className={cn('font-semibold', b.willExceed ? 'text-destructive' : 'text-muted-foreground')}>
@@ -279,8 +279,8 @@ export default function Forecasts() {
               const pct = g.targetAmount ? Math.min(100, Math.round((g.total / g.targetAmount) * 100)) : 0;
               return (
                 <div key={g.goalId} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{g.name}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-sm">
+                    <span className="min-w-0 font-medium">{g.name}</span>
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <CalendarClock className="h-3.5 w-3.5" />
                       {open

@@ -76,6 +76,26 @@ wäre UX-Rauschen. Alle SelectTrigger bekommen Truncation (`min-w-0
 `title`-Attribut mit dem Label der gewählten Option (SearchableSelect bringt
 beides eingebaut mit).
 
+## Mobile Breite: kein seitliches Scrollen der Seite
+
+Die Seite selbst darf nie horizontal scrollen — seitwärts scrollt nur der
+jeweilige Container (Tabellen via `ui/table` und Karten mit
+`overflow-x-auto`), damit sich die mobile Navigation wie in einer nativen
+App anfühlt. Dafür sorgen drei Ebenen:
+
+- `Layout.tsx`: `<main>` hat `min-w-0 overflow-x-clip` als harte Grenze.
+- `index.css`: `body { overflow-wrap: anywhere }` — lange Wörter
+  (Kontonamen, IBANs, E-Mails) brechen um, statt ihren Container zu dehnen.
+  Elemente mit `whitespace-nowrap` (Tabellenzellen, Badges, Buttons) bleiben
+  bewusst unberührt.
+- `ui/card.tsx`: `Card` hat `min-w-0`, damit Karten ihre Grid-/Flex-Spalte
+  nie sprengen.
+
+Beim Bauen neuer Listen/Karten gilt: Flex-Zeilen mit Name + Betrag bekommen
+`gap-*`, der Namensteil `min-w-0` (plus `truncate` bei einzeiligen Zeilen,
+`title` mit dem vollen Namen), der Betrag/Aktionsteil `shrink-0`.
+Badges mit Benutzertexten zusätzlich `max-w-full whitespace-normal`.
+
 ## Dialog-Layouts (responsive)
 
 Die Bearbeiten-Dialoge (AccountDialog, TransactionDialog, GoalDialog,

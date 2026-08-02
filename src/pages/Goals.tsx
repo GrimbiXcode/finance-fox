@@ -119,9 +119,9 @@ function GoalCard({ goal, accounts, banks, forecast }: {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between pb-2">
-        <div>
-          <CardTitle className="text-base">{goal.name}</CardTitle>
+      <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+        <div className="min-w-0">
+          <CardTitle className="text-base" title={goal.name}>{goal.name}</CardTitle>
           <CardDescription>
             {goal.deadline ? `bis ${formatDate(goal.deadline)}` : 'ohne Stichtag'}
           </CardDescription>

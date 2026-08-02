@@ -385,7 +385,7 @@ export default function Recurring() {
             Der Server verbucht fällige Dauerbuchungen automatisch täglich (03:00 Uhr) und bei jedem Start.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => runNow.mutate()} disabled={runNow.isPending}>
             <Zap className="mr-2 h-4 w-4" /> Jetzt verbuchen
           </Button>
@@ -504,12 +504,12 @@ export default function Recurring() {
             return (
               <Card key={r.id} className={cn((!r.active || archived) && 'opacity-60')}>
                 <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
                       <CardTitle className="text-base">
                         {r.note || (r.type === 'transfer' ? 'Umbuchung' : cat?.name) || 'Dauerbuchung'}
                       </CardTitle>
-                      <CardDescription className="flex items-center gap-1">
+                      <CardDescription className="flex flex-wrap items-center gap-1">
                         {r.type === 'transfer' ? (
                           <>
                             {account?.name ?? '?'}

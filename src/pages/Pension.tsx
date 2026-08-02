@@ -1757,9 +1757,11 @@ function FundsSection({
           const series = forecast?.fundSeries.find(fs => fs.name === f.name);
           return (
             <Card key={f.id}>
-              <CardHeader className="flex flex-row items-start justify-between pb-2">
-                <div className="space-y-1">
-                  <CardTitle className="text-base">{f.name}</CardTitle>
+              <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                <div className="min-w-0 space-y-1">
+                  <CardTitle className="text-base" title={f.name}>
+                    {f.name}
+                  </CardTitle>
                   <div className="flex flex-wrap gap-1.5">
                     <Badge variant="secondary">
                       {f.kind === "pension_fund"
@@ -1881,9 +1883,11 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
           const balance = linked ? p.syncedBalance! : p.currentBalance;
           return (
             <Card key={p.id}>
-              <CardHeader className="flex flex-row items-start justify-between pb-2">
-                <div className="space-y-1">
-                  <CardTitle className="text-base">{p.name}</CardTitle>
+              <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                <div className="min-w-0 space-y-1">
+                  <CardTitle className="text-base" title={p.name}>
+                    {p.name}
+                  </CardTitle>
                   <CardDescription className="flex flex-wrap items-center gap-1.5">
                     {p.institution || "ohne Institution"}
                     {linked && (

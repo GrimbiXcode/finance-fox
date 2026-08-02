@@ -160,14 +160,14 @@ export default function Layout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur md:px-8">
-          <div className="flex items-center gap-2 md:hidden">
-            <PiggyBank className="h-5 w-5 text-emerald-600" />
-            <span className="font-semibold">Finance Fox</span>
+          <div className="flex min-w-0 items-center gap-2 md:hidden">
+            <PiggyBank className="h-5 w-5 shrink-0 text-emerald-600" />
+            <span className="truncate font-semibold">Finance Fox</span>
           </div>
-          <div className="hidden text-sm text-muted-foreground md:block">
+          <div className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <QuickAddDialog />
             <Button
               variant="ghost"
@@ -184,7 +184,7 @@ export default function Layout() {
                 <div
                   key={u.id}
                   title={u.name}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-background text-xs font-semibold text-white"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-background text-xs font-semibold text-white"
                   style={{ backgroundColor: u.color }}
                 >
                   {u.name.slice(0, 2).toUpperCase()}
@@ -199,7 +199,11 @@ export default function Layout() {
             </div>
           </div>
         </header>
-        <main className="flex-1 px-4 py-6 md:px-8">
+        {/* `overflow-x-clip` hält die Seite selbst immer im Viewport: zu breite
+            Inhalte (lange Kontonamen, IBANs) dürfen nie die ganze App seitwärts
+            scrollen lassen. Seitwärts scrollen darf nur der jeweilige Container
+            (Tabellen/Karten mit `overflow-x-auto`) — wie in einer nativen App. */}
+        <main className="min-w-0 flex-1 overflow-x-clip px-4 py-6 md:px-8">
           <Outlet />
         </main>
         <nav className="sticky bottom-0 z-10 flex justify-around border-t bg-background py-2 md:hidden">
@@ -209,12 +213,12 @@ export default function Layout() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) => cn(
-                'flex flex-col items-center gap-1 px-2 py-1 text-[10px]',
+                'flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-1 text-[10px]',
                 isActive ? 'text-emerald-600' : 'text-muted-foreground',
               )}
             >
-              <item.icon className="h-5 w-5" />
-              {item.label}
+              <item.icon className="h-5 w-5 shrink-0" />
+              <span className="w-full truncate text-center">{item.label}</span>
             </NavLink>
           ))}
           <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
@@ -222,12 +226,12 @@ export default function Layout() {
               <button
                 type="button"
                 className={cn(
-                  'flex flex-col items-center gap-1 px-2 py-1 text-[10px]',
+                  'flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-1 text-[10px]',
                   moreOpen ? 'text-emerald-600' : 'text-muted-foreground',
                 )}
               >
-                <Menu className="h-5 w-5" />
-                Mehr
+                <Menu className="h-5 w-5 shrink-0" />
+                <span className="w-full truncate text-center">Mehr</span>
               </button>
             </SheetTrigger>
             <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">

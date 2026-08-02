@@ -2,18 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { recurring, transactions } from "@db/schema";
 import { sendNotification } from "./notify";
-
-function localISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function advanceDate(dateISO: string, interval: "weekly" | "monthly" | "yearly"): string {
-  const d = new Date(`${dateISO}T12:00:00`);
-  if (interval === "weekly") d.setDate(d.getDate() + 7);
-  else if (interval === "monthly") d.setMonth(d.getMonth() + 1);
-  else d.setFullYear(d.getFullYear() + 1);
-  return localISO(d);
-}
+import { advanceDate, localISO } from "./recurringSchedule";
+import { notifyMaturities } from "./mortgage/maturityNotice";
 
 /**
  * Bucht alle fälligen wiederkehrenden Transaktionen (bis einschließlich heute).
@@ -75,6 +65,15 @@ export async function runRecurringJob(): Promise<number> {
       "Wiederkehrende Buchungen verbucht",
       `${created} wiederkehrende Buchung(en) verbucht.`
     );
+  }
+
+  // Zweiter Durchgang: an ablaufende Zinsbindungen erinnern. Best effort —
+  // ein Fehler hier darf die Verbuchung nicht nachträglich als Fehlschlag
+  // erscheinen lassen.
+  try {
+    await notifyMaturities(db);
+  } catch (err) {
+    console.error("[Finance Fox] Hypotheken-Erinnerung fehlgeschlagen:", err);
   }
   return created;
 }

@@ -315,6 +315,77 @@ export function ensureSchema() {
     )`,
     `CREATE INDEX IF NOT EXISTS pension_changes_user_idx
       ON pension_changes (user_id, created_at)`,
+
+    // Hypotheken-Modul (haushaltsweit, synchron mit db/schema.ts).
+    // Neue Tabellen: die Indizes dürfen hier stehen, weil CREATE TABLE und
+    // CREATE INDEX zusammen laufen — der Guard-Zwang gilt nur für Spalten,
+    // die per ALTER TABLE an Bestandstabellen nachgerüstet werden.
+    `CREATE TABLE IF NOT EXISTS properties (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      address TEXT NOT NULL DEFAULT '',
+      country TEXT NOT NULL DEFAULT 'CH',
+      usage TEXT NOT NULL DEFAULT 'owner_occupied',
+      purchase_price INTEGER NOT NULL DEFAULT 0,
+      purchase_date TEXT,
+      market_value INTEGER NOT NULL DEFAULT 0,
+      value_date TEXT,
+      household_income INTEGER NOT NULL DEFAULT 0,
+      first_mortgage_limit_bp INTEGER NOT NULL DEFAULT 6667,
+      max_ltv_bp INTEGER NOT NULL DEFAULT 8000,
+      calc_interest_rate_bp INTEGER NOT NULL DEFAULT 500,
+      maintenance_rate_bp INTEGER NOT NULL DEFAULT 100,
+      amortization_years INTEGER NOT NULL DEFAULT 15,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS mortgage_tranches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      property_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'fixed',
+      principal INTEGER NOT NULL DEFAULT 0,
+      balance_date TEXT,
+      interest_rate_bp INTEGER NOT NULL DEFAULT 0,
+      margin_bp INTEGER,
+      bank_id INTEGER,
+      start_date TEXT NOT NULL,
+      maturity_date TEXT,
+      payment_interval TEXT NOT NULL DEFAULT 'quarterly',
+      interest_recurring_id INTEGER,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS mortgage_tranches_property_idx
+      ON mortgage_tranches (property_id)`,
+    `CREATE TABLE IF NOT EXISTS mortgage_amortizations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      property_id INTEGER NOT NULL,
+      tranche_id INTEGER,
+      kind TEXT NOT NULL DEFAULT 'direct',
+      amount INTEGER NOT NULL DEFAULT 0,
+      interval TEXT NOT NULL DEFAULT 'yearly',
+      account_id INTEGER,
+      start_date TEXT NOT NULL,
+      end_date TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      recurring_id INTEGER,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS mortgage_amort_property_idx
+      ON mortgage_amortizations (property_id)`,
+    `CREATE TABLE IF NOT EXISTS mortgage_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      comment TEXT NOT NULL DEFAULT '',
+      changes TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS mortgage_changes_created_idx
+      ON mortgage_changes (created_at)`,
   ];
   for (const sql of stmts) {
     db.run(sql as never);

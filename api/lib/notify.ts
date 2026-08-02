@@ -6,16 +6,23 @@ import type { Db } from "../queries/connection";
  * selbstgehostet). Konfiguration liegt als app_settings-Keys in der DB:
  * - notify_ntfy_url:    volle Topic-URL (z. B. https://ntfy.sh/mein-haushalt)
  * - notify_webhook_url: generischer HTTP-Endpoint (bekommt JSON per POST)
- * - notify_events:      JSON {"budget":bool,"recurring":bool,"goal":bool}
+ * - notify_events:      JSON {"budget":bool,"recurring":bool,"goal":bool,
+ *                             "mortgage":bool}
  * Fehler beim Versand werden nur geloggt — nie den Hauptflow brechen.
  */
 
-export type NotifyEvent = "budget" | "recurring" | "goal" | "test";
+export type NotifyEvent =
+  | "budget"
+  | "recurring"
+  | "goal"
+  | "mortgage"
+  | "test";
 
 export interface NotifyEvents {
   budget: boolean;
   recurring: boolean;
   goal: boolean;
+  mortgage: boolean;
 }
 
 export interface NotifyConfig {
@@ -34,17 +41,26 @@ export function isHttpUrl(raw: string): boolean {
   }
 }
 
+/** Default: alles an — auch Keys, die in Bestands-Einstellungen fehlen */
+const ALL_EVENTS: NotifyEvents = {
+  budget: true,
+  recurring: true,
+  goal: true,
+  mortgage: true,
+};
+
 function parseEvents(raw: string | undefined): NotifyEvents {
-  if (!raw) return { budget: true, recurring: true, goal: true };
+  if (!raw) return { ...ALL_EVENTS };
   try {
     const parsed = JSON.parse(raw) as Partial<NotifyEvents>;
     return {
       budget: parsed.budget !== false,
       recurring: parsed.recurring !== false,
       goal: parsed.goal !== false,
+      mortgage: parsed.mortgage !== false,
     };
   } catch {
-    return { budget: true, recurring: true, goal: true };
+    return { ...ALL_EVENTS };
   }
 }
 

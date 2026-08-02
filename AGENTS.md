@@ -7,8 +7,8 @@ jeweiligen Dateien automatisch relevant:
 
 - `api/AGENTS.md` — Backend: Router, Auth/2FA, Konto-Rechte, Transaktionen,
   Dauerbuchungen, Kategorien/Budgets, Splits/Projekte/Tags, Sparziele,
-  Prognosen, Vorsorge (3-Säulen-Modul), Benachrichtigungen, Audit-Log,
-  Beleg-Anhänge
+  Prognosen, Vorsorge (3-Säulen-Modul), Hypotheken (Wohneigentum),
+  Benachrichtigungen, Audit-Log, Beleg-Anhänge
 - `src/AGENTS.md` — Frontend: Seiten/Komponenten, Helfer, Auswahlfelder,
   Dialog-Layouts, Geldfluss-Visualisierung, Dark Mode/PWA
 - `db/AGENTS.md` — Schema-Regeln: `db/schema.ts` ↔ `api/lib/migrate.ts`
@@ -22,6 +22,8 @@ mit einer oder mehreren Personen. Alle Daten liegen in einer einzigen
 (Einnahmen/Ausgaben/Umbuchungen), Konten, Budgets, Kostenaufteilung (Splits),
 wiederkehrende Buchungen (Cron-Job), Sparziele, Prognosen, privates
 Vorsorge-Modul (Schweizer 3-Säulen-Prinzip) mit Altersprognose,
+haushaltsweites Hypotheken-Modul (Liegenschaft, Tranchen, Amortisation,
+Belehnung/Tragbarkeit, Nettovermögen),
 Benutzerverwaltung mit Ersteinrichtungs-Wizard und Einladungslinks.
 
 UI-Texte, Kommentare und Doku sind auf **Deutsch** — neue Kommentare,

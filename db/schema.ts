@@ -5,6 +5,9 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+// Bewusst relativ statt über @contracts/* — drizzle-kit liest diese Datei
+// direkt und löst die tsconfig-Aliase nicht zuverlässig auf.
+import { RECURRING_INTERVALS } from "../contracts/types";
 
 /* ---------------------------------- Auth ---------------------------------- */
 
@@ -262,8 +265,10 @@ export const recurring = sqliteTable("recurring", {
   categoryId: integer("category_id"),
   userId: integer("user_id").notNull(),
   note: text("note").notNull().default(""),
+  // Werte aus RECURRING_INTERVALS (@contracts/types) — die Spalte hat in
+  // SQLite bewusst keine CHECK-Constraint, das Enum wirkt rein typseitig.
   interval: text("interval", {
-    enum: ["weekly", "monthly", "yearly"],
+    enum: RECURRING_INTERVALS,
   }).notNull(),
   nextDate: text("next_date").notNull(), // YYYY-MM-DD
   // Optionales Enddatum (YYYY-MM-DD): letztes verbuchtes Vorkommen; NULL =
@@ -489,6 +494,144 @@ export const pensionChanges = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   t => [index("pension_changes_user_idx").on(t.userId, t.createdAt)]
+);
+
+/* -------------------------------- Hypotheken ------------------------------- */
+
+/**
+ * Wohneigentum & Hypotheken — anders als die Vorsorge **haushaltsweit**
+ * sichtbar (kein user_id-Scoping): Das Eigenheim gehört in aller Regel
+ * allen Haushaltsmitgliedern. Verknüpfte Finanz-Konten werden weiterhin
+ * über die Konto-Rechte geprüft (lib/accountAccess.ts).
+ *
+ * Konventionen wie überall: Beträge in Cent, Prozentsätze in Basispunkten
+ * (530 = 5,30 %), Datum als TEXT `YYYY-MM-DD`.
+ */
+
+/**
+ * Liegenschaft. Die fünf bp-Felder sind die Bank-Parameter der
+ * Tragbarkeits- und Belehnungsrechnung — sie unterscheiden sich je nach
+ * Bank und Nutzungsart und sind deshalb pro Objekt überschreibbar
+ * (Defaults = Schweizer Marktstandard für selbstbewohntes Wohneigentum).
+ */
+export const properties = sqliteTable("properties", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  address: text("address").notNull().default(""),
+  // Ländercode für die Berechnungs-Engine (derzeit nur "CH" implementiert)
+  country: text("country").notNull().default("CH"),
+  usage: text("usage", {
+    enum: ["owner_occupied", "rental", "vacation"],
+  })
+    .notNull()
+    .default("owner_occupied"),
+  purchasePrice: integer("purchase_price").notNull().default(0), // Cent
+  purchaseDate: text("purchase_date"), // YYYY-MM-DD
+  marketValue: integer("market_value").notNull().default(0), // Cent
+  valueDate: text("value_date"), // Stichtag des Verkehrswerts
+  // Bruttojahreseinkommen des Haushalts für die Tragbarkeit. Bewusst manuell:
+  // die Lohndaten der Vorsorge sind strikt privat pro Benutzer und dürfen in
+  // einem haushaltsweiten Modul nicht gelesen werden.
+  householdIncome: integer("household_income").notNull().default(0), // Cent
+  // Grenze der 1. Hypothek (Default 66,67 % des Verkehrswerts)
+  firstMortgageLimitBp: integer("first_mortgage_limit_bp")
+    .notNull()
+    .default(6667),
+  // Maximale Belehnung (Default 80 %; Rendite ≈ 75 %, Ferien 50–66 %)
+  maxLtvBp: integer("max_ltv_bp").notNull().default(8000),
+  // Kalkulatorischer Zinssatz der Tragbarkeit (Default 5 % = 500 Bp)
+  calcInterestRateBp: integer("calc_interest_rate_bp").notNull().default(500),
+  // Unterhalt/Nebenkosten in % des Verkehrswerts (Default 1 %)
+  maintenanceRateBp: integer("maintenance_rate_bp").notNull().default(100),
+  // Frist der Amortisationspflicht in Jahren (Default 15; Rendite 10)
+  amortizationYears: integer("amortization_years").notNull().default(15),
+  notes: text("notes").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/**
+ * Hypothekar-Tranche. `principal` ist die Restschuld **per `balanceDate`**
+ * (NULL = per heute) — Muster `pension_funds.value_date`. Bei SARON ist der
+ * effektive Satz `interest_rate_bp + margin_bp`; er wird immer gerechnet,
+ * nie gespeichert. `interest_recurring_id` verweist auf die aus der Tranche
+ * erzeugte Dauerbuchung (NULL = noch keine übernommen).
+ */
+export const mortgageTranches = sqliteTable(
+  "mortgage_tranches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    propertyId: integer("property_id").notNull(),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: ["fixed", "saron", "variable"] })
+      .notNull()
+      .default("fixed"),
+    principal: integer("principal").notNull().default(0), // Cent
+    balanceDate: text("balance_date"), // Stichtag der Restschuld
+    interestRateBp: integer("interest_rate_bp").notNull().default(0),
+    marginBp: integer("margin_bp"), // nur bei SARON
+    bankId: integer("bank_id"),
+    startDate: text("start_date").notNull(), // YYYY-MM-DD
+    maturityDate: text("maturity_date"), // NULL bei saron/variable
+    // Zahlungsrhythmus des Zinses (Werte aus RECURRING_INTERVALS)
+    paymentInterval: text("payment_interval", { enum: RECURRING_INTERVALS })
+      .notNull()
+      .default("quarterly"),
+    interestRecurringId: integer("interest_recurring_id"),
+    notes: text("notes").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("mortgage_tranches_property_idx").on(t.propertyId)]
+);
+
+/**
+ * Amortisation. `direct` senkt die Restschuld einer konkreten Tranche
+ * (`tranche_id` gesetzt); `indirect` zahlt für die gesamte Hypothek auf ein
+ * Konto ein (meist Säule 3a) und lässt die Schuld unverändert —
+ * `tranche_id` ist dann NULL. Anker ist deshalb immer `property_id`.
+ */
+export const mortgageAmortizations = sqliteTable(
+  "mortgage_amortizations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    propertyId: integer("property_id").notNull(),
+    trancheId: integer("tranche_id"), // nur bei kind = "direct"
+    kind: text("kind", { enum: ["direct", "indirect"] })
+      .notNull()
+      .default("direct"),
+    amount: integer("amount").notNull().default(0), // Cent pro Intervall
+    interval: text("interval", { enum: RECURRING_INTERVALS })
+      .notNull()
+      .default("yearly"),
+    // Zielkonto der indirekten Amortisation (3a-/Sparkonto)
+    accountId: integer("account_id"),
+    startDate: text("start_date").notNull(), // YYYY-MM-DD
+    endDate: text("end_date"),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    recurringId: integer("recurring_id"),
+    notes: text("notes").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("mortgage_amort_property_idx").on(t.propertyId)]
+);
+
+/**
+ * Änderungshistorie des Hypotheken-Moduls (Muster: pension_changes).
+ * entity: property | tranche | amortization; `user_id` ist hier **wer**
+ * geändert hat — kein Sichtbarkeits-Scoping. Gelesen wird chronologisch
+ * über den ganzen Haushalt, daher Index nur auf created_at.
+ */
+export const mortgageChanges = sqliteTable(
+  "mortgage_changes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    entity: text("entity").notNull(),
+    entityId: integer("entity_id").notNull(),
+    comment: text("comment").notNull().default(""),
+    changes: text("changes").notNull(), // JSON: [{ field, from, to }]
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("mortgage_changes_created_idx").on(t.createdAt)]
 );
 
 /* -------------------------------- Audit-Log -------------------------------- */

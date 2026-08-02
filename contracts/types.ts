@@ -38,6 +38,49 @@ export const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [
 
 export const DEFAULT_CURRENCY: CurrencyCode = "EUR";
 
+/* ------------------------------ Dauerbuchungen ----------------------------- */
+
+/**
+ * Intervalle der Dauerbuchungen — geteilt zwischen Backend (Zod-Eingaben,
+ * Drizzle-Enum, Terminrechnung) und Frontend (Auswahl, Sortierung,
+ * Geldfluss-Normalisierung). Reihenfolge = Sortierreihenfolge (kurz → lang).
+ *
+ * `quarterly`/`semiannual` sind vor allem für Hypothekarzinsen nötig, die in
+ * der Schweiz üblicherweise vierteljährlich belastet werden.
+ */
+export const RECURRING_INTERVALS = [
+  "weekly",
+  "monthly",
+  "quarterly",
+  "semiannual",
+  "yearly",
+] as const;
+
+export type RecurringInterval = (typeof RECURRING_INTERVALS)[number];
+
+export const RECURRING_INTERVAL_LABELS: Record<RecurringInterval, string> = {
+  weekly: "Wöchentlich",
+  monthly: "Monatlich",
+  quarterly: "Vierteljährlich",
+  semiannual: "Halbjährlich",
+  yearly: "Jährlich",
+};
+
+/**
+ * Monate pro Intervall — für Hochrechnungen auf Monatswerte.
+ * `weekly` hat keine ganzzahlige Entsprechung (52/12 Wochen pro Monat) und
+ * steht deshalb bewusst nicht in dieser Tabelle.
+ */
+export const MONTHS_PER_INTERVAL: Record<
+  Exclude<RecurringInterval, "weekly">,
+  number
+> = {
+  monthly: 1,
+  quarterly: 3,
+  semiannual: 6,
+  yearly: 12,
+};
+
 /* ----------------------------------- Tags ---------------------------------- */
 
 /**

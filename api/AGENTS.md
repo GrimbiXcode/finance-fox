@@ -8,7 +8,8 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   `GET /api/backup` und `POST /api/backup/restore` sowie die Beleg-Routen
   `POST/GET/DELETE /api/attachments*` und die Vorsorge-Anhang-Routen
   `POST/GET/DELETE /api/pension-attachments*`. Request-Body-Limit: 50 MB.
-- `router.ts` — `appRouter: { ping, auth, finance, forecast, pension }`. Der
+- `router.ts` — `appRouter: { ping, auth, finance, forecast, mortgage,
+  pension }`. Der
   Frontend-Client importiert den Typ `AppRouter` direkt von hier
   (`src/providers/trpc.tsx`) — Typänderungen wirken sofort auf den Client.
 - `middleware.ts` — tRPC-Setup: `publicQuery` / `authedQuery` / `adminQuery`.
@@ -28,12 +29,18 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
 - `forecastRouter.ts` — Prognosen.
 - `pensionRouter.ts` — Vorsorge-Modul (Schweizer 3-Säulen-Prinzip, siehe
   Abschnitt „Vorsorge").
+- `mortgageRouter.ts` — Hypotheken-Modul (siehe Abschnitt „Hypotheken").
 - `lib/` — `env.ts`, `session.ts`, `migrate.ts` (`ensureSchema`),
-  `recurringJob.ts`, `accountAccess.ts`, `accountTypes.ts`, `csv.ts`,
+  `recurringJob.ts`, `recurringSchedule.ts` (Terminrechnung der
+  Dauerbuchungen — `advanceDate`/`localISO`, einzige Quelle der Wahrheit für
+  Cron UND Prognose), `accountAccess.ts`, `accountTypes.ts`, `csv.ts`,
   `camt.ts`, `budgets.ts`, `attachments.ts`, `goalProgress.ts`, `http.ts`,
   `vite.ts` (statische Auslieferung in Produktion), `audit.ts`, `notify.ts`,
-  `totp.ts`, `pension/` (Vorsorge: `netSalary.ts`, `history.ts`,
-  `forecastCh.ts` + `index.ts`-Factory, `accountSync.ts`).
+  `totp.ts`, `changeHistory.ts` (`buildFieldDiff` — geteiltes Feld-Diff der
+  Modul-Historien), `pension/` (Vorsorge: `netSalary.ts`, `history.ts`,
+  `forecastCh.ts` + `index.ts`-Factory, `accountSync.ts`), `mortgage/`
+  (Hypotheken: `scheduleCh.ts` + `index.ts`-Factory, `portfolio.ts`,
+  `history.ts`, `maturityNotice.ts`).
 
 ## Vorsorge (3-Säulen-Prinzip)
 
@@ -113,6 +120,65 @@ Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
   (Zinseszins, Umwandlungssatz, AHV, Ersatzrate, Warnungen, 3a-Link).
 - `queries/connection.ts` — sql.js-DB mit better-sqlite3-kompatiblem Proxy,
   `initDb()` / `getDb()` / `markDirty()`.
+
+## Hypotheken
+
+Modul in `mortgageRouter.ts` (tRPC-Namespace `mortgage`) — im Gegensatz zur
+Vorsorge **haushaltsweit**: kein `userId`-Scoping, jedes Mitglied sieht und
+bearbeitet alles. Verknüpfte Finanz-Konten werden weiterhin über
+`requireAccountAccess` geprüft (`view` fürs Verknüpfen, `edit` fürs Anlegen
+einer Dauerbuchung). Tabellen: `properties` (Liegenschaft; `country` speist
+die Engine-Factory, `household_income` ist bewusst manuell — die Lohndaten
+der Vorsorge sind privat und dürfen hier nicht gelesen werden; die fünf
+bp-Felder `first_mortgage_limit_bp`/`max_ltv_bp`/`calc_interest_rate_bp`/
+`maintenance_rate_bp` plus `amortization_years` sind die pro Objekt
+überschreibbaren Bank-Parameter), `mortgage_tranches` (Fest/SARON/variabel,
+`principal` gilt per `balance_date`, `margin_bp` nur bei SARON,
+`interest_recurring_id` als Rückverweis), `mortgage_amortizations`
+(`property_id` ist der Anker, `tranche_id` nur bei `direct` — indirekte
+Amortisation gilt der ganzen Hypothek), `mortgage_changes` (Historie,
+`user_id` = wer geändert hat).
+
+- **Berechnung**: länderabhängig über `getMortgageCalculator(country)` in
+  `lib/mortgage/index.ts` (Muster: Vorsorge); CH-Umsetzung in
+  `scheduleCh.ts` — monatliche Simulation (max. 600 Monate, Rundung auf
+  Cent). Der Zins wird **gezahlt, nicht kapitalisiert**: Die Restschuld
+  sinkt ausschließlich durch direkte Amortisation. Ergebnis: `monthlyDebt`/
+  `monthlyIndirect` (Index 0 = heute), Jahres-`series`, Kennzahlen pro
+  Tranche, `ltv` (1./2. Hypothek, Spielraum) und `affordability`.
+- **Tragbarkeit** rechnet mit der **erforderlichen**, nicht der geleisteten
+  Amortisation (2. Hypothek / `amortization_years`) — sonst wirkte ein
+  Haushalt ohne jede Amortisation rechnerisch tragbar. Grenze
+  `MAX_COST_RATIO_BP = 3333`.
+- **Warnungen** sind **strukturierte Daten** (`MortgageWarning`), keine
+  fertigen Sätze: Beträge, Prozente und Datumsangaben formatiert erst das
+  Frontend locale-konform (`warningText` in `pages/Mortgages.tsx`).
+- **Nettovermögen**: `forecast.balance` liefert zusätzlich `netWorth`,
+  `netWorthNow` und `mortgageMissingRecurring` (Aggregation über
+  `lib/mortgage/portfolio.ts`). Zwei Invarianten sichern gegen
+  Doppelzählung — die Engine senkt die Schuld bei **indirekter**
+  Amortisation NICHT, und `indirectCapital` ist reine Anzeige (das Geld
+  steckt schon im Saldo des verknüpften Kontos). Regressionstest:
+  `api/mortgageNetWorth.test.ts`.
+- **Übernahme als Dauerbuchung**: `transferInterestToRecurring` /
+  `transferAmortizationToRecurring` legen eine Kopie an (kein Live-Sync,
+  wie `pension.transferNetSalary`). Idempotenz **selbstheilend**: Der
+  Rückverweis wird gegen `recurring` aufgelöst — existiert die Zeile noch,
+  `CONFLICT`; ist sie gelöscht, gilt der Verweis als leer und es wird neu
+  angelegt. Dieselbe Auflösung in `listTranches`/`listAmortizations`, damit
+  kein Badge lügt.
+- **Kaskaden im Finanz-Modul**: `deleteAccount` nullt
+  `mortgage_amortizations.account_id` (der Plan bleibt bestehen),
+  `deleteRecurring` räumt die Rückverweise ab, `resetFinanceData` löscht
+  alle vier Tabellen, `deleteBank` sperrt auch bei Nutzung durch Tranchen.
+- **Zinsbindungs-Erinnerung**: `lib/mortgage/maturityNotice.ts` läuft als
+  zweiter Durchgang im täglichen Cron und meldet bei 90 und 30 Tagen
+  Restlaufzeit (Notify-Event `mortgage`); Marker in `app_settings`
+  (`mortgage_maturity_notified`) verhindert tägliche Wiederholung.
+- Tests: `api/mortgage.test.ts` (CRUD, Kaskaden, Rechte, Idempotenz,
+  Historie, Erinnerung), `api/mortgageSchedule.test.ts` (reine Engine, fixes
+  „heute", exakte Cent-Erwartungen, Invarianten),
+  `api/mortgageNetWorth.test.ts`.
 
 ## Auth & 2FA
 
@@ -213,6 +279,14 @@ Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
 
 ## Dauerbuchungen (recurring)
 
+- **Intervalle**: `weekly` | `monthly` | `quarterly` | `semiannual` |
+  `yearly` — zentral in `RECURRING_INTERVALS`/`RECURRING_INTERVAL_LABELS`/
+  `MONTHS_PER_INTERVAL` (`contracts/types.ts`), von Backend und Frontend
+  geteilt. Die Spalte hat in SQLite **keine** CHECK-Constraint, das Enum
+  wirkt rein typseitig — ein neues Intervall braucht daher keine Migration,
+  aber die Terminrechnung `advanceDate` (`lib/recurringSchedule.ts`) muss
+  es kennen. `quarterly`/`semiannual` kamen mit dem Hypotheken-Modul dazu
+  (Schweizer Hypothekarzins wird quartalsweise belastet).
 - **Umbuchungen**: `recurring.type` kann auch `transfer` sein (Dauerauftrag
   zwischen Konten) — dann ist `recurring.to_account_id` gesetzt (Pflicht, ≠
   `account_id`, Kategorie irrelevant). Rechte wie bei Buchungen: `edit` aufs
@@ -365,7 +439,8 @@ Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
 ## Benachrichtigungen & Audit-Log
 
 - **Benachrichtigungen (opt-in)**: Versand via ntfy und/oder generischem
-  Webhook, zentral `sendNotification` in `lib/notify.ts` (Konfiguration in
+  Webhook, zentral `sendNotification` in `lib/notify.ts` (Events: `budget`,
+  `recurring`, `goal`, `mortgage`; Konfiguration in
   `app_settings`: `notify_ntfy_url`, `notify_webhook_url`, `notify_events` —
   Admin-Endpunkte `finance.getNotifySettings`/`setNotifySettings`/
   `sendTestNotification`). Nur http/https-URLs; Versandfehler werden nur
@@ -373,7 +448,8 @@ Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
   `finance.createTransaction`, Sammelmeldung am Ende von `runRecurringJob`,
   Sparziel-Meilensteine (25/50/75/100 %, ungefilterter Haushalts-
   Gesamtfortschritt vor/nach) in `finance.createTransaction` (Buchung auf
-  einem ziel-verknüpften Konto) und `finance.addGoalSource`. Tests:
+  einem ziel-verknüpften Konto) und `finance.addGoalSource`, Ablauf einer
+  Zinsbindung (90/30 Tage, zweiter Durchgang im Cron). Tests:
   `api/notify.test.ts`.
 - **Aktivitäts-/Audit-Log**: Tabelle `audit_log` (userId NULL = System bzw.
   Vorgänge vor dem Login, action nach Konvention `<entity>.<verb>` wie

@@ -29,3 +29,13 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
 - Die Vorsorge-Tabellen (`pension_*`) folgen denselben Konventionen; Monate
   als Text `YYYY-MM`, Prozentsätze als Integer in **Basispunkten**
   (530 = 5,30 %). Fachlogik dazu: `api/AGENTS.md` Abschnitt „Vorsorge".
+- Die Hypotheken-Tabellen (`properties`, `mortgage_tranches`,
+  `mortgage_amortizations`, `mortgage_changes`) ebenfalls — anders als die
+  Vorsorge aber **ohne `user_id`-Scoping**: Wohneigentum gehört dem
+  Haushalt. Achtung bei Basispunkten: 5 % sind **500** Bp, nicht 5000.
+  Fachlogik: `api/AGENTS.md` Abschnitt „Hypotheken".
+- `recurring.interval` hat **keine** CHECK-Constraint — das Drizzle-Enum
+  (`RECURRING_INTERVALS` aus `contracts/types.ts`, relativ importiert, damit
+  drizzle-kit es auflöst) wirkt rein typseitig. Ein neues Intervall braucht
+  daher keine Migration, wohl aber einen Zweig in `advanceDate`
+  (`api/lib/recurringSchedule.ts`).

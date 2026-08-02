@@ -2,26 +2,17 @@ import { z } from "zod";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
-  accounts, categories, goalContributions, goalSources, recurring,
+  accounts, categories, goalContributions, goalSources,
+  mortgageAmortizations, mortgageTranches, properties, recurring,
   savingsGoals, transactions,
 } from "@db/schema";
+import { mortgageDebtProjection } from "./lib/mortgage/portfolio";
 import {
   touchesVisibleAccount, visibleAccountIds,
 } from "./lib/accountAccess";
 import { computeBudgetStatuses } from "./lib/budgets";
 import { sourceAmount } from "./lib/goalProgress";
-
-function localISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function advanceDate(dateISO: string, interval: "weekly" | "monthly" | "yearly"): string {
-  const d = new Date(`${dateISO}T12:00:00`);
-  if (interval === "weekly") d.setDate(d.getDate() + 7);
-  else if (interval === "monthly") d.setMonth(d.getMonth() + 1);
-  else d.setFullYear(d.getFullYear() + 1);
-  return localISO(d);
-}
+import { advanceDate, localISO } from "./lib/recurringSchedule";
 
 function monthKey(dateISO: string): string {
   return dateISO.slice(0, 7);
@@ -55,11 +46,16 @@ export const forecastRouter = createRouter({
     .query(async ({ ctx, input }) => {
       const db = getDb();
       const visible = await visibleAccountIds(db, ctx.user);
-      const [allAccs, allTxs, allRecs] = await Promise.all([
-        db.select().from(accounts),
-        db.select().from(transactions),
-        db.select().from(recurring),
-      ]);
+      const [allAccs, allTxs, allRecs, propertyRows, trancheRows, amortRows] =
+        await Promise.all([
+          db.select().from(accounts),
+          db.select().from(transactions),
+          db.select().from(recurring),
+          // Hypotheken sind haushaltsweit — sie werden nicht gefiltert
+          db.select().from(properties),
+          db.select().from(mortgageTranches),
+          db.select().from(mortgageAmortizations),
+        ]);
       // Nur sichtbare Konten/Buchungen in die Prognose einbeziehen
       const accs = allAccs.filter((a) => visible.has(a.id));
       const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
@@ -144,6 +140,26 @@ export const forecastRouter = createRouter({
       const avgVarIncome = countedMonths > 0 ? Math.round(varIncome / countedMonths) : 0;
       const avgVarExpense = countedMonths > 0 ? Math.round(varExpense / countedMonths) : 0;
 
+      // Netto-Vermögen: Verkehrswert der Liegenschaften minus simulierte
+      // Restschuld je Monat.
+      //
+      // Kein Doppelzählen, weil jeder Hypotheken-Geldfluss genau einmal
+      // wirkt: Zins ist eine Ausgabe (Vermögen sinkt), direkte Amortisation
+      // senkt Saldo UND Schuld (neutral), indirekte Amortisation ist eine
+      // Umbuchung zwischen zwei sichtbaren Konten (saldo-neutral) und lässt
+      // die Schuld in der Engine bewusst unverändert.
+      const mortgage =
+        propertyRows.length > 0
+          ? mortgageDebtProjection(
+              propertyRows,
+              trancheRows,
+              amortRows,
+              input.months,
+              new Date(),
+              new Set(allRecs.map(r => r.id))
+            )
+          : null;
+
       // Projektion: wiederkehrende Buchungen + variable Durchschnitte
       const projection: {
         month: string; balance: number; recurringIncome: number; recurringExpense: number;
@@ -204,9 +220,26 @@ export const forecastRouter = createRouter({
         });
       }
 
+      // Nettovermögens-Reihe parallel zur Projektion (null ohne Liegenschaft).
+      // Der Verkehrswert wird bewusst konstant fortgeschrieben — eine
+      // Wertentwicklung wäre geraten, nicht gerechnet.
+      const netWorth = mortgage
+        ? projection.map((p, i) => ({
+            month: p.month,
+            value: p.balance + mortgage.propertyValue - mortgage.debtByMonth[i + 1],
+          }))
+        : null;
+
       return {
         history,
         projection,
+        netWorth,
+        netWorthNow: mortgage
+          ? running + mortgage.propertyValue - mortgage.debtByMonth[0]
+          : null,
+        // Posten ohne Dauerbuchung fehlen in der Projektion — das UI weist
+        // darauf hin, statt ein zu optimistisches Vermögen zu zeigen
+        mortgageMissingRecurring: mortgage?.missingRecurringCount ?? 0,
         avgVariableIncome: avgVarIncome,
         avgVariableExpense: avgVarExpense,
         // Wirksame Szenario-Parameter — das Frontend zeigt damit an,

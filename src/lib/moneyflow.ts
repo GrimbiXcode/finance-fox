@@ -9,6 +9,8 @@
  * Monatsbetrag (kontinuierlich, siehe width).
  */
 
+import { MONTHS_PER_INTERVAL, type RecurringInterval } from '@contracts/types';
+
 export interface MoneyFlowAccount {
   id: number;
   name: string;
@@ -23,7 +25,7 @@ export interface MoneyFlowRecurring {
   accountId: number;
   toAccountId: number | null;
   amount: number;
-  interval: 'weekly' | 'monthly' | 'yearly';
+  interval: RecurringInterval;
   active: boolean;
 }
 
@@ -107,8 +109,7 @@ export const MIN_HEIGHT_PX = 280;
 /** Betrag einer Dauerbuchung auf Monatsbasis umrechnen (Cent, gerundet) */
 export function monthlyAmount(amount: number, interval: MoneyFlowRecurring['interval']): number {
   if (interval === 'weekly') return Math.round((amount * 52) / 12);
-  if (interval === 'yearly') return Math.round(amount / 12);
-  return amount;
+  return Math.round(amount / MONTHS_PER_INTERVAL[interval]);
 }
 
 /**

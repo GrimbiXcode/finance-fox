@@ -10,12 +10,15 @@ import {
   formatMonthShort, getUserLocale, memberBalances, monthTotals, totalBalance,
 } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
+import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 
 const PIE_COLORS = ['#f43f5e', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#94a3b8', '#10b981'];
 
 export default function Dashboard() {
   const { accounts, categories, transactions, users, isLoading } = useFinanceData();
+  // Liegenschaften/Hypotheken für die Zusatzzeile im Gesamtvermögen
+  const mortgage = trpc.mortgage.summary.useQuery().data;
   const month = currentMonthKey();
   const totals = monthTotals(transactions, month);
   const total = totalBalance(accounts, transactions);
@@ -67,6 +70,11 @@ export default function Dashboard() {
           <CardContent>
             <div className={cn('text-2xl font-bold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
             <p className="text-xs text-muted-foreground">{accounts.length} Konten</p>
+            {mortgage && mortgage.count > 0 && (
+              <p className="text-xs text-muted-foreground" title="Kontosalden plus Verkehrswert der Liegenschaften minus Restschuld">
+                inkl. Immobilie: {formatCents(total + mortgage.equity)}
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>

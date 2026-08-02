@@ -12,6 +12,7 @@ import Splitting from '@/pages/Splitting'
 import Recurring from '@/pages/Recurring'
 import Goals from '@/pages/Goals'
 import Pension from '@/pages/Pension'
+import Mortgages from '@/pages/Mortgages'
 import Forecasts from '@/pages/Forecasts'
 import YearReview from '@/pages/YearReview'
 import Settings from '@/pages/Settings'
@@ -56,6 +57,7 @@ function Root() {
         <Route path="/wiederkehrend" element={<Recurring />} />
         <Route path="/sparziele" element={<Goals />} />
         <Route path="/vorsorge" element={<Pension />} />
+        <Route path="/hypotheken" element={<Mortgages />} />
         <Route path="/prognosen" element={<Forecasts />} />
         <Route path="/auswertung" element={<YearReview />} />
         <Route path="/personen" element={<UsersPage />} />

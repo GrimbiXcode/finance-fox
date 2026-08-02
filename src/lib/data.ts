@@ -74,6 +74,24 @@ export function useInvalidateFinance() {
     utils.forecast.balance.invalidate();
     utils.forecast.budgetForecast.invalidate();
     utils.forecast.goalForecast.invalidate();
+    // Eine neue Buchung verschiebt auch die Nettovermögens-Zeile
+    utils.mortgage.summary.invalidate();
+  };
+}
+
+/** Invalidiert nach einer Mutation alle Hypotheken-Queries */
+export function useInvalidateMortgage() {
+  const utils = trpc.useUtils();
+  return () => {
+    utils.mortgage.listProperties.invalidate();
+    utils.mortgage.listTranches.invalidate();
+    utils.mortgage.listAmortizations.invalidate();
+    utils.mortgage.forecast.invalidate();
+    utils.mortgage.summary.invalidate();
+    utils.mortgage.listChanges.invalidate();
+    // Übernommene Dauerbuchungen und das Nettovermögen der Prognose
+    utils.finance.listRecurring.invalidate();
+    utils.forecast.balance.invalidate();
   };
 }
 

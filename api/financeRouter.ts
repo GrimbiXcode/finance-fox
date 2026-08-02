@@ -15,7 +15,11 @@ import {
   categories,
   goalContributions,
   goalSources,
+  mortgageAmortizations,
+  mortgageChanges,
+  mortgageTranches,
   projects,
+  properties,
   recurring,
   savingsGoals,
   splitTemplates,
@@ -27,7 +31,13 @@ import {
   transactionTags,
   users,
 } from "@db/schema";
-import { CURRENCY_CODES, DEFAULT_CURRENCY, TAG_COLORS } from "@contracts/types";
+import {
+  CURRENCY_CODES,
+  DEFAULT_CURRENCY,
+  RECURRING_INTERVAL_LABELS,
+  RECURRING_INTERVALS,
+  TAG_COLORS,
+} from "@contracts/types";
 import type { ShareWeight } from "@contracts/splitShares";
 import { runRecurringJob } from "./lib/recurringJob";
 import {
@@ -473,6 +483,12 @@ export const financeRouter = createRouter({
         tx.delete(goalSources)
           .where(eq(goalSources.accountId, input.id))
           .run();
+        // Hypotheken-Amortisationen verlieren nur ihr Zielkonto — der
+        // Amortisationsplan selbst bleibt bestehen (kein Datenverlust).
+        tx.update(mortgageAmortizations)
+          .set({ accountId: null })
+          .where(eq(mortgageAmortizations.accountId, input.id))
+          .run();
         tx.delete(accountPermissions)
           .where(eq(accountPermissions.accountId, input.id))
           .run();
@@ -836,6 +852,20 @@ export const financeRouter = createRouter({
         throw new TRPCError({
           code: "CONFLICT",
           message: `Die Bank wird noch von ${kontoAnzahl(used.length)} verwendet.`,
+        });
+      }
+      // Auch Hypothekar-Tranchen verweisen auf Banken
+      const usedByTranches = await db
+        .select({ id: mortgageTranches.id })
+        .from(mortgageTranches)
+        .where(eq(mortgageTranches.bankId, input.id));
+      if (usedByTranches.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            usedByTranches.length === 1
+              ? "Die Bank wird noch von 1 Hypothekar-Tranche verwendet."
+              : `Die Bank wird noch von ${usedByTranches.length} Hypothekar-Tranchen verwendet.`,
         });
       }
       await db.delete(banks).where(eq(banks.id, input.id));
@@ -2223,7 +2253,7 @@ export const financeRouter = createRouter({
         categoryId: z.number().int().positive().optional(),
         userId: z.number().int().positive(),
         note: z.string().default(""),
-        interval: z.enum(["weekly", "monthly", "yearly"]),
+        interval: z.enum(RECURRING_INTERVALS),
         nextDate: isoDate,
         // Optionales Enddatum (letztes verbuchtes Vorkommen, YYYY-MM-DD)
         endDate: isoDate.optional(),
@@ -2268,7 +2298,7 @@ export const financeRouter = createRouter({
         "recurring.created",
         "recurring",
         null,
-        `${TYPE_LABELS[input.type]} ${auditAmount(input.amount)}, ${input.interval === "weekly" ? "wöchentlich" : input.interval === "monthly" ? "monatlich" : "jährlich"} ab ${input.nextDate}${input.note ? ` — ${input.note}` : ""}`
+        `${TYPE_LABELS[input.type]} ${auditAmount(input.amount)}, ${RECURRING_INTERVAL_LABELS[input.interval].toLowerCase()} ab ${input.nextDate}${input.note ? ` — ${input.note}` : ""}`
       );
       return { ok: true };
     }),
@@ -2284,7 +2314,7 @@ export const financeRouter = createRouter({
         categoryId: z.number().int().positive().nullable().optional(),
         userId: z.number().int().positive().optional(),
         note: z.string().optional(),
-        interval: z.enum(["weekly", "monthly", "yearly"]).optional(),
+        interval: z.enum(RECURRING_INTERVALS).optional(),
         nextDate: isoDate.optional(),
         // Enddatum: undefined = unverändert, null = entfernen
         endDate: isoDate.nullable().optional(),
@@ -2403,6 +2433,17 @@ export const financeRouter = createRouter({
       if (!row) throw new TRPCError({ code: "NOT_FOUND" });
       await requireAccountAccess(db, ctx.user, row.accountId, "edit");
       await db.delete(recurring).where(eq(recurring.id, input.id));
+      // Rückverweise des Hypotheken-Moduls aufräumen. Die Lese-Endpunkte
+      // prüfen zusätzlich, ob die Dauerbuchung noch existiert — das hier
+      // ist Hygiene, keine Korrektheitsbedingung.
+      await db
+        .update(mortgageTranches)
+        .set({ interestRecurringId: null })
+        .where(eq(mortgageTranches.interestRecurringId, input.id));
+      await db
+        .update(mortgageAmortizations)
+        .set({ recurringId: null })
+        .where(eq(mortgageAmortizations.recurringId, input.id));
       logAudit(
         db,
         ctx.user.id,
@@ -3044,6 +3085,13 @@ export const financeRouter = createRouter({
       tx.delete(goalSources).where(ne(goalSources.id, -1)).run();
       tx.delete(savingsGoals).where(ne(savingsGoals.id, -1)).run();
       tx.delete(categories).where(ne(categories.id, -1)).run();
+      // Hypotheken sind Finanzdaten des Haushalts — Kinder zuerst
+      tx.delete(mortgageChanges).where(ne(mortgageChanges.id, -1)).run();
+      tx.delete(mortgageAmortizations)
+        .where(ne(mortgageAmortizations.id, -1))
+        .run();
+      tx.delete(mortgageTranches).where(ne(mortgageTranches.id, -1)).run();
+      tx.delete(properties).where(ne(properties.id, -1)).run();
       tx.delete(accountPermissions).where(ne(accountPermissions.id, -1)).run();
       tx.delete(accountOwners).where(ne(accountOwners.id, -1)).run();
       tx.delete(accounts).where(ne(accounts.id, -1)).run();
@@ -3323,6 +3371,8 @@ export const financeRouter = createRouter({
           budget: z.boolean(),
           recurring: z.boolean(),
           goal: z.boolean(),
+          // Bestands-Clients senden das Feld noch nicht → Default an
+          mortgage: z.boolean().default(true),
         }),
       })
     )

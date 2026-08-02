@@ -20,6 +20,9 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   Phasen-Bändern, Risikoleistungen; Kopf zeigt „Angaben per <Stichtag>",
   wenn die Kasse einen valueDate-Stichtag hat, sonst „Stand: heute"),
   `PensionAttachments.tsx` (Anhänge von Vorsorge-Datensätzen),
+  `MortgagePropertyDialog.tsx`/`MortgageTrancheDialog.tsx`/
+  `MortgageAmortizationDialog.tsx`/`MortgageTransferDialog.tsx`
+  (Hypotheken-Dialoge, Muster PensionFundDialog),
   `ui/` (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
   `AppRouter` aus `api/router.ts`), `auth.tsx`.
@@ -30,7 +33,7 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
 
 Die Menüstruktur steht zentral in `navGroups` (thematisch gruppiert:
 Alltag = Dashboard/Transaktionen/Wiederkehrend/Aufteilung, Konten =
-Konten/Geldfluss, Planung = Budgets/Sparziele/Vorsorge, Analyse =
+Konten/Geldfluss, Planung = Budgets/Sparziele/Vorsorge/Hypotheken, Analyse =
 Prognosen/Auswertung, Verwaltung = Personen/Einstellungen) und speist
 beide Navigationen: die Desktop-Seitenleiste (mit Gruppen-Labels, im
 eingeklappten Zustand nur Icons + Trennlinien) und die mobile Ansicht —
@@ -197,6 +200,20 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   Invalidierung zentral `useInvalidatePension()` in `lib/data.ts`;
   Prozent-Eingaben via `parsePercent`/`formatBp` in `lib/finance.ts`
   (Basispunkte).
+- **Hypotheken** (`pages/Mortgages.tsx` unter `/hypotheken`, Nav
+  „Hypotheken" nach „Vorsorge"): haushaltsweites Modul für Wohneigentum.
+  Ohne Liegenschaft nur eine Setup-Card. Danach: Kopfzeile der gewählten
+  Liegenschaft (bei mehreren ein SearchableSelect), Übersicht (KPI-Karten
+  Restschuld/Ø-Zins/Monatsbelastung/Belehnung, Nettovermögen-Karte,
+  Tragbarkeits-Karte, Hinweise, AreaChart Restschuld + Eigenkapital mit
+  `ReferenceArea`-Marken je Zinsbindungs-Ablauf), Tranchen- und
+  Amortisations-Grids mit Dialogen, Verlauf. Der Repeat-Button auf einer
+  Karte öffnet `MortgageTransferDialog` („Als Dauerbuchung übernehmen") —
+  er verschwindet, sobald der Rückverweis auf eine existierende
+  Dauerbuchung zeigt. **Hinweise kommen als strukturierte Daten vom Server**
+  (`MortgageWarning`) und werden erst in `warningText()` zu deutschen Sätzen
+  — nur so lassen sich Beträge/Prozente/Daten locale-konform formatieren.
+  Invalidierung zentral `useInvalidateMortgage()` in `lib/data.ts`.
 - **Charts mit Bändern (recharts)**: `ReferenceArea` braucht eine
   **numerische X-Achse** (`<XAxis type="number" domain={[min, max]}>`,
   Werte als Zahl statt String) plus `ifOverflow="hidden"` — mit einer

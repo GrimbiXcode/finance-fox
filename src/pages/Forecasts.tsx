@@ -60,7 +60,13 @@ export default function Forecasts() {
     setApplied({ incomePct: 100, excludeCategoryId: null });
   };
 
-  const chartData = [
+  // Nettovermögen je Prognosemonat (nur mit erfasster Liegenschaft)
+  const netWorthByMonth = new Map(
+    (balance.data?.netWorth ?? []).map((n) => [n.month, n.value]),
+  );
+  const chartData: {
+    month: string; Ist?: number; Prognose?: number; Vermögen?: number;
+  }[] = [
     ...(balance.data?.history ?? []).map((h) => ({
       month: formatMonthYearShort(h.month),
       Ist: Math.round(h.balance / 100),
@@ -68,6 +74,9 @@ export default function Forecasts() {
     ...(balance.data?.projection ?? []).map((p) => ({
       month: formatMonthYearShort(p.month),
       Prognose: Math.round(p.balance / 100),
+      ...(netWorthByMonth.has(p.month)
+        ? { Vermögen: Math.round(netWorthByMonth.get(p.month)! / 100) }
+        : {}),
     })),
   ];
   // Verbindungspunkt: letzter Ist-Wert auch als Prognose-Start
@@ -77,8 +86,12 @@ export default function Forecasts() {
     chartData[hist.length - 1] = {
       ...chartData[hist.length - 1],
       Prognose: Math.round(last.balance / 100),
+      ...(balance.data.netWorthNow !== null
+        ? { Vermögen: Math.round(balance.data.netWorthNow / 100) }
+        : {}),
     };
   }
+  const hasNetWorth = (balance.data?.netWorth ?? null) !== null;
 
   const endBalance = balance.data?.projection[balance.data.projection.length - 1]?.balance;
 
@@ -173,7 +186,15 @@ export default function Forecasts() {
               </CardTitle>
               <CardDescription>
                 Gesamtvermögen: 6 Monate zurück + Projektion (Dauerbuchungen + durchschnittliche variable Ausgaben der letzten 3 Monate)
+                {hasNetWorth && ' — „Vermögen" bezieht Liegenschaften und Hypotheken ein (Verkehrswert konstant fortgeschrieben)'}
               </CardDescription>
+              {(balance.data?.mortgageMissingRecurring ?? 0) > 0 && (
+                <p className="pt-1 text-xs text-amber-600 dark:text-amber-400">
+                  {balance.data!.mortgageMissingRecurring} Hypotheken-Posten ohne
+                  Dauerbuchung — deren Zahlungen fehlen in der Projektion, das
+                  Vermögen fällt dadurch zu optimistisch aus.
+                </p>
+              )}
             </div>
             {endBalance !== undefined && (
               <div className="text-right">
@@ -198,6 +219,9 @@ export default function Forecasts() {
                 <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 4" />
                 <Line type="monotone" dataKey="Ist" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} connectNulls={false} />
                 <Line type="monotone" dataKey="Prognose" stroke="#6366f1" strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} />
+                {hasNetWorth && (
+                  <Line type="monotone" dataKey="Vermögen" stroke="#0ea5e9" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} />
+                )}
               </LineChart>
             </ResponsiveContainer>
           )}

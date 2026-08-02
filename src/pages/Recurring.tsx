@@ -26,12 +26,13 @@ import { amountPlaceholder, currencySymbol, formatCents, formatDate, parseEuro, 
 import { isRecurringArchived, sortRecurring } from '@/lib/recurring';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
+import {
+  RECURRING_INTERVAL_LABELS, RECURRING_INTERVALS, type RecurringInterval,
+} from '@contracts/types';
 import { toast } from 'sonner';
 
-type Interval = 'weekly' | 'monthly' | 'yearly';
-const intervalLabel: Record<Interval, string> = {
-  weekly: 'Wöchentlich', monthly: 'Monatlich', yearly: 'Jährlich',
-};
+type Interval = RecurringInterval;
+const intervalLabel = RECURRING_INTERVAL_LABELS;
 type RecType = 'income' | 'expense' | 'transfer';
 const typeLabel: Record<RecType, string> = {
   expense: 'Ausgabe', income: 'Einnahme', transfer: 'Umbuchung',
@@ -46,8 +47,8 @@ const readViewMode = (): ViewMode =>
 
 type RecurringRow = ReturnType<typeof useFinanceData>['recurring'][number];
 
-/** Sortierreihenfolge der Intervalle: wöchentlich < monatlich < jährlich */
-const INTERVAL_ORDER: Record<Interval, number> = { weekly: 0, monthly: 1, yearly: 2 };
+/** Sortierreihenfolge der Intervalle: kurz vor lang (Reihenfolge im Contract) */
+const intervalOrder = (i: Interval): number => RECURRING_INTERVALS.indexOf(i);
 
 /** Sortierbare Spalten der Tabellenansicht */
 type RecSortKey = 'type' | 'note' | 'person' | 'amount' | 'interval' | 'nextDate' | 'status';
@@ -351,7 +352,7 @@ export default function Recurring() {
       (r.type === 'transfer' ? 'Umbuchung' : categories.find((c) => c.id === r.categoryId)?.name ?? ''),
     person: (r) => users.find((u) => u.id === r.userId)?.name ?? '',
     amount: (r) => r.amount,
-    interval: (r) => INTERVAL_ORDER[r.interval],
+    interval: (r) => intervalOrder(r.interval),
     nextDate: (r) => r.nextDate,
     status: (r) => (isArchived(r) ? 2 : r.active ? 0 : 1), // aktiv < pausiert < archiviert
   });

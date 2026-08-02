@@ -11,9 +11,10 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 - **Konten** — eigene Kontotypen, Bank & IBAN, Saldo-Verlauf, Besitz & Sichtbarkeit (privat vs. Gemeinschaftskonto mit Freigaben, serverseitig durchgesetzt)
 - **Budgets** — Monats- oder Jahreslimits pro Kategorie mit Fortschritt, Warnung und optionalem Rollover
 - **Kostenaufteilung** — Ausgaben splitten (auch gewichtet über Vorlagen), Projekte, Salden, Ausgleichsvorschläge mit 1-Klick-Verbuchung
-- **Wiederkehrende Buchungen** — inkl. Dauer-Umbuchungen; der Server verbucht Fälliges **täglich per Cron-Job** (03:00 Uhr) und bei jedem Start
+- **Wiederkehrende Buchungen** — wöchentlich bis jährlich (auch viertel- und halbjährlich), inkl. Dauer-Umbuchungen; der Server verbucht Fälliges **täglich per Cron-Job** (03:00 Uhr) und bei jedem Start
 - **Sparziele** — Fortschritt aus verknüpften Konten (ganzes Konto / fixer Anteil / Prozent), Herkunfts-Aufschlüsselung, ETA-Prognose
 - **Prognosen & Auswertung** — Kontostand-Prognose, Budget-Hochrechnung, Sparziel-ETA, Szenario-Planung, Jahresvergleich
+- **Hypotheken** — Liegenschaft mit Verkehrswert, mehrere Tranchen (Festhypothek/SARON/variabel) mit eigenem Zinssatz und Ablauf, direkte und indirekte Amortisation, Belehnung und Tragbarkeit nach Schweizer Praxis, Schuldenverlauf und Nettovermögen; Zins und Amortisation per Klick als Dauerbuchung, Erinnerung vor Ablauf der Zinsbindung
 - **Vorsorge (privat pro Benutzer)** — Schweizer 3-Säulen-Prinzip: Lohn & Abzüge (fix oder monatlich variabel), AHV, Pensionskasse, Säule 3a mit Dokument-Anhängen, Änderungshistorie und Altersprognose (Kapitalentwicklung, Rente, Ersatzrate); optional mit Konten verknüpfbar, Nettolohn per Klick als Dauerbuchung
 - **Benutzer & Login** — Ersteinrichtungs-Wizard, E-Mail/Passwort-Login, optionale 2FA (TOTP), Einladungslinks, Admin-Verwaltung, Aktivitäts-Log
 - **Rundherum** — Benachrichtigungen (opt-in, ntfy/Webhook), Backup/Restore, Dark Mode, PWA, Zahlen- und Datumsformate nach Systemregion, 20 Währungen

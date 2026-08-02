@@ -42,6 +42,7 @@ Jede Erweiterung muss zu diesen Grundsätzen passen:
 | **Prognosen** | Kontostand-Prognose inkl. Dauerbuchungen, Budget-Hochrechnung, Sparziel-ETA — ein Szenario, keine "Was-wäre-wenn"-Varianten |
 | **Benutzer & Auth** | Setup-Wizard, E-Mail/Passwort, Einladungslinks (Server-Log), Admin/Member-Rollen, keine 2FA |
 | **International** | Zahlen- und Datumsformate folgen der Systemregion (z. B. de-DE `1.234,56` vs. de-CH `1'234.56`), haushaltsweite Leitwährung (20 Währungen), UI-Sprache Deutsch |
+| **Hypotheken** | Liegenschaft mit Verkehrswert, Tranchen (Fest/SARON/variabel), direkte & indirekte Amortisation, Belehnung, Tragbarkeit, Schuldenverlauf, Nettovermögen; Übernahme als Dauerbuchung |
 | **Daten & Betrieb** | SQLite-Datei via sql.js, ein Docker-Container, Backup/Restore in den Einstellungen, CSV-Export, PWA (installierbar), Dark Mode |
 
 **Kurz gesagt:** Kern und Alltagstauglichkeit stehen — buchen, teilen,
@@ -95,7 +96,9 @@ Erfassungsmaske.
 - Aufteilungsvorlagen (z. B. 60/40 statt nur gleichmäßig/individuell), gespeichert pro Kategorie oder Person
 
 ### E. Prognosen & Auswertungen
-- Netto-Vermögensentwicklung über Zeit (inkl. Sparziele, Schulden)
+- ✅ Netto-Vermögensentwicklung über Zeit (inkl. Schulden) — `forecast.balance`
+  liefert eine `netWorth`-Reihe (Kontosalden + Verkehrswert − Restschuld),
+  die Prognose-Seite zeigt sie als dritte Linie. Sparziele bleiben offen.
 - ✅ Sparziele an Konten knüpfen („Sparziele 2.0", aus Nutzerwunsch):
   Fortschritt aus verknüpften Konten (Modi ganzes Konto / absoluter Betrag /
   Prozent) statt manueller Einzahlungen, Herkunfts-Aufschlüsselung,
@@ -170,6 +173,34 @@ sich von selbst. Reihenfolge = empfohlene Umsetzungsreihenfolge.
    wiederkehrende Einnahme übertragen (Kopie, kein Live-Sync).
    Nicht-Ziel bleibt die Anbindung von Pensionskassen-APIs.
 
+### Phase 5 — Wohneigentum ✅ *vollständig umgesetzt*
+
+1. **Hypotheken-Modul** (Route `/hypotheken`) als haushaltsweites Gegenstück
+   zur privaten Vorsorge: Liegenschaft (Verkehrswert mit Stichtag, Nutzung,
+   Bruttojahreseinkommen für die Tragbarkeit) plus beliebig viele Tranchen
+   (Festhypothek, SARON mit Marge, variabel) mit eigenem Zinssatz, Ablauf
+   der Zinsbindung und Zahlungsrhythmus. Direkte Amortisation senkt die
+   Restschuld, indirekte zahlt auf ein Säule-3a-/Sparkonto ein.
+   Änderungshistorie wie im Vorsorge-Modul.
+2. **Belehnung & Tragbarkeit nach Schweizer Praxis**: 1./2. Hypothek,
+   maximale Belehnung, kalkulatorischer Zins, Unterhaltspauschale und die
+   Pflicht-Amortisation — alle fünf Bank-Parameter pro Objekt
+   überschreibbar, weil sie je nach Bank und Nutzungsart abweichen.
+   Warnungen bei überschrittener Belehnung, Untragbarkeit, ungedeckter
+   Amortisationspflicht, veraltetem Restschuld-Stichtag und ablaufender
+   Zinsbindung (zusätzlich als Benachrichtigung 90/30 Tage vorher).
+3. **Nettovermögen** an drei Stellen: eigene Karte im Modul, Zusatzzeile
+   „inkl. Immobilie" auf dem Dashboard und eine Vermögens-Zeitreihe in den
+   Prognosen. Die Architektur (`country`-Feld, austauschbare
+   Berechnungs-Engine) hält spätere Ländermodelle offen.
+4. **Übernahme als Dauerbuchung**: Zins und Amortisation lassen sich per
+   Klick als wiederkehrende Buchung anlegen (Kopie, kein Live-Sync).
+   Dafür kennen Dauerbuchungen jetzt auch **viertel- und halbjährliche**
+   Intervalle — Schweizer Hypothekarzins wird quartalsweise belastet.
+
+Nicht-Ziel bleibt die Anbindung von Banken-APIs; Zinssätze und Restschuld
+werden von Hand gepflegt.
+
 ### Bewusst zurückgestellt / Nicht-Ziele
 
 Mit Begründung — diese Punkte passen aktuell nicht zum Produktleitbild
@@ -186,9 +217,12 @@ Aufwand nicht:
   (Kurse, Neubewertung, Summenlogik) für einen Randfall; die haushalts-
   weite Leitwährung reicht dem Leitbild. Workaround: Umbuchung mit Kurs
   in der Notiz.
-- **Kreditkarten-/Darlehenskonten mit Zins-Tracking.** Die Kontoführung
-  selbst decken eigene Kontotypen bereits ab; Zins-/Tilgungsrechnung ist
-  Buchhaltung, nicht Haushaltsüberblick.
+- **Kreditkarten- und Konsumkreditkonten mit Zins-Tracking.** Die
+  Kontoführung selbst decken eigene Kontotypen bereits ab; Zins-/
+  Tilgungsrechnung für Kleinkredite ist Buchhaltung, nicht
+  Haushaltsüberblick. *(Eingegrenzt mit Phase 5: Die **Hypothek** ist
+  ausgenommen — sie ist für einen Eigentümer-Haushalt kein Randfall,
+  sondern der größte Fixposten und der größte Bilanzposten überhaupt.)*
 - **i18n (EN als Zweitsprache).** Das Produkt ist bewusst deutschsprachig;
   der Umbau aller UI-Texte lohnt sich erst bei echter Nachfrage außerhalb
   des DACH-Raums.
@@ -202,9 +236,10 @@ Aufwand nicht:
 
 ## 5. Nächste Schritte
 
-Alle vier Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
+Alle fünf Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
 Backlog (Abschnitt 3) zur Bewertung an — naheliegend: Massenbearbeitung,
-CSV-Import mit Kategorie-Mapping-Regeln, Netto-Vermögensentwicklung.
+CSV-Import mit Kategorie-Mapping-Regeln, Sparziele in der
+Netto-Vermögensreihe.
 Diese bei Bedarf als GitHub Issues aufbrechen und einzeln priorisieren.
 Denkbar sind auch Erweiterungen des Vorsorge-Moduls (weitere
 Ländermodelle neben CH, Kapitalbezug-vs-Rente-Szenarien).

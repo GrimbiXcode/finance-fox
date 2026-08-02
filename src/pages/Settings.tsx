@@ -111,6 +111,33 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "project.deleted": "Projekt gelöscht",
   "splitTemplate.created": "Aufteilungsvorlage angelegt",
   "splitTemplate.deleted": "Aufteilungsvorlage gelöscht",
+  "mortgage.property.created": "Liegenschaft angelegt",
+  "mortgage.property.updated": "Liegenschaft bearbeitet",
+  "mortgage.property.deleted": "Liegenschaft gelöscht",
+  "mortgage.tranche.created": "Hypothekar-Tranche angelegt",
+  "mortgage.tranche.updated": "Hypothekar-Tranche bearbeitet",
+  "mortgage.tranche.deleted": "Hypothekar-Tranche gelöscht",
+  "mortgage.amortization.created": "Amortisation angelegt",
+  "mortgage.amortization.updated": "Amortisation bearbeitet",
+  "mortgage.amortization.deleted": "Amortisation gelöscht",
+  "mortgage.interest.transferred": "Hypothekarzins als Dauerbuchung übernommen",
+  "mortgage.amortization.transferred": "Amortisation als Dauerbuchung übernommen",
+  // Vorsorge: privat pro Benutzer, im Log erscheinen nur die eigenen Einträge
+  "pension.profile.updated": "Vorsorgeprofil geändert",
+  "pension.salary.created": "Lohn erfasst",
+  "pension.salary.updated": "Lohn bearbeitet",
+  "pension.salary.deleted": "Lohn gelöscht",
+  "pension.salary.transferred": "Nettolohn als Dauerbuchung übernommen",
+  "pension.deduction.created": "Lohnabzug angelegt",
+  "pension.deduction.updated": "Lohnabzug bearbeitet",
+  "pension.deduction.deleted": "Lohnabzug gelöscht",
+  "pension.ahv.updated": "AHV-Daten geändert",
+  "pension.fund.created": "Vorsorgekonto angelegt",
+  "pension.fund.updated": "Vorsorgekonto bearbeitet",
+  "pension.fund.deleted": "Vorsorgekonto gelöscht",
+  "pension.pillar3.created": "Säule-3a-Konto angelegt",
+  "pension.pillar3.updated": "Säule-3a-Konto bearbeitet",
+  "pension.pillar3.deleted": "Säule-3a-Konto gelöscht",
   "data.imported": "Daten importiert",
   "data.reset": "Finanzdaten zurückgesetzt",
   "settings.currency": "Währung geändert",
@@ -136,6 +163,8 @@ const AUDIT_ENTITY_GROUPS: [string, string, string[]][] = [
   ["budget", "Budgets", ["budget"]],
   ["recurring", "Dauerbuchungen", ["recurring"]],
   ["goal", "Sparziele", ["goal"]],
+  ["mortgage", "Hypotheken", ["mortgage"]],
+  ["pension", "Vorsorge", ["pension"]],
   ["project", "Projekte", ["project", "splitTemplate"]],
   ["user", "Benutzer", ["user", "auth"]],
   ["settings", "Einstellungen", ["settings", "data"]],
@@ -432,6 +461,7 @@ export default function Settings() {
     budget: boolean;
     recurring: boolean;
     goal: boolean;
+    mortgage: boolean;
   } | null>(null);
   const ntfy = ntfyUrl ?? notifySettings.data?.ntfyUrl ?? "";
   const webhook = webhookUrl ?? notifySettings.data?.webhookUrl ?? "";
@@ -440,6 +470,7 @@ export default function Settings() {
       budget: true,
       recurring: true,
       goal: true,
+      mortgage: true,
     };
   const saveNotify = trpc.finance.setNotifySettings.useMutation({
     onSuccess: () => {
@@ -730,6 +761,7 @@ export default function Settings() {
                     ["budget", "Budget-Überschreitung"],
                     ["recurring", "Wiederkehrende Buchungen"],
                     ["goal", "Sparziel-Meilensteine"],
+                    ["mortgage", "Ablauf der Zinsbindung"],
                   ] as const
                 ).map(([key, label]) => (
                   <span key={key} className="flex items-center gap-2 text-sm">

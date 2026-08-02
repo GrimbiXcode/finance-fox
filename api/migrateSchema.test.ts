@@ -76,6 +76,31 @@ describe("ensureSchema auf Bestands-Datenbanken", () => {
     expect(rows).toEqual([["AHV", null]]);
   });
 
+  it("legt die Hypotheken-Tabellen samt Indizes an", () => {
+    const tables = rawAll(
+      `SELECT name FROM sqlite_master WHERE type = 'table'`
+    ).map(t => t[0]);
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        "properties",
+        "mortgage_tranches",
+        "mortgage_amortizations",
+        "mortgage_changes",
+      ])
+    );
+
+    const indexes = rawAll(
+      `SELECT name FROM sqlite_master WHERE type = 'index'`
+    ).map(i => i[0]);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        "mortgage_tranches_property_idx",
+        "mortgage_amort_property_idx",
+        "mortgage_changes_created_idx",
+      ])
+    );
+  });
+
   it("ist idempotent — ein zweiter Lauf ändert nichts", () => {
     expect(() => ensureSchema()).not.toThrow();
     const rows = rawAll("SELECT COUNT(*) FROM pension_deductions");

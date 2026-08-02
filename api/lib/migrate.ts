@@ -241,8 +241,9 @@ export function ensureSchema() {
       active INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL
     )`,
-    `CREATE INDEX IF NOT EXISTS pension_deductions_salary_idx
-      ON pension_deductions (salary_id)`,
+    // Der Index auf salary_id steht bewusst NICHT hier: die Spalte wird bei
+    // Bestands-DBs erst weiter unten guardiert nachgerüstet (ALTER TABLE) —
+    // ein Index hier würde beim Start auf „no such column: salary_id" laufen.
     `CREATE TABLE IF NOT EXISTS pension_ahv (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL UNIQUE,
@@ -452,6 +453,11 @@ export function ensureSchema() {
       "ALTER TABLE pension_deductions ADD COLUMN salary_id INTEGER" as never
     );
   }
+  // Index erst jetzt anlegen — vorher existiert die Spalte in Bestands-DBs nicht
+  db.run(
+    `CREATE INDEX IF NOT EXISTS pension_deductions_salary_idx
+      ON pension_deductions (salary_id)` as never
+  );
   // Offene Sparziele: target_amount wird nullable (NULL = ohne Zielbetrag).
   // NOT NULL lässt sich per ALTER nicht entfernen — Bestands-Tabellen daher
   // neu aufbauen und Daten kopieren (idempotent über das notnull-Flag,

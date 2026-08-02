@@ -15,6 +15,12 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
   umbenennen). Einmalige Daten-Migrationen sind ebenfalls guardiert (z. B.
   `accounts.owner_id` → `account_owners`: nur wenn `account_owners` leer ist
   UND Konten mit `owner_id` existieren).
+- **Indizes auf nachgerüstete Spalten gehören hinter ihren Guard**, nicht in
+  die `CREATE TABLE`-Liste: `CREATE TABLE IF NOT EXISTS` lässt eine
+  bestehende Tabelle unverändert, ein `CREATE INDEX` auf eine erst per
+  `ALTER TABLE` ergänzte Spalte scheitert dort mit „no such column" und der
+  Server startet nicht mehr (siehe `pension_deductions.salary_id`).
+  Regressionstest: `api/migrateSchema.test.ts` baut eine Bestands-DB nach.
 - `relations.ts` — Drizzle-Relationen; `seed.ts` — Seed-Daten;
   `migrations/` — drizzle-kit-Artefakte (dev: `npm run db:push`);
   `stubs/better-sqlite3-stub.cjs` — ersetzt `better-sqlite3` im Server-Bundle

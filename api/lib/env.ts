@@ -15,4 +15,10 @@ export const env = {
   cookieSecure: process.env.COOKIE_SECURE
     ? process.env.COOKIE_SECURE === "true"
     : (process.env.PUBLIC_URL || "http://localhost:3000").startsWith("https://"),
+  /**
+   * Passwortloser Entwicklungs-Login über `/api/dev/login` (siehe
+   * `lib/devLogin.ts`). Wirkt **nur** zusammen mit NODE_ENV != production —
+   * beide Riegel prüft `devLogin.isEnabled()`. Niemals in Produktion setzen.
+   */
+  devLogin: process.env.DEV_LOGIN === "1",
 };

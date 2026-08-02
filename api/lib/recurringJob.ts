@@ -4,6 +4,7 @@ import { recurring, transactions } from "@db/schema";
 import { sendNotification } from "./notify";
 import { advanceDate, localISO } from "./recurringSchedule";
 import { notifyMaturities } from "./mortgage/maturityNotice";
+import { notifyNoticeDeadlines } from "./insurance/noticeReminder";
 
 /**
  * Bucht alle fälligen wiederkehrenden Transaktionen (bis einschließlich heute).
@@ -74,6 +75,17 @@ export async function runRecurringJob(): Promise<number> {
     await notifyMaturities(db);
   } catch (err) {
     console.error("[Finance Fox] Hypotheken-Erinnerung fehlgeschlagen:", err);
+  }
+
+  // Dritter Durchgang: an ablaufende Kündigungsfristen erinnern — ebenfalls
+  // best effort und unabhängig vom zweiten Durchgang.
+  try {
+    await notifyNoticeDeadlines(db);
+  } catch (err) {
+    console.error(
+      "[Finance Fox] Versicherungs-Erinnerung fehlgeschlagen:",
+      err
+    );
   }
   return created;
 }

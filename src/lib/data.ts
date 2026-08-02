@@ -76,6 +76,9 @@ export function useInvalidateFinance() {
     utils.forecast.goalForecast.invalidate();
     // Eine neue Buchung verschiebt auch die Nettovermögens-Zeile
     utils.mortgage.summary.invalidate();
+    // Gelöschte Dauerbuchungen/Konten wirken auf die Policen-Badges
+    utils.insurance.listPolicies.invalidate();
+    utils.insurance.summary.invalidate();
   };
 }
 
@@ -90,6 +93,25 @@ export function useInvalidateMortgage() {
     utils.mortgage.summary.invalidate();
     utils.mortgage.listChanges.invalidate();
     // Übernommene Dauerbuchungen und das Nettovermögen der Prognose
+    utils.finance.listRecurring.invalidate();
+    utils.forecast.balance.invalidate();
+    // Eine neue Liegenschaft verschiebt die Gebäude-Lücke
+    utils.insurance.gapAnalysis.invalidate();
+    utils.insurance.summary.invalidate();
+  };
+}
+
+/** Invalidiert nach einer Mutation alle Versicherungs-Queries */
+export function useInvalidateInsurance() {
+  const utils = trpc.useUtils();
+  return () => {
+    utils.insurance.listPolicies.invalidate();
+    utils.insurance.listCoverages.invalidate();
+    utils.insurance.listAttachments.invalidate();
+    utils.insurance.listChanges.invalidate();
+    utils.insurance.gapAnalysis.invalidate();
+    utils.insurance.summary.invalidate();
+    // Übernommene Prämien landen in den Dauerbuchungen und der Prognose
     utils.finance.listRecurring.invalidate();
     utils.forecast.balance.invalidate();
   };

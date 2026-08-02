@@ -8,6 +8,7 @@ jeweiligen Dateien automatisch relevant:
 - `api/AGENTS.md` — Backend: Router, Auth/2FA, Konto-Rechte, Transaktionen,
   Dauerbuchungen, Kategorien/Budgets, Splits/Projekte/Tags, Sparziele,
   Prognosen, Vorsorge (3-Säulen-Modul), Hypotheken (Wohneigentum),
+  Versicherungen (Policen, Deckungen, Lückenanalyse),
   Benachrichtigungen, Audit-Log, Beleg-Anhänge
 - `src/AGENTS.md` — Frontend: Seiten/Komponenten, Helfer, Auswahlfelder,
   Dialog-Layouts, Geldfluss-Visualisierung, Dark Mode/PWA
@@ -23,7 +24,8 @@ mit einer oder mehreren Personen. Alle Daten liegen in einer einzigen
 wiederkehrende Buchungen (Cron-Job), Sparziele, Prognosen, privates
 Vorsorge-Modul (Schweizer 3-Säulen-Prinzip) mit Altersprognose,
 haushaltsweites Hypotheken-Modul (Liegenschaft, Tranchen, Amortisation,
-Belehnung/Tragbarkeit, Nettovermögen),
+Belehnung/Tragbarkeit, Nettovermögen), haushaltsweites Versicherungs-Modul
+(Policen mit Deckungen, Vergleichsansicht, Deckungs-Check, Kündigungsfristen),
 Benutzerverwaltung mit Ersteinrichtungs-Wizard und Einladungslinks.
 
 UI-Texte, Kommentare und Doku sind auf **Deutsch** — neue Kommentare,
@@ -53,6 +55,7 @@ Fehlermeldungen und UI-Strings ebenfalls auf Deutsch verfassen.
 npm install
 npm run db:push      # Schema via drizzle-kit in die DB-Datei schreiben (dev)
 npm run dev          # Vite-Dev-Server, http://localhost:3000 (Frontend + API mit HMR)
+npm run dev:agent    # wie dev, aber mit passwortlosem Login (siehe unten)
 npm run check        # Type-Check: tsc -b (alle drei tsconfig-Projekte)
 npm run lint         # ESLint
 npm run format       # Prettier --write .
@@ -64,13 +67,59 @@ npm start            # NODE_ENV=production node dist/boot.js (Port: $PORT, Defau
 Vor Fertigstellung einer Änderung immer `npm run check` und `npm run lint`
 laufen lassen.
 
+## Die App selbst durchklicken (Entwicklungs-Login)
+
+Vitest deckt nur `api/**` ab — es gibt **keine** Frontend-Tests. Wer eine
+UI-Änderung wirklich prüfen will, muss die App bedienen. Damit das ohne
+Kontoanlage und ohne Passworteingabe geht (KI-Agenten dürfen und sollen
+beides nicht), gibt es einen passwortlosen Entwicklungs-Login.
+
+```bash
+npm run dev:agent                       # = DEV_LOGIN=1 vite
+open http://localhost:3000/api/dev/login          # als Dev Admin (admin)
+open "http://localhost:3000/api/dev/login?as=member"   # als Dev Mitglied (member)
+```
+
+Der Aufruf setzt ein reguläres Session-Cookie und leitet auf die App weiter —
+danach ist man angemeldet und kann normal klicken. Mit `?to=/#/versicherungen`
+landet man direkt auf einer bestimmten Seite.
+
+**Vorgehen für eine UI-Verifikation:**
+
+1. `npm run dev:agent` starten (Port 3000; ist er belegt, `PORT=<frei> npm run
+   dev:agent` — `vite.config.ts` liest `PORT`).
+2. `/api/dev/login` aufrufen → angemeldet als **Dev Admin**.
+3. Den Fall durchklicken. Für alles, was von Rollen oder
+   Haushalts-Sichtbarkeit abhängt (privat vs. Gemeinschaftskonto,
+   „sieht das zweite Mitglied das auch?", Admin-only-Endpunkte), mit
+   `/api/dev/login?as=member` die Identität wechseln und denselben Fall
+   erneut ansehen. **Genau dafür gibt es zwei Identitäten.**
+4. Server stoppen, wenn man fertig ist.
+
+Beim ersten Start legt `lib/devLogin.ts` idempotent an, was die App zum
+Laufen braucht: die beiden Identitäten `dev-admin@localhost` /
+`dev-member@localhost` (ohne Passwort-Hash — sie sollen sich nicht regulär
+anmelden können) und, **falls noch gar kein Konto existiert**, ein
+Gemeinschaftskonto. Bestehende Daten werden nie verändert. Es ist kein
+Fixture-Generator: Testdaten für den jeweiligen Fall legt man über die UI an.
+
+**Sicherheit.** Der Auth-Pfad bleibt unangetastet — es gibt keinen Bypass in
+`getSessionUser` oder `verifySessionToken`. Die Route stellt über
+`buildSessionCookie` dasselbe signierte Cookie aus wie der echte Login.
+Montiert wird sie nur, wenn **beides** zutrifft: `NODE_ENV` ist nicht
+`production` **und** `DEV_LOGIN=1`. Im Docker-Image ist `NODE_ENV=production`
+gesetzt, dort existiert die Route also nicht — auch nicht, wenn jemand
+`DEV_LOGIN` mitgibt. Ist der Modus aktiv, schreibt der Serverstart eine laute
+Warnung ins Log.
+
 ## Code-Organisation
 
 ```
 api/            Backend (Hono + tRPC), Einstieg: api/boot.ts — Details: api/AGENTS.md
 contracts/      Geteilte Typen/Errors zwischen Front- und Backend (@contracts/*):
                 types.ts (u. a. CURRENCIES, TAG_COLORS), errors.ts,
-                splitShares.ts (gewichtete Split-Verteilung sharesFromWeights)
+                splitShares.ts (gewichtete Split-Verteilung sharesFromWeights),
+                insurance.ts (Sparten-Katalog, Status/Verlängerung + Labels)
 db/             schema.ts (Drizzle-Tabellen, Quelle der Wahrheit), relations.ts,
                 seed.ts, migrations/ (drizzle-kit), stubs/ (better-sqlite3-Stub
                 fürs Bundle) — Details: db/AGENTS.md
@@ -154,6 +203,11 @@ src/            Frontend (React) — Details: src/AGENTS.md
   `ATTACHMENTS_DIR` (Beleg-Dateien, Default `<DB-Verzeichnis>/attachments`),
   `COOKIE_SECURE`, `NODE_ENV` — dokumentiert in `.env.example` und
   `docker-compose.yml`; Defaults in `api/lib/env.ts`.
+- `DEV_LOGIN=1` schaltet den passwortlosen Entwicklungs-Login frei (Abschnitt
+  „Die App selbst durchklicken"). **Niemals in Produktion setzen.** Der
+  zweite Riegel `NODE_ENV !== "production"` verhindert das zwar auch im
+  Docker-Image, aber die Variable gehört trotzdem nirgends in eine
+  produktive Konfiguration.
 - Session-Cookie: HttpOnly, SameSite=Lax. Das `Secure`-Flag richtet sich nach
   `PUBLIC_URL` (https:// → Secure), überschreibbar per `COOKIE_SECURE=true|false`
   — so funktioniert der Login auch über HTTP im Heimnetz.

@@ -34,6 +34,19 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
   Vorsorge aber **ohne `user_id`-Scoping**: Wohneigentum gehört dem
   Haushalt. Achtung bei Basispunkten: 5 % sind **500** Bp, nicht 5000.
   Fachlogik: `api/AGENTS.md` Abschnitt „Hypotheken".
+- Die Versicherungs-Tabellen (`insurance_policies`,
+  `insurance_policy_persons`, `insurance_coverages`,
+  `insurance_attachments`, `insurance_changes`,
+  `insurance_gap_dismissals`) sind wie die Hypotheken **haushaltsweit** —
+  kein `user_id`-Scoping. `insurance_policy_persons` ist reine
+  **Zuschreibung** (wer versichert ist), **kein** Zugriffsschutz: null
+  Zeilen = gemeinsame Police, die in der Lückenanalyse für alle zählt.
+  Zwei Fallen: `insurance_policies.deductible` ist nullable, weil **0 ein
+  gültiger Wert** ist (Franchise 0) und sich von „nicht erfasst"
+  unterscheiden muss; `insurance_coverages.sum_insured` ist die einzige
+  Spalte im Schema, in der NULL **„unbegrenzt"** heißt und nicht
+  „unbekannt" — der Historien-Formatter bildet das entsprechend ab.
+  Fachlogik: `api/AGENTS.md` Abschnitt „Versicherungen".
 - `recurring.interval` hat **keine** CHECK-Constraint — das Drizzle-Enum
   (`RECURRING_INTERVALS` aus `contracts/types.ts`, relativ importiert, damit
   drizzle-kit es auflöst) wirkt rein typseitig. Ein neues Intervall braucht

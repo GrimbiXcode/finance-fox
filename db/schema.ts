@@ -8,6 +8,11 @@ import {
 // Bewusst relativ statt über @contracts/* — drizzle-kit liest diese Datei
 // direkt und löst die tsconfig-Aliase nicht zuverlässig auf.
 import { RECURRING_INTERVALS } from "../contracts/types";
+import {
+  INSURANCE_BRANCH_KEYS,
+  INSURANCE_RENEWALS,
+  INSURANCE_STATUS,
+} from "../contracts/insurance";
 
 /* ---------------------------------- Auth ---------------------------------- */
 
@@ -633,6 +638,201 @@ export const mortgageChanges = sqliteTable(
   },
   t => [index("mortgage_changes_created_idx").on(t.createdAt)]
 );
+
+/* ------------------------------ Versicherungen ---------------------------- */
+
+/**
+ * Versicherungen — wie die Hypotheken **haushaltsweit** sichtbar (kein
+ * user_id-Scoping). Das ist keine Bequemlichkeit, sondern fachlich zwingend:
+ * Eine Deckungslücke erkennt man nur, wenn alle Policen des Haushalts
+ * nebeneinander liegen. Die Zuordnung zu Personen
+ * (`insurance_policy_persons`) ist reine **Zuschreibung** — wer versichert
+ * IST, nicht wer die Police sehen DARF. Verknüpfte Finanz-Konten werden
+ * weiterhin über die Konto-Rechte geprüft (`api/lib/accountAccess.ts`).
+ *
+ * Konventionen wie überall: Beträge in Cent, Datum als TEXT `YYYY-MM-DD`.
+ */
+export const insurancePolicies = sqliteTable(
+  "insurance_policies",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** Freier Anzeigename, z. B. „Hausrat & Privathaftpflicht" */
+    name: text("name").notNull(),
+    /**
+     * Sparte aus dem festen Katalog (`contracts/insurance.ts`). Sie trägt die
+     * Metadaten der Lückenanalyse (pro Person / einmal pro Haushalt /
+     * kontextabhängig) und die Deckungs-Vorschläge im Dialog.
+     */
+    branch: text("branch", { enum: INSURANCE_BRANCH_KEYS }).notNull(),
+    /**
+     * Versicherer als freier Text — bewusst KEINE eigene Tabelle wie `banks`:
+     * Versicherer tragen keine Logik, und das Frontend baut die Auswahlliste
+     * aus den bereits erfassten Werten.
+     */
+    insurer: text("insurer").notNull().default(""),
+    policyNumber: text("policy_number").notNull().default(""),
+    status: text("status", { enum: INSURANCE_STATUS })
+      .notNull()
+      .default("active"),
+    /** Prämie pro Zahlungstermin in Cent (Monats-/Jahreswert wird gerechnet) */
+    premium: integer("premium").notNull().default(0),
+    premiumInterval: text("premium_interval", { enum: RECURRING_INTERVALS })
+      .notNull()
+      .default("yearly"),
+    /**
+     * Selbstbehalt/Franchise der Police (Cent). Bewusst nullable statt
+     * DEFAULT 0: 0 ist ein gültiger Wert (Franchise 0 bei Kindern) und muss
+     * sich von „nicht erfasst" unterscheiden. Einzelne Deckungen können einen
+     * abweichenden Selbstbehalt tragen.
+     */
+    deductible: integer("deductible"),
+    startDate: text("start_date").notNull(), // YYYY-MM-DD
+    renewal: text("renewal", { enum: INSURANCE_RENEWALS })
+      .notNull()
+      .default("auto"),
+    /**
+     * Hauptverfall (nur bei `renewal = "auto"`): ein konkretes Datum, das die
+     * Fristen-Engine jahresweise vorrollt. Eigene Spalte statt Überladung von
+     * `end_date`, weil der Hauptverfall sehr oft NICHT auf den Jahrestag des
+     * Vertragsbeginns fällt (typisch 31.12.) — und weil die Änderungshistorie
+     * sonst „Vertragsende" schriebe, wo „Hauptverfall" gemeint ist.
+     * NULL = Jahrestag von `start_date`.
+     */
+    mainDueDate: text("main_due_date"),
+    /**
+     * Hartes Vertragsende: bei `renewal = "fixed"` der Ablauf, bei einer
+     * gekündigten Police der tatsächliche Endtermin. **Bis dahin besteht die
+     * Deckung weiter** — die Lückenanalyse rechnet damit. NULL = kein Ende.
+     */
+    endDate: text("end_date"),
+    /** Kündigungsfrist in Monaten vor dem Termin (0 = jederzeit kündbar) */
+    noticePeriodMonths: integer("notice_period_months").notNull().default(3),
+    /** Belastungskonto der Prämie (Anzeige + Vorauswahl bei der Übernahme) */
+    accountId: integer("account_id"),
+    /** Rückverweis auf die aus der Prämie erzeugte Dauerbuchung (NULL = keine) */
+    premiumRecurringId: integer("premium_recurring_id"),
+    notes: text("notes").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [
+    index("insurance_policies_branch_idx").on(t.branch),
+    index("insurance_policies_status_idx").on(t.status),
+  ]
+);
+
+/**
+ * Versicherte Personen einer Police — **reine Zuschreibung, kein
+ * Zugriffsschutz**. Null Zeilen = gemeinsame Police des Haushalts und gilt in
+ * der Lückenanalyse als Deckung für ALLE Mitglieder. Die Tabelle beantwortet
+ * „wer ist versichert", nie „wer darf das sehen" (siehe insurance_policies).
+ */
+export const insurancePolicyPersons = sqliteTable(
+  "insurance_policy_persons",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    policyId: integer("policy_id").notNull(),
+    userId: integer("user_id").notNull(),
+  },
+  t => [
+    uniqueIndex("insurance_policy_person_unique_idx").on(t.policyId, t.userId),
+    index("insurance_policy_person_policy_idx").on(t.policyId),
+  ]
+);
+
+/**
+ * Freie Deckungs-Zeilen einer Police („wofür bin ich versichert?"). Bewusst
+ * ohne festes Schema pro Sparte: Versicherer benennen dieselbe Deckung
+ * unterschiedlich. Die Sparte liefert im Dialog nur Vorschläge
+ * (`coverageSuggestions`), keine Pflichtfelder.
+ */
+export const insuranceCoverages = sqliteTable(
+  "insurance_coverages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    policyId: integer("policy_id").notNull(),
+    /** Bezeichnung, z. B. „Personenschäden" oder „Annullierungskosten" */
+    label: text("label").notNull(),
+    /**
+     * Deckungssumme in Cent. **NULL = unbegrenzt**, nicht „unbekannt" — die
+     * einzige Stelle im Schema mit dieser Semantik. Konsequenz: der
+     * Historien-Formatter muss NULL auf „unbegrenzt" abbilden, sonst schreibt
+     * der Diff beim Wechsel ein irreführendes „→ —".
+     */
+    sumInsured: integer("sum_insured"),
+    /** Abweichender Selbstbehalt dieser Deckung (Cent); NULL = der der Police */
+    deductible: integer("deductible"),
+    notes: text("notes").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("insurance_coverages_policy_idx").on(t.policyId)]
+);
+
+/**
+ * Dokumente einer Police (Policenkopie, AVB, Zusatz-Reglemente). Anders als
+ * `pension_attachments` NICHT polymorph — es gibt nur eine anhängbare
+ * Entität. Muster daher `transaction_attachments`.
+ *
+ * Sichtbarkeit folgt der Police: haushaltsweit, kein userId-Besitzcheck.
+ */
+export const insuranceAttachments = sqliteTable(
+  "insurance_attachments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    policyId: integer("policy_id").notNull(),
+    // Zufälliger Dateiname im Attachments-Verzeichnis (eindeutig)
+    storedName: text("stored_name").notNull().unique(),
+    originalName: text("original_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("insurance_att_policy_idx").on(t.policyId)]
+);
+
+/**
+ * Änderungshistorie des Versicherungs-Moduls (Muster: mortgage_changes).
+ * entity: policy | coverage; `user_id` ist **wer** geändert hat — kein
+ * Sichtbarkeits-Scoping. Änderungen an den versicherten Personen erscheinen
+ * als Feld „Versicherte Personen" auf der Police, nicht als eigene Entity.
+ */
+export const insuranceChanges = sqliteTable(
+  "insurance_changes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    entity: text("entity").notNull(),
+    entityId: integer("entity_id").notNull(),
+    comment: text("comment").notNull().default(""),
+    changes: text("changes").notNull(), // JSON: [{ field, from, to }]
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  t => [index("insurance_changes_created_idx").on(t.createdAt)]
+);
+
+/**
+ * Ausgeblendete Empfehlungen der Lückenanalyse („brauchen wir nicht").
+ * `gap_key` ist die stabile Identität einer Lücke, wie die Engine sie
+ * berechnet — z. B. `branch:rechtsschutz` (haushaltsweit) oder
+ * `branch:krankenkasse_grund:person:3` (personenbezogen).
+ *
+ * Bewusst eine eigene Tabelle statt eines app_settings-Keys: Der
+ * app_settings-Marker der Hypotheken-Erinnerung ist unsichtbarer
+ * Systemzustand, der sich selbst aufräumt. Ausblendungen sind Nutzerdaten mit
+ * Autor, Zeitpunkt und optionaler Begründung, sie erscheinen im UI
+ * („3 ausgeblendet") und lassen sich zurücknehmen.
+ *
+ * Ein einziger Schlüssel-String statt `rule_key` + nullable `person_id`, weil
+ * SQLite NULLs in Unique-Indizes als verschieden behandelt — sonst ließen
+ * sich mehrere „gemeinsam"-Zeilen derselben Regel anlegen.
+ */
+export const insuranceGapDismissals = sqliteTable("insurance_gap_dismissals", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  gapKey: text("gap_key").notNull().unique(),
+  /** Wer ausgeblendet hat (Zuschreibung, kein Scoping) */
+  userId: integer("user_id").notNull(),
+  note: text("note").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
 
 /* -------------------------------- Audit-Log -------------------------------- */
 

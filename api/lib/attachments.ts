@@ -2,7 +2,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { eq, and, inArray } from "drizzle-orm";
-import { pensionAttachments, transactionAttachments } from "@db/schema";
+import {
+  insuranceAttachments,
+  pensionAttachments,
+  transactionAttachments,
+} from "@db/schema";
 import type { Db } from "../queries/connection";
 
 /**
@@ -205,6 +209,77 @@ export async function savePensionAttachment(
       sizeBytes: pensionAttachments.sizeBytes,
     });
   return inserted[0];
+}
+
+/* ---------------------- Versicherungs-Anhänge (insurance) ------------------ */
+
+/**
+ * Datei speichern + Metadaten-Zeile in insurance_attachments anlegen.
+ * Die Existenzprüfung der Police macht der Aufrufer (Hono-Route in boot.ts);
+ * einen Besitzcheck gibt es bewusst nicht — das Modul ist haushaltsweit.
+ */
+export async function saveInsuranceAttachment(
+  db: Db,
+  policyId: number,
+  bytes: Uint8Array,
+  originalName: string,
+  mimeType: string
+): Promise<AttachmentMeta> {
+  const { storedName, cleanName } = storeAttachmentFile(
+    bytes,
+    originalName,
+    mimeType
+  );
+
+  const inserted = await db
+    .insert(insuranceAttachments)
+    .values({
+      policyId,
+      storedName,
+      originalName: cleanName,
+      mimeType,
+      sizeBytes: bytes.byteLength,
+      createdAt: new Date(),
+    })
+    .returning({
+      id: insuranceAttachments.id,
+      originalName: insuranceAttachments.originalName,
+      mimeType: insuranceAttachments.mimeType,
+      sizeBytes: insuranceAttachments.sizeBytes,
+    });
+  return inserted[0];
+}
+
+/** Einzelnes Versicherungs-Dokument löschen (DB-Zeile + Datei) */
+export async function deleteInsuranceAttachment(
+  db: Db,
+  id: number
+): Promise<void> {
+  const row = await db.query.insuranceAttachments.findFirst({
+    where: eq(insuranceAttachments.id, id),
+  });
+  if (!row) return;
+  await db.delete(insuranceAttachments).where(eq(insuranceAttachments.id, id));
+  unlinkQuiet(row.storedName);
+}
+
+/**
+ * Alle Dokumente mehrerer Policen löschen (DB-Zeilen + Dateien) —
+ * für Kaskaden bei deletePolicy / resetFinanceData.
+ */
+export async function deleteInsuranceAttachmentsFor(
+  db: Db,
+  policyIds: number[]
+): Promise<void> {
+  if (policyIds.length === 0) return;
+  const where = inArray(insuranceAttachments.policyId, policyIds);
+  const rows = await db
+    .select({ storedName: insuranceAttachments.storedName })
+    .from(insuranceAttachments)
+    .where(where);
+  if (rows.length === 0) return;
+  await db.delete(insuranceAttachments).where(where);
+  for (const row of rows) unlinkQuiet(row.storedName);
 }
 
 /** Einzelnen Vorsorge-Anhang löschen (DB-Zeile + Datei) */

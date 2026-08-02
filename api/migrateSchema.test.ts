@@ -101,6 +101,37 @@ describe("ensureSchema auf Bestands-Datenbanken", () => {
     );
   });
 
+  it("legt die Versicherungs-Tabellen samt Indizes an", () => {
+    const tables = rawAll(
+      `SELECT name FROM sqlite_master WHERE type = 'table'`
+    ).map(t => t[0]);
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        "insurance_policies",
+        "insurance_policy_persons",
+        "insurance_coverages",
+        "insurance_attachments",
+        "insurance_changes",
+        "insurance_gap_dismissals",
+      ])
+    );
+
+    const indexes = rawAll(
+      `SELECT name FROM sqlite_master WHERE type = 'index'`
+    ).map(i => i[0]);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        "insurance_policies_branch_idx",
+        "insurance_policies_status_idx",
+        "insurance_policy_person_unique_idx",
+        "insurance_policy_person_policy_idx",
+        "insurance_coverages_policy_idx",
+        "insurance_att_policy_idx",
+        "insurance_changes_created_idx",
+      ])
+    );
+  });
+
   it("ist idempotent — ein zweiter Lauf ändert nichts", () => {
     expect(() => ensureSchema()).not.toThrow();
     const rows = rawAll("SELECT COUNT(*) FROM pension_deductions");

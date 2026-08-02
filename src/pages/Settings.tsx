@@ -122,6 +122,15 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "mortgage.amortization.deleted": "Amortisation gelöscht",
   "mortgage.interest.transferred": "Hypothekarzins als Dauerbuchung übernommen",
   "mortgage.amortization.transferred": "Amortisation als Dauerbuchung übernommen",
+  "insurance.policy.created": "Police angelegt",
+  "insurance.policy.updated": "Police bearbeitet",
+  "insurance.policy.deleted": "Police gelöscht",
+  "insurance.coverage.created": "Deckung hinzugefügt",
+  "insurance.coverage.updated": "Deckung bearbeitet",
+  "insurance.coverage.deleted": "Deckung gelöscht",
+  "insurance.premium.transferred": "Prämie als Dauerbuchung übernommen",
+  "insurance.gap.dismissed": "Deckungs-Hinweis ausgeblendet",
+  "insurance.gap.restored": "Deckungs-Hinweis eingeblendet",
   // Vorsorge: privat pro Benutzer, im Log erscheinen nur die eigenen Einträge
   "pension.profile.updated": "Vorsorgeprofil geändert",
   "pension.salary.created": "Lohn erfasst",
@@ -164,6 +173,7 @@ const AUDIT_ENTITY_GROUPS: [string, string, string[]][] = [
   ["recurring", "Dauerbuchungen", ["recurring"]],
   ["goal", "Sparziele", ["goal"]],
   ["mortgage", "Hypotheken", ["mortgage"]],
+  ["insurance", "Versicherungen", ["insurance"]],
   ["pension", "Vorsorge", ["pension"]],
   ["project", "Projekte", ["project", "splitTemplate"]],
   ["user", "Benutzer", ["user", "auth"]],
@@ -462,6 +472,7 @@ export default function Settings() {
     recurring: boolean;
     goal: boolean;
     mortgage: boolean;
+    insurance: boolean;
   } | null>(null);
   const ntfy = ntfyUrl ?? notifySettings.data?.ntfyUrl ?? "";
   const webhook = webhookUrl ?? notifySettings.data?.webhookUrl ?? "";
@@ -471,6 +482,7 @@ export default function Settings() {
       recurring: true,
       goal: true,
       mortgage: true,
+      insurance: true,
     };
   const saveNotify = trpc.finance.setNotifySettings.useMutation({
     onSuccess: () => {
@@ -762,6 +774,7 @@ export default function Settings() {
                     ["recurring", "Wiederkehrende Buchungen"],
                     ["goal", "Sparziel-Meilensteine"],
                     ["mortgage", "Ablauf der Zinsbindung"],
+                    ["insurance", "Kündigungsfristen"],
                   ] as const
                 ).map(([key, label]) => (
                   <span key={key} className="flex items-center gap-2 text-sm">

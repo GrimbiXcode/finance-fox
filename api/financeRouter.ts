@@ -15,6 +15,11 @@ import {
   categories,
   goalContributions,
   goalSources,
+  insuranceChanges,
+  insuranceCoverages,
+  insuranceGapDismissals,
+  insurancePolicies,
+  insurancePolicyPersons,
   mortgageAmortizations,
   mortgageChanges,
   mortgageTranches,
@@ -58,7 +63,10 @@ import {
   touchesVisibleAccount,
   visibleAccountIds,
 } from "./lib/accountAccess";
-import { deleteAttachmentsForTransactions } from "./lib/attachments";
+import {
+  deleteAttachmentsForTransactions,
+  deleteInsuranceAttachmentsFor,
+} from "./lib/attachments";
 import { parseCamt053 } from "./lib/camt";
 import { computeBudgetStatuses } from "./lib/budgets";
 import {
@@ -488,6 +496,12 @@ export const financeRouter = createRouter({
         tx.update(mortgageAmortizations)
           .set({ accountId: null })
           .where(eq(mortgageAmortizations.accountId, input.id))
+          .run();
+        // Ebenso die Versicherungen: die Police bleibt, nur das
+        // Belastungskonto ist weg.
+        tx.update(insurancePolicies)
+          .set({ accountId: null })
+          .where(eq(insurancePolicies.accountId, input.id))
           .run();
         tx.delete(accountPermissions)
           .where(eq(accountPermissions.accountId, input.id))
@@ -2444,6 +2458,10 @@ export const financeRouter = createRouter({
         .update(mortgageAmortizations)
         .set({ recurringId: null })
         .where(eq(mortgageAmortizations.recurringId, input.id));
+      await db
+        .update(insurancePolicies)
+        .set({ premiumRecurringId: null })
+        .where(eq(insurancePolicies.premiumRecurringId, input.id));
       logAudit(
         db,
         ctx.user.id,
@@ -3073,6 +3091,12 @@ export const financeRouter = createRouter({
     ).map(t => t.id);
     // Beleg-Zeilen + Dateien aller Buchungen entfernen
     await deleteAttachmentsForTransactions(db, txIds);
+    // Versicherungs-Dokumente ebenso — außerhalb der Transaktion, weil
+    // dabei Dateien von der Platte verschwinden
+    const policyIds = (
+      await db.select({ id: insurancePolicies.id }).from(insurancePolicies)
+    ).map(p => p.id);
+    await deleteInsuranceAttachmentsFor(db, policyIds);
     db.transaction(tx => {
       tx.delete(transactionSplits).where(ne(transactionSplits.id, -1)).run();
       tx.delete(transactionTags).where(ne(transactionTags.id, -1)).run();
@@ -3092,6 +3116,16 @@ export const financeRouter = createRouter({
         .run();
       tx.delete(mortgageTranches).where(ne(mortgageTranches.id, -1)).run();
       tx.delete(properties).where(ne(properties.id, -1)).run();
+      // Versicherungen ebenso — Kinder zuerst
+      tx.delete(insuranceGapDismissals)
+        .where(ne(insuranceGapDismissals.id, -1))
+        .run();
+      tx.delete(insuranceChanges).where(ne(insuranceChanges.id, -1)).run();
+      tx.delete(insuranceCoverages).where(ne(insuranceCoverages.id, -1)).run();
+      tx.delete(insurancePolicyPersons)
+        .where(ne(insurancePolicyPersons.id, -1))
+        .run();
+      tx.delete(insurancePolicies).where(ne(insurancePolicies.id, -1)).run();
       tx.delete(accountPermissions).where(ne(accountPermissions.id, -1)).run();
       tx.delete(accountOwners).where(ne(accountOwners.id, -1)).run();
       tx.delete(accounts).where(ne(accounts.id, -1)).run();
@@ -3373,6 +3407,7 @@ export const financeRouter = createRouter({
           goal: z.boolean(),
           // Bestands-Clients senden das Feld noch nicht → Default an
           mortgage: z.boolean().default(true),
+          insurance: z.boolean().default(true),
         }),
       })
     )

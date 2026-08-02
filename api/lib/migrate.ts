@@ -386,6 +386,82 @@ export function ensureSchema() {
     )`,
     `CREATE INDEX IF NOT EXISTS mortgage_changes_created_idx
       ON mortgage_changes (created_at)`,
+
+    // Versicherungs-Modul (haushaltsweit, synchron mit db/schema.ts).
+    // Auch hier gilt: neue Tabellen, deshalb dürfen die Indizes inline stehen.
+    `CREATE TABLE IF NOT EXISTS insurance_policies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      branch TEXT NOT NULL,
+      insurer TEXT NOT NULL DEFAULT '',
+      policy_number TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      premium INTEGER NOT NULL DEFAULT 0,
+      premium_interval TEXT NOT NULL DEFAULT 'yearly',
+      deductible INTEGER,
+      start_date TEXT NOT NULL,
+      renewal TEXT NOT NULL DEFAULT 'auto',
+      main_due_date TEXT,
+      end_date TEXT,
+      notice_period_months INTEGER NOT NULL DEFAULT 3,
+      account_id INTEGER,
+      premium_recurring_id INTEGER,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS insurance_policies_branch_idx
+      ON insurance_policies (branch)`,
+    `CREATE INDEX IF NOT EXISTS insurance_policies_status_idx
+      ON insurance_policies (status)`,
+    `CREATE TABLE IF NOT EXISTS insurance_policy_persons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      policy_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS insurance_policy_person_unique_idx
+      ON insurance_policy_persons (policy_id, user_id)`,
+    `CREATE INDEX IF NOT EXISTS insurance_policy_person_policy_idx
+      ON insurance_policy_persons (policy_id)`,
+    `CREATE TABLE IF NOT EXISTS insurance_coverages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      policy_id INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      sum_insured INTEGER,
+      deductible INTEGER,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS insurance_coverages_policy_idx
+      ON insurance_coverages (policy_id)`,
+    `CREATE TABLE IF NOT EXISTS insurance_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      policy_id INTEGER NOT NULL,
+      stored_name TEXT NOT NULL UNIQUE,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS insurance_att_policy_idx
+      ON insurance_attachments (policy_id)`,
+    `CREATE TABLE IF NOT EXISTS insurance_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      comment TEXT NOT NULL DEFAULT '',
+      changes TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS insurance_changes_created_idx
+      ON insurance_changes (created_at)`,
+    `CREATE TABLE IF NOT EXISTS insurance_gap_dismissals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      gap_key TEXT NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`,
   ];
   for (const sql of stmts) {
     db.run(sql as never);

@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
   Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn, Landmark,
-  PanelLeftClose, PanelLeftOpen, GitBranch, House, Menu,
+  PanelLeftClose, PanelLeftOpen, GitBranch, House, Menu, Umbrella,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
@@ -43,6 +43,7 @@ const navGroups = [
       { to: '/sparziele', label: 'Sparziele', icon: PiggyBank },
       { to: '/vorsorge', label: 'Vorsorge', icon: Landmark },
       { to: '/hypotheken', label: 'Hypotheken', icon: House },
+      { to: '/versicherungen', label: 'Versicherungen', icon: Umbrella },
     ],
   },
   {

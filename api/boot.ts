@@ -17,6 +17,8 @@ import {
   replaceDatabase,
 } from "./queries/connection";
 import {
+  insuranceAttachments,
+  insurancePolicies,
   pensionAhv,
   pensionAttachments,
   pensionFunds,
@@ -25,14 +27,24 @@ import {
   transactions,
 } from "@db/schema";
 import { requireAccountAccess, type AccessLevel } from "./lib/accountAccess";
+import { buildSessionCookie } from "./lib/session";
+import {
+  ensureDevHousehold,
+  isEnabled as devLoginEnabled,
+  logDevLoginBanner,
+  resolveDevUser,
+  type DevPersona,
+} from "./lib/devLogin";
 import {
   ALLOWED_MIME_TYPES,
   MAX_ATTACHMENT_BYTES,
   deleteAttachment,
+  deleteInsuranceAttachment,
   deletePensionAttachment,
   initAttachmentsDir,
   readAttachmentFile,
   saveAttachment,
+  saveInsuranceAttachment,
   savePensionAttachment,
 } from "./lib/attachments";
 
@@ -360,6 +372,105 @@ app.delete("/api/pension-attachments/:id", async c => {
   return c.json({ ok: true });
 });
 
+/* --------------------- Versicherungs-Dokumente (binär) -------------------- */
+
+/**
+ * Anders als bei der Vorsorge gibt es hier **keinen** Besitzcheck: Das
+ * Versicherungs-Modul ist haushaltsweit, jedes angemeldete Mitglied darf die
+ * Dokumente einer Police hoch- und herunterladen (siehe db/schema.ts).
+ */
+app.post("/api/insurance-attachments", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const policyId = Number(c.req.query("policyId"));
+  if (!Number.isInteger(policyId) || policyId <= 0) {
+    return c.json({ error: "Ungültige policyId." }, 400);
+  }
+  const policy = await getDb().query.insurancePolicies.findFirst({
+    where: eq(insurancePolicies.id, policyId),
+  });
+  if (!policy) return c.json({ error: "Police nicht gefunden." }, 404);
+
+  const mimeType = (c.req.header("content-type") ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!(mimeType in ALLOWED_MIME_TYPES)) {
+    return c.json(
+      {
+        error:
+          "Nur Bilder (JPEG, PNG, WebP, GIF) oder PDF-Dateien sind erlaubt.",
+      },
+      400
+    );
+  }
+  let originalName = "police";
+  const filenameHeader = c.req.header("x-filename");
+  if (filenameHeader) {
+    try {
+      originalName = decodeURIComponent(filenameHeader);
+    } catch {
+      // fehlerhafte Kodierung → Fallback-Name
+    }
+  }
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.byteLength === 0) {
+    return c.json({ error: "Die Datei ist leer." }, 400);
+  }
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+    return c.json({ error: "Die Datei ist zu groß (maximal 10 MB)." }, 413);
+  }
+  const meta = await saveInsuranceAttachment(
+    getDb(),
+    policyId,
+    bytes,
+    originalName,
+    mimeType
+  );
+  return c.json(meta, 201);
+});
+
+app.get("/api/insurance-attachments/:id", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "Ungültige Anhang-ID." }, 400);
+  }
+  const row = await getDb().query.insuranceAttachments.findFirst({
+    where: eq(insuranceAttachments.id, id),
+  });
+  if (!row) return c.json({ error: "Anhang nicht gefunden." }, 404);
+  const data = readAttachmentFile(row.storedName);
+  if (!data) return c.json({ error: "Datei nicht gefunden." }, 404);
+  const asciiName = row.originalName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replace(/"/g, "'");
+  return new Response(data, {
+    headers: {
+      "Content-Type": row.mimeType,
+      "Content-Disposition": `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(row.originalName)}`,
+      "Content-Length": String(data.byteLength),
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+});
+
+app.delete("/api/insurance-attachments/:id", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "Ungültige Anhang-ID." }, 400);
+  }
+  const row = await getDb().query.insuranceAttachments.findFirst({
+    where: eq(insuranceAttachments.id, id),
+  });
+  if (!row) return c.json({ error: "Anhang nicht gefunden." }, 404);
+  await deleteInsuranceAttachment(getDb(), id);
+  return c.json({ ok: true });
+});
+
 app.use("/api/trpc/*", async c => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -368,12 +479,48 @@ app.use("/api/trpc/*", async c => {
     createContext,
   });
 });
+/* ------------------------- Entwicklungs-Login (dev) ----------------------- */
+
+/**
+ * Nur montiert, wenn NODE_ENV != production UND DEV_LOGIN=1 (siehe
+ * `lib/devLogin.ts`). Stellt ein reguläres, signiertes Session-Cookie aus —
+ * der Auth-Pfad bleibt unverändert. In Produktion existiert die Route nicht.
+ */
+if (devLoginEnabled()) {
+  app.get("/api/dev/login", async c => {
+    const persona: DevPersona =
+      c.req.query("as") === "member" ? "member" : "admin";
+    const user = await resolveDevUser(getDb(), persona);
+    if (!user) {
+      return c.json({ error: "Dev-Benutzer konnte nicht angelegt werden." }, 500);
+    }
+    console.warn(
+      `[Finance Fox] DEV_LOGIN: Session für „${user.name}" ausgestellt.`
+    );
+    // Redirect auf die SPA, damit ein Aufruf im Browser direkt in der App landet
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: c.req.query("to") ?? "/",
+        "Set-Cookie": buildSessionCookie(user.id, env.cookieSecure),
+      },
+    });
+  });
+}
+
 app.all("/api/*", c => c.json({ error: "Not Found" }, 404));
 
 // Datenbank initialisieren (sql.js/WASM) + Schema sicherstellen — einmalig vor Request-Handling
 await initDb();
 ensureSchema();
 initAttachmentsDir();
+
+// Dev-Login: Identitäten vorbereiten und laut warnen, damit der Modus nie
+// unbemerkt läuft.
+if (devLoginEnabled()) {
+  logDevLoginBanner();
+  await ensureDevHousehold(getDb());
+}
 
 // Tägliche Verbuchung wiederkehrender Transaktionen (03:00 Uhr Serverzeit)
 // + einmalig beim Start, damit nichts liegen bleibt.

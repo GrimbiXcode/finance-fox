@@ -23,17 +23,22 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   `MortgagePropertyDialog.tsx`/`MortgageTrancheDialog.tsx`/
   `MortgageAmortizationDialog.tsx`/`MortgageTransferDialog.tsx`
   (Hypotheken-Dialoge, Muster PensionFundDialog),
+  `InsurancePolicyDialog.tsx`/`InsuranceCoverageDialog.tsx`/
+  `InsuranceTransferDialog.tsx`/`InsuranceAttachments.tsx`
+  (Versicherungs-Modul, Muster Hypotheken bzw. PensionAttachments),
   `ui/` (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
   `AppRouter` aus `api/router.ts`), `auth.tsx`.
 - `lib/` — `finance.ts` (Berechnungen, Cent-Helfer, Locale), `data.ts`,
-  `utils.ts` (cn), `moneyflow.ts`, `recurring.ts`.
+  `utils.ts` (cn), `moneyflow.ts`, `recurring.ts`, `insurance.ts`
+  (`buildComparison` — Zeilen der Policen-Vergleichstabelle).
 
 ## Navigation (Layout.tsx)
 
 Die Menüstruktur steht zentral in `navGroups` (thematisch gruppiert:
 Alltag = Dashboard/Transaktionen/Wiederkehrend/Aufteilung, Konten =
-Konten/Geldfluss, Planung = Budgets/Sparziele/Vorsorge/Hypotheken, Analyse =
+Konten/Geldfluss, Planung = Budgets/Sparziele/Vorsorge/Hypotheken/
+Versicherungen, Analyse =
 Prognosen/Auswertung, Verwaltung = Personen/Einstellungen) und speist
 beide Navigationen: die Desktop-Seitenleiste (mit Gruppen-Labels, im
 eingeklappten Zustand nur Icons + Trennlinien) und die mobile Ansicht —
@@ -214,6 +219,36 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   (`MortgageWarning`) und werden erst in `warningText()` zu deutschen Sätzen
   — nur so lassen sich Beträge/Prozente/Daten locale-konform formatieren.
   Invalidierung zentral `useInvalidateMortgage()` in `lib/data.ts`.
+- **Versicherungen** (`pages/Insurances.tsx` unter `/versicherungen`, Nav
+  „Versicherungen" nach „Hypotheken", Icon `Umbrella` — `ShieldCheck` ist im
+  Layout schon fürs Admin-Badge belegt): haushaltsweites Modul, aber anders
+  als bei den Hypotheken eine **Liste gleichrangiger Objekte** — kein
+  Auswahl-SearchableSelect im Kopf. Ohne Police nur eine Setup-Card. Danach:
+  KPI-Zeile (Policen/Prämie pro Monat/pro Jahr/nächste Kündigungsfrist —
+  Angebote sind aus den Prämien ausgeschlossen), **Deckungs-Check-Card**
+  (bewusst weit oben, das ist der Kernnutzen), Filter-Card (Suche, Sparte,
+  Status, Person, Versicherer — clientseitig über einen Haystack inkl.
+  Deckungs-Bezeichnungen), Policen-Grid, Verlauf.
+  - **Lücken kommen als strukturierte Daten vom Server** (`InsuranceGap`,
+    Discriminated Union) und werden erst in `gapText()` zu deutschen Sätzen
+    — gleiche Begründung wie bei `MortgageWarning`. Ausblendbare Hinweise
+    tragen `dismissible: true`; ausgeblendete stehen aufklappbar unter
+    „N ausgeblendet" — **mit Begründung, Autor und Datum** aus dem
+    `dismissal`-Feld — und lassen sich zurückholen. Aus- und Einblenden
+    erscheinen im Verlauf als Entity „Deckungs-Check".
+  - **Deckungen stehen aufklappbar direkt in der Karte** (`ui/collapsible`),
+    nicht im Dialog — der Anwendungsfall ist „beim Arzttermin antippen und
+    sofort sehen, was gedeckt ist". `sumInsured === null` heißt
+    **unbegrenzt**, nicht „unbekannt".
+  - **Vergleichsansicht**: Checkbox je Karte, höchstens vier Policen, ab
+    zwei erscheint die Tabelle inline **über** dem Grid (kein Dialog — man
+    will die Auswahl währenddessen anpassen). Die Merkmalsspalte ist
+    `sticky left-0 bg-card z-10`; gescrollt wird der `overflow-x-auto`-
+    Container von `ui/table`, **nie die Seite**. Der beste Wert je Zeile
+    (niedrigste Jahresprämie, höchste Deckungssumme) steht in
+    `font-semibold text-emerald-600`. Die Zeilen baut die reine Funktion
+    `buildComparison` in `lib/insurance.ts`.
+  - Invalidierung zentral `useInvalidateInsurance()` in `lib/data.ts`.
 - **Charts mit Bändern (recharts)**: `ReferenceArea` braucht eine
   **numerische X-Achse** (`<XAxis type="number" domain={[min, max]}>`,
   Werte als Zahl statt String) plus `ifOverflow="hidden"` — mit einer

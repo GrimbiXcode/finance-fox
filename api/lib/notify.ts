@@ -7,7 +7,7 @@ import type { Db } from "../queries/connection";
  * - notify_ntfy_url:    volle Topic-URL (z. B. https://ntfy.sh/mein-haushalt)
  * - notify_webhook_url: generischer HTTP-Endpoint (bekommt JSON per POST)
  * - notify_events:      JSON {"budget":bool,"recurring":bool,"goal":bool,
- *                             "mortgage":bool}
+ *                             "mortgage":bool,"insurance":bool}
  * Fehler beim Versand werden nur geloggt — nie den Hauptflow brechen.
  */
 
@@ -16,6 +16,7 @@ export type NotifyEvent =
   | "recurring"
   | "goal"
   | "mortgage"
+  | "insurance"
   | "test";
 
 export interface NotifyEvents {
@@ -23,6 +24,7 @@ export interface NotifyEvents {
   recurring: boolean;
   goal: boolean;
   mortgage: boolean;
+  insurance: boolean;
 }
 
 export interface NotifyConfig {
@@ -47,6 +49,7 @@ const ALL_EVENTS: NotifyEvents = {
   recurring: true,
   goal: true,
   mortgage: true,
+  insurance: true,
 };
 
 function parseEvents(raw: string | undefined): NotifyEvents {
@@ -58,6 +61,7 @@ function parseEvents(raw: string | undefined): NotifyEvents {
       recurring: parsed.recurring !== false,
       goal: parsed.goal !== false,
       mortgage: parsed.mortgage !== false,
+      insurance: parsed.insurance !== false,
     };
   } catch {
     return { ...ALL_EVENTS };

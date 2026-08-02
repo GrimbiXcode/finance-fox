@@ -11,7 +11,9 @@ export default defineConfig({
     devServer({ entry: "api/boot.ts", exclude: [/^\/(?!api\/).*$/] }),
     inspectAttr(), react()],
   server: {
-    port: 3000,
+    // Default 3000 wie bisher; PORT erlaubt einen abweichenden Port, wenn
+    // 3000 schon belegt ist (z. B. mehrere parallele Dev-Instanzen).
+    port: Number(process.env.PORT) || 3000,
   },
   resolve: {
     alias: {

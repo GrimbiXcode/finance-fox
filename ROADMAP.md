@@ -43,6 +43,7 @@ Jede Erweiterung muss zu diesen Grundsätzen passen:
 | **Benutzer & Auth** | Setup-Wizard, E-Mail/Passwort, Einladungslinks (Server-Log), Admin/Member-Rollen, keine 2FA |
 | **International** | Zahlen- und Datumsformate folgen der Systemregion (z. B. de-DE `1.234,56` vs. de-CH `1'234.56`), haushaltsweite Leitwährung (20 Währungen), UI-Sprache Deutsch |
 | **Hypotheken** | Liegenschaft mit Verkehrswert, Tranchen (Fest/SARON/variabel), direkte & indirekte Amortisation, Belehnung, Tragbarkeit, Schuldenverlauf, Nettovermögen; Übernahme als Dauerbuchung |
+| **Versicherungen** | Policen des Haushalts (gemeinsam & personenbezogen) mit Sparte, Prämie, Selbstbehalt, freien Deckungs-Zeilen, Dokumenten und Angeboten; Vergleich von bis zu vier Policen, regelbasierter Deckungs-Check, Kündigungsfrist-Erinnerung, Übernahme als Dauerbuchung |
 | **Daten & Betrieb** | SQLite-Datei via sql.js, ein Docker-Container, Backup/Restore in den Einstellungen, CSV-Export, PWA (installierbar), Dark Mode |
 
 **Kurz gesagt:** Kern und Alltagstauglichkeit stehen — buchen, teilen,
@@ -201,6 +202,36 @@ sich von selbst. Reihenfolge = empfohlene Umsetzungsreihenfolge.
 Nicht-Ziel bleibt die Anbindung von Banken-APIs; Zinssätze und Restschuld
 werden von Hand gepflegt.
 
+### Phase 6 — Versicherungen ✅ *vollständig umgesetzt*
+
+1. **Versicherungs-Modul** (Route `/versicherungen`) als zweites
+   haushaltsweites Modul neben den Hypotheken: alle Policen zentral, mit
+   Sparte aus einem festen Katalog (14 Sparten für den CH/DE-Haushalt),
+   Versicherer, Prämie samt Zahlungsintervall, Selbstbehalt, Vertragsdaten
+   und Kündigungsfrist. Die Zuordnung zu Personen ist reine Zuschreibung —
+   keine Zuordnung heißt „gemeinsame Police"; sichtbar ist alles für alle,
+   sonst könnte die Lückenanalyse nicht über den Haushalt rechnen.
+   Änderungshistorie und Dokument-Anhänge wie im Vorsorge-Modul.
+2. **Deckungen als freie Zeilen** (Bezeichnung, Summe, abweichender
+   Selbstbehalt, Notiz) statt fester Felder pro Sparte — Versicherer
+   benennen dieselbe Deckung unterschiedlich. Die Sparte liefert nur
+   Vorschläge. Damit beantwortet das Modul die Alltagsfrage „wofür bin ich
+   eigentlich versichert?" direkt auf der Karte, ohne Dialog.
+3. **Vergleichsansicht**: bis zu vier Policen nebeneinander, inklusive
+   Angeboten — genau der Fall, für den man vergleicht. Normalisierte
+   Jahresprämie und vereinigte Deckungszeilen; der beste Wert je Zeile ist
+   hervorgehoben.
+4. **Deckungs-Check**: regelbasierte Hinweise auf fehlende Sparten (pro
+   Person bzw. pro Haushalt), auf eine fehlende Gebäudeversicherung bei
+   erfasstem Wohneigentum, auf auslaufende Deckungen ohne Nachfolge,
+   nahende und verpasste Kündigungsfristen sowie Datenqualität. Einzelne
+   Empfehlungen lassen sich mit Begründung ausblenden und zurückholen.
+5. **Kündigungsfrist-Erinnerung** 90/30 Tage vorher (ntfy/Webhook) und
+   **Übernahme der Prämie als Dauerbuchung** (Kopie, kein Live-Sync).
+
+Nicht-Ziel bleibt die Anbindung von Versicherer-Portalen; Policen und
+Deckungen werden von Hand gepflegt.
+
 ### Bewusst zurückgestellt / Nicht-Ziele
 
 Mit Begründung — diese Punkte passen aktuell nicht zum Produktleitbild
@@ -236,7 +267,7 @@ Aufwand nicht:
 
 ## 5. Nächste Schritte
 
-Alle fünf Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
+Alle sechs Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
 Backlog (Abschnitt 3) zur Bewertung an — naheliegend: Massenbearbeitung,
 CSV-Import mit Kategorie-Mapping-Regeln, Sparziele in der
 Netto-Vermögensreihe.

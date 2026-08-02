@@ -7,9 +7,17 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
 - `boot.ts` — Einstieg (Hono); enthält auch die Admin-Binärrouten
   `GET /api/backup` und `POST /api/backup/restore` sowie die Beleg-Routen
   `POST/GET/DELETE /api/attachments*` und die Vorsorge-Anhang-Routen
-  `POST/GET/DELETE /api/pension-attachments*`. Request-Body-Limit: 50 MB.
-- `router.ts` — `appRouter: { ping, auth, finance, forecast, mortgage,
-  pension }`. Der
+  `POST/GET/DELETE /api/pension-attachments*` und die Versicherungs-Dokument-
+  Routen `POST/GET/DELETE /api/insurance-attachments*` (ohne Besitzcheck —
+  das Modul ist haushaltsweit). Request-Body-Limit: 50 MB.
+  Nur in der Entwicklung zusätzlich `GET /api/dev/login` (passwortloser
+  Login, `?as=admin|member`, `?to=<Ziel>`): montiert nur, wenn
+  `NODE_ENV != production` **und** `DEV_LOGIN=1` — siehe `lib/devLogin.ts`
+  und den Abschnitt „Die App selbst durchklicken" in der Root-AGENTS.md.
+  Die Route stellt ein reguläres Session-Cookie aus; am Auth-Pfad
+  (`getSessionUser`, `verifySessionToken`) ändert sie **nichts**.
+- `router.ts` — `appRouter: { ping, auth, finance, forecast, insurance,
+  mortgage, pension }`. Der
   Frontend-Client importiert den Typ `AppRouter` direkt von hier
   (`src/providers/trpc.tsx`) — Typänderungen wirken sofort auf den Client.
 - `middleware.ts` — tRPC-Setup: `publicQuery` / `authedQuery` / `adminQuery`.
@@ -30,6 +38,8 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
 - `pensionRouter.ts` — Vorsorge-Modul (Schweizer 3-Säulen-Prinzip, siehe
   Abschnitt „Vorsorge").
 - `mortgageRouter.ts` — Hypotheken-Modul (siehe Abschnitt „Hypotheken").
+- `insuranceRouter.ts` — Versicherungs-Modul (siehe Abschnitt
+  „Versicherungen").
 - `lib/` — `env.ts`, `session.ts`, `migrate.ts` (`ensureSchema`),
   `recurringJob.ts`, `recurringSchedule.ts` (Terminrechnung der
   Dauerbuchungen — `advanceDate`/`localISO`, einzige Quelle der Wahrheit für
@@ -40,7 +50,9 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   Modul-Historien), `pension/` (Vorsorge: `netSalary.ts`, `history.ts`,
   `forecastCh.ts` + `index.ts`-Factory, `accountSync.ts`), `mortgage/`
   (Hypotheken: `scheduleCh.ts` + `index.ts`-Factory, `portfolio.ts`,
-  `history.ts`, `maturityNotice.ts`).
+  `history.ts`, `maturityNotice.ts`), `insurance/` (Versicherungen:
+  `notice.ts` (Fristen-Rechnung), `gaps.ts` (Lückenanalyse) + `index.ts`-
+  Factory, `history.ts`, `noticeReminder.ts`).
 
 ## Vorsorge (3-Säulen-Prinzip)
 
@@ -179,6 +191,81 @@ Amortisation gilt der ganzen Hypothek), `mortgage_changes` (Historie,
   Historie, Erinnerung), `api/mortgageSchedule.test.ts` (reine Engine, fixes
   „heute", exakte Cent-Erwartungen, Invarianten),
   `api/mortgageNetWorth.test.ts`.
+
+## Versicherungen
+
+Modul in `insuranceRouter.ts` (tRPC-Namespace `insurance`) — wie die
+Hypotheken **haushaltsweit**: kein `userId`-Scoping. Das ist keine
+Bequemlichkeit, sondern Voraussetzung der Lückenanalyse (eine Lücke erkennt
+man nur über den ganzen Haushalt). Verknüpfte Konten weiterhin über
+`requireAccountAccess` (`view` fürs Verknüpfen, `edit` fürs Anlegen einer
+Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
+(**Zuschreibung, kein Zugriffsschutz** — null Zeilen = gemeinsame Police),
+`insurance_coverages`, `insurance_attachments`, `insurance_changes`,
+`insurance_gap_dismissals`.
+
+- **Sparten-Katalog** in `contracts/insurance.ts`: 14 Sparten, **fix und
+  nicht benutzererweiterbar**, weil die Sparte Logik trägt (`scope`
+  person/household/context, `severity`, `trigger`) und nicht nur ein Label —
+  Gegenbeispiel `account_types`, die erweiterbar sind, weil Kontotypen reine
+  Labels sind. Der Long Tail läuft über `sonstige` + freie Deckungs-Zeilen.
+  `db/schema.ts` importiert den Katalog **relativ** (drizzle-kit löst die
+  Aliase nicht auf). Status-Werte englisch (`active|cancelled|expired|
+  quote`) mit deutschen Label-Maps, wie überall im Projekt.
+- **Fristen-Rechnung**: `lib/insurance/notice.ts::computeNotice` — rein, drei
+  Aufrufer (Liste, Lückenanalyse, Cron). `cancelBy` ist immer der **noch
+  erreichbare** Termin; ist die Frist der laufenden Periode durch, zeigt er
+  aufs Folgejahr und `currentPeriodMissed` liefert das Signal für den
+  ehrlichen UI-Satz. Die Datumsarithmetik rechnet auf y/m/d **mit Klemmung**
+  (`subMonths("2026-12-31", 3) === "2026-09-30"`, `addYears("2024-02-29", 1)
+  === "2025-02-28"`) — der bei `advanceDate` dokumentiert akzeptierte
+  Überlauf von `Date.setMonth` würde hier einen ganzen Vertragszyklus kosten.
+- **Lückenanalyse**: `lib/insurance/gaps.ts::analyzeGaps` hinter der Factory
+  `getInsuranceRules(country)`. Zentrale Definition ist `covers()`: Eine
+  **gekündigte, aber noch laufende** Police deckt weiterhin (sonst schlägt
+  die Analyse falsch Alarm oder findet die echte Lücke „endet in drei
+  Wochen, keine Nachfolge" nie); Angebote decken nie. Regeln R1–R12: fehlende
+  Sparten pro Person / pro Haushalt, Gebäudeversicherung bei erfasstem
+  Wohneigentum (liest `properties` direkt — haushaltsweit, kein
+  Rechteproblem), auslaufende Deckung ohne Nachfolge, Fristen, Datenqualität,
+  vergessene Angebote. Ergebnis ist eine **strukturierte** Union
+  (`InsuranceGap`), Sätze baut erst `gapText` im Frontend. Nur **aktive**
+  Mitglieder zählen.
+- **Ausblendungen** liegen in `insurance_gap_dismissals` (eigene Tabelle statt
+  app_settings-Marker: Nutzerdaten mit Autor, Zeit und Begründung).
+  `gapAnalysis` hängt diese Metadaten als `dismissal` an jeden
+  ausgeblendeten Hinweis — sonst wäre die Begründung erfasst, aber nirgends
+  sichtbar. Aus- und Einblenden landen zusätzlich in `insurance_changes`
+  (Entity `gap`): Der **Hinweis-Name ist dabei das Feld-Label** im Diff, also
+  „Fehlende Hausrat: eingeblendet → ausgeblendet". Den Namen baut
+  `describeGapKey` aus dem strukturierten Schlüssel (`branch:<b>`,
+  `branch:<b>:person:<id>`, `policy:<id>:<kind>`) — das funktioniert auch,
+  wenn der Hinweis inzwischen gar nicht mehr feuert. Leere Begründungen
+  werden zu `null` normalisiert, damit keine inhaltslose Zeile entsteht.
+- **Übernahme als Dauerbuchung**: `transferPremiumToRecurring`, selbstheilende
+  Idempotenz wie bei den Hypotheken. Zusätzliche Gates: nur `status ===
+  "active"` (Angebote buchen nichts) und `premium > 0`. `endDate` der Police
+  wird auf die Dauerbuchung übernommen — befristete Police, befristete
+  Buchung.
+- **Kaskaden im Finanz-Modul**: `deleteAccount` nullt
+  `insurance_policies.account_id` (die Police bleibt), `deleteRecurring`
+  räumt `premium_recurring_id` ab, `resetFinanceData` löscht alle sechs
+  Tabellen (Dokument-Dateien vorher über `deleteInsuranceAttachmentsFor`,
+  außerhalb der Transaktion).
+- **Fristen-Erinnerung**: `lib/insurance/noticeReminder.ts` als **dritter**
+  Durchgang im täglichen Cron, Schwellen 90/30 Tage bis `cancelBy`
+  (Notify-Event `insurance`). Marker-Format ist
+  `"<policyId>:<cancelByISO>:<threshold>"` — **mit Datum**, anders als bei
+  den Hypotheken: Eine Zinsbindung läuft genau einmal ab, ein Hauptverfall
+  wiederholt sich jährlich; ohne den Datumsteil feuerte die Erinnerung pro
+  Police genau einmal in ihrem Leben. Regressionstest deckt genau das ab.
+- **Policennummer gehört nie ins Audit-`detail`** (Muster AHV-Nummer); in der
+  Modul-Historie darf sie stehen — die ist innerhalb des Moduls sichtbar, das
+  Audit-Log dagegen in den allgemeinen Einstellungen.
+- Tests: `api/insurance.test.ts` (CRUD, Personen, Deckungen, Rechte,
+  Kaskaden inkl. Dateien, Idempotenz, Lücken, Historie, Erinnerung),
+  `api/insuranceNotice.test.ts` und `api/insuranceGaps.test.ts` (reine
+  Engines, fixes „heute").
 
 ## Auth & 2FA
 
@@ -440,7 +527,7 @@ Amortisation gilt der ganzen Hypothek), `mortgage_changes` (Historie,
 
 - **Benachrichtigungen (opt-in)**: Versand via ntfy und/oder generischem
   Webhook, zentral `sendNotification` in `lib/notify.ts` (Events: `budget`,
-  `recurring`, `goal`, `mortgage`; Konfiguration in
+  `recurring`, `goal`, `mortgage`, `insurance`; Konfiguration in
   `app_settings`: `notify_ntfy_url`, `notify_webhook_url`, `notify_events` —
   Admin-Endpunkte `finance.getNotifySettings`/`setNotifySettings`/
   `sendTestNotification`). Nur http/https-URLs; Versandfehler werden nur
@@ -449,7 +536,8 @@ Amortisation gilt der ganzen Hypothek), `mortgage_changes` (Historie,
   Sparziel-Meilensteine (25/50/75/100 %, ungefilterter Haushalts-
   Gesamtfortschritt vor/nach) in `finance.createTransaction` (Buchung auf
   einem ziel-verknüpften Konto) und `finance.addGoalSource`, Ablauf einer
-  Zinsbindung (90/30 Tage, zweiter Durchgang im Cron). Tests:
+  Zinsbindung (90/30 Tage, zweiter Durchgang im Cron), Ablauf einer
+  Kündigungsfrist (90/30 Tage, dritter Durchgang im Cron). Tests:
   `api/notify.test.ts`.
 - **Aktivitäts-/Audit-Log**: Tabelle `audit_log` (userId NULL = System bzw.
   Vorgänge vor dem Login, action nach Konvention `<entity>.<verb>` wie

@@ -28,6 +28,10 @@ import {
 } from "@db/schema";
 import { requireAccountAccess, type AccessLevel } from "./lib/accountAccess";
 import { buildSessionCookie } from "./lib/session";
+import { REPORT_MONTHS, parseReportSections } from "@contracts/report";
+import { collectReport } from "./lib/report/data";
+import { renderReportPdf } from "./lib/report/pdf";
+import { renderReportXlsx } from "./lib/report/xlsx";
 import {
   ensureDevHousehold,
   isEnabled as devLoginEnabled,
@@ -89,6 +93,78 @@ app.post("/api/backup/restore", async c => {
   replaceDatabase(bytes);
   ensureSchema();
   return c.json({ ok: true });
+});
+
+/* ---- Berichts-Export (binär, für jedes Mitglied — außerhalb von tRPC) ---- */
+
+/**
+ * PDF- und Excel-Bericht über Konten und ihre Verwendung (Sparziele,
+ * Hypotheken, Vorsorge, Versicherungen, Cashflow, Fixkosten,
+ * Nettovermögen) — gedacht als Gesprächsgrundlage, etwa bei der Bank.
+ *
+ * Anders als `/api/backup` **nicht** Admin-only: Der Bericht enthält
+ * ausschließlich die Sicht des anfragenden Nutzers. Die Datensammlung ruft
+ * dafür dieselben tRPC-Endpunkte auf wie die Oberfläche
+ * (`lib/report/data.ts`), damit die Zahlen im Dokument und auf dem
+ * Bildschirm nicht auseinanderlaufen können.
+ */
+async function reportFor(c: Context, user: SessionUser) {
+  const url = new URL(c.req.url);
+  const sections = parseReportSections(url.searchParams.get("sections"));
+  if (sections.length === 0) {
+    return {
+      error: c.json(
+        { error: "Bitte mindestens einen Abschnitt auswählen." },
+        400
+      ),
+    };
+  }
+  const months = Number(url.searchParams.get("months"));
+  const locale = (url.searchParams.get("locale") ?? "de-DE").slice(0, 35);
+  const data = await collectReport(
+    { req: c.req.raw, resHeaders: new Headers(), user },
+    {
+      sections,
+      months: (REPORT_MONTHS as readonly number[]).includes(months)
+        ? months
+        : 12,
+    }
+  );
+  return { data, locale };
+}
+
+/** Content-Disposition mit Datum im Dateinamen (Muster: /api/backup) */
+function downloadHeaders(extension: string, contentType: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    "Content-Type": contentType,
+    "Content-Disposition": `attachment; filename="finance-fox-bericht-${today}.${extension}"`,
+  };
+}
+
+app.get("/api/export/bericht.pdf", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const result = await reportFor(c, user);
+  if (result.error) return result.error;
+  const pdf = renderReportPdf(result.data, result.locale);
+  return new Response(pdf, {
+    headers: downloadHeaders("pdf", "application/pdf"),
+  });
+});
+
+app.get("/api/export/bericht.xlsx", async c => {
+  const user = await getSessionUser(c.req.raw);
+  if (!user) return c.json({ error: "Nicht angemeldet." }, 401);
+  const result = await reportFor(c, user);
+  if (result.error) return result.error;
+  const xlsx = renderReportXlsx(result.data);
+  return new Response(xlsx, {
+    headers: downloadHeaders(
+      "xlsx",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
+  });
 });
 
 /* ---- Beleg-Anhänge (binär, Konto-Rechte statt Admin — außerhalb von tRPC) ---- */

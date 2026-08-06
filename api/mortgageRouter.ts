@@ -86,13 +86,13 @@ const AMORTIZATION_LABELS: Record<string, string> = {
   notes: "Notizen",
 };
 
-const USAGE_LABELS: Record<string, string> = {
+export const USAGE_LABELS: Record<string, string> = {
   owner_occupied: "Selbstbewohnt",
   rental: "Renditeobjekt",
   vacation: "Ferienobjekt",
 };
 
-const TRANCHE_KIND_LABELS: Record<string, string> = {
+export const TRANCHE_KIND_LABELS: Record<string, string> = {
   fixed: "Festhypothek",
   saron: "SARON",
   variable: "Variabel",

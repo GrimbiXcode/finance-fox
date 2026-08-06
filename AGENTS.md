@@ -8,7 +8,8 @@ jeweiligen Dateien automatisch relevant:
 - `api/AGENTS.md` — Backend: Router, Auth/2FA, Konto-Rechte, Transaktionen,
   Dauerbuchungen, Kategorien/Budgets, Splits/Projekte/Tags, Sparziele,
   Prognosen, Vorsorge (3-Säulen-Modul), Hypotheken (Wohneigentum),
-  Versicherungen (Policen, Deckungen, Lückenanalyse),
+  Versicherungen (Policen, Deckungen, Lückenanalyse), Bericht/Export
+  (PDF- und XLSX-Writer ohne Abhängigkeit),
   Benachrichtigungen, Audit-Log, Beleg-Anhänge
 - `src/AGENTS.md` — Frontend: Seiten/Komponenten, Helfer, Auswahlfelder,
   Dialog-Layouts, Geldfluss-Visualisierung, Dark Mode/PWA
@@ -26,6 +27,8 @@ Vorsorge-Modul (Schweizer 3-Säulen-Prinzip) mit Altersprognose,
 haushaltsweites Hypotheken-Modul (Liegenschaft, Tranchen, Amortisation,
 Belehnung/Tragbarkeit, Nettovermögen), haushaltsweites Versicherungs-Modul
 (Policen mit Deckungen, Vergleichsansicht, Deckungs-Check, Kündigungsfristen),
+Berichts-Export als PDF und Excel (modulübergreifende Übersicht mit frei
+wählbaren Abschnitten, gedacht als Gesprächsgrundlage bei einer Bank),
 Benutzerverwaltung mit Ersteinrichtungs-Wizard und Einladungslinks.
 
 UI-Texte, Kommentare und Doku sind auf **Deutsch** — neue Kommentare,
@@ -119,7 +122,8 @@ api/            Backend (Hono + tRPC), Einstieg: api/boot.ts — Details: api/AG
 contracts/      Geteilte Typen/Errors zwischen Front- und Backend (@contracts/*):
                 types.ts (u. a. CURRENCIES, TAG_COLORS), errors.ts,
                 splitShares.ts (gewichtete Split-Verteilung sharesFromWeights),
-                insurance.ts (Sparten-Katalog, Status/Verlängerung + Labels)
+                insurance.ts (Sparten-Katalog, Status/Verlängerung + Labels),
+                report.ts (Abschnitts-Katalog des Berichts-Exports)
 db/             schema.ts (Drizzle-Tabellen, Quelle der Wahrheit), relations.ts,
                 seed.ts, migrations/ (drizzle-kit), stubs/ (better-sqlite3-Stub
                 fürs Bundle) — Details: db/AGENTS.md

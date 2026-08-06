@@ -16,6 +16,7 @@ import Mortgages from '@/pages/Mortgages'
 import Insurances from '@/pages/Insurances'
 import Forecasts from '@/pages/Forecasts'
 import YearReview from '@/pages/YearReview'
+import Report from '@/pages/Report'
 import Settings from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
 import Login from '@/pages/Login'
@@ -62,6 +63,7 @@ function Root() {
         <Route path="/versicherungen" element={<Insurances />} />
         <Route path="/prognosen" element={<Forecasts />} />
         <Route path="/auswertung" element={<YearReview />} />
+        <Route path="/bericht" element={<Report />} />
         <Route path="/personen" element={<UsersPage />} />
         <Route path="/einstellungen" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

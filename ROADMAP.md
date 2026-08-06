@@ -114,6 +114,18 @@ Erfassungsmaske.
   Saldo-Verlauf der Konten-Seite (`forecast.accountBalance`). Die
   Dauerbuchungs-Simulation liegt dafür zentral in `api/lib/forecastEngine.ts`
   — vorher dreifach kopiert, wobei die Prognose-Kopien `endDate` ignorierten.
+- ✅ **Berichts-Export (PDF und Excel)** — modulübergreifende Übersicht über
+  Konten und ihre Verwendung (Sparziele, Hypotheken, Vorsorge,
+  Versicherungen, Cashflow, Fixkosten, Nettovermögen) mit frei wählbaren
+  Abschnitten, gedacht als Gesprächsgrundlage bei der Bank.
+  Der PDF-Export stand vorher unter „Nicht-Ziele", weil eine PDF-Pipeline
+  unverhältnismäßig schien — die Begründung bleibt eingelöst: Beide Formate
+  entstehen **ohne neue Abhängigkeit** (`api/lib/pdf.ts` schreibt PDF 1.4 mit
+  den Standardschriften, `api/lib/xlsx.ts` ein ZIP aus SpreadsheetML über das
+  eingebaute `node:zlib`) — dasselbe Muster wie `lib/totp.ts` und
+  `lib/camt.ts`. Die Daten sammelt `lib/report/data.ts` über dieselben
+  tRPC-Endpunkte wie die Oberfläche, damit Dokument und Bildschirm nicht
+  auseinanderlaufen.
 - Automatische Zuweisung von Budget-Überschüssen an Sparziele (unverbrauchtes
   Budget periodisch auf ein verknüpftes Ziel-Konto umbuchen)
 
@@ -245,9 +257,6 @@ Mit Begründung — diese Punkte passen aktuell nicht zum Produktleitbild
 ("einfach statt buchhalterisch vollständig") oder ihr Nutzen deckt den
 Aufwand nicht:
 
-- **PDF-Report-Export.** CSV-Export + Browser-Druck decken Archivierung
-  und Steuerbelege ab; eine PDF-Pipeline (Rendering, Fonts, Layout) ist
-  unverhältnismäßig.
 - **FinTS/HBCI-Live-Anbindung.** Hoher Implementierungs- und Wartungs-
   aufwand, fehleranfällig, nur deutsche Banken. Stattdessen: Datei-
   basierter CAMT.053-Import (Phase 3).

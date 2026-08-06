@@ -9,7 +9,9 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   `POST/GET/DELETE /api/attachments*` und die Vorsorge-Anhang-Routen
   `POST/GET/DELETE /api/pension-attachments*` und die Versicherungs-Dokument-
   Routen `POST/GET/DELETE /api/insurance-attachments*` (ohne Besitzcheck —
-  das Modul ist haushaltsweit). Request-Body-Limit: 50 MB.
+  das Modul ist haushaltsweit) sowie die Berichts-Routen
+  `GET /api/export/bericht.pdf` und `GET /api/export/bericht.xlsx`
+  (siehe Abschnitt „Bericht & Export"). Request-Body-Limit: 50 MB.
   Nur in der Entwicklung zusätzlich `GET /api/dev/login` (passwortloser
   Login, `?as=admin|member`, `?to=<Ziel>`): montiert nur, wenn
   `NODE_ENV != production` **und** `DEV_LOGIN=1` — siehe `lib/devLogin.ts`
@@ -54,7 +56,66 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   (Hypotheken: `scheduleCh.ts` + `index.ts`-Factory, `portfolio.ts`,
   `history.ts`, `maturityNotice.ts`), `insurance/` (Versicherungen:
   `notice.ts` (Fristen-Rechnung), `gaps.ts` (Lückenanalyse) + `index.ts`-
-  Factory, `history.ts`, `noticeReminder.ts`).
+  Factory, `history.ts`, `noticeReminder.ts`), `pdf.ts`/`pdfFont.ts` und
+  `xlsx.ts` (Dokument-Writer, siehe „Bericht & Export"), `report/`
+  (`data.ts` Sammlung, `format.ts` Locale, `pdf.ts`/`xlsx.ts` Rendering).
+
+## Bericht & Export
+
+Zwei binäre Routen in `boot.ts` liefern eine modulübergreifende Übersicht
+über Konten und ihre Verwendung — gedacht als Gesprächsgrundlage, etwa bei
+einer Bank:
+
+```
+GET /api/export/bericht.pdf ?sections=accounts,goals,…&months=12|24|36&locale=de-CH
+GET /api/export/bericht.xlsx?…
+```
+
+- **Nicht Admin-only** (anders als `/api/backup`): Der Bericht enthält
+  ausschließlich die Sicht des anfragenden Nutzers, jedes Mitglied darf ihn
+  ziehen. `sections` wird gegen `REPORT_SECTIONS` (`contracts/report.ts`)
+  validiert, Unbekanntes still verworfen, leere Auswahl → 400.
+- **Der Bericht rechnet nichts selbst.** `lib/report/data.ts` ruft über
+  `appRouter.createCaller(ctx)` dieselben Endpunkte auf wie die Oberfläche
+  (`finance.listAccounts`, `finance.listGoals`, `mortgage.forecast`,
+  `pension.forecast`, `insurance.listPolicies`, `forecast.balance`, …).
+  Das ist die zentrale Entscheidung des Moduls: Eine Zahl, die jemand mit ins
+  Bankgespräch nimmt, darf sich nicht von der Zahl auf dem Bildschirm
+  unterscheiden — und die Sichtbarkeitsregeln existieren so nur einmal.
+  **Neue Abschnitte deshalb nie über eigene Queries bauen.**
+- **Datenschutz** folgt daraus automatisch: Konten über
+  `listVisibleAccounts`, Sparziele über `computeGoalProgress(db, user, …)`,
+  Vorsorge strikt privat. Ein fehlendes Vorsorgeprofil (`NOT_FOUND` aus
+  `pension.forecast`) ist **kein Fehler**, sondern ein leerer Abschnitt mit
+  Begründung — sonst kippte ein fehlendes Profil den ganzen Export.
+  `hasHiddenSources` **muss** im Dokument stehen: Sonst weist der Bericht
+  einen zu niedrigen Sparstand aus, ohne es zu sagen. AHV- und
+  Policennummern gehören nicht in den Export (Muster: Audit-`detail`).
+- **Keine Modul-Hinweise im Bericht**: `MortgageWarning`/`InsuranceGap`
+  werden erst im Frontend zu Sätzen (`warningText`, `gapText`). Der Bericht
+  zeigt stattdessen die harten Daten (Ablauf der Zinsbindung,
+  Kündigungstermin, Tragbarkeitsquote) — eine zweite Satzbau-Stelle liefe
+  über kurz oder lang auseinander.
+- **PDF ohne Bibliothek** (`lib/pdf.ts` + `lib/pdfFont.ts`): PDF 1.4 mit den
+  Base-14-Schriften Helvetica/-Bold/-Oblique in **WinAnsiEncoding**, also
+  ohne Font-Embedding. `pdfFont.ts` trägt die AFM-Breiten (für
+  Rechtsbündigkeit, Umbruch, Truncation) und die Kodierung — inklusive der
+  Fälle, an denen eine naive Latin-1-Umsetzung scheitert: das Apostroph der
+  de-CH-Gruppierung, U+2212 als Minuszeichen aus `Intl`, der Umbuchungs-Pfeil.
+  Content-Streams bleiben unkomprimiert (Aggregate, keine Rohdaten — dafür
+  lesbar in Tests). Spaltenbreiten rechnet `columnWidths` per
+  **Max-Min-Fairness aus dem Inhalt**, weil dieselbe Zahl je nach Region
+  „112.100,00 €" oder „EUR 112'100.00" ist.
+- **XLSX ohne Bibliothek** (`lib/xlsx.ts`): ZIP von Hand (Local Header,
+  Central Directory, EOCD, CRC-32) mit `deflateRawSync` aus `node:zlib`,
+  Inhalt als SpreadsheetML. **Beträge stehen als Zahl** (`money()` nimmt Cent
+  und teilt selbst durch 100) mit Zahlenformat — nur so lässt sich in Excel
+  summieren und filtern; formatiert wird dort **nicht** locale-abhängig, das
+  macht Excel.
+- Tests: `api/pdf.test.ts` und `api/xlsx.test.ts` (reine Writer, die
+  XLSX-Tests lesen das ZIP mit `inflateRawSync` gegen), `api/report.test.ts`
+  (Sammlung, Sichtbarkeit über zwei Identitäten, leere Abschnitte, beide
+  Ausgabeformate).
 
 ## Vorsorge (3-Säulen-Prinzip)
 

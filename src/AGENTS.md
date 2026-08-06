@@ -118,7 +118,8 @@ Freigaben, Kontoabgleich, Gefahrenzone) bleiben vollbreit.
 
 Darstellungsart der Konten-Seite (Karten/Tabelle) unter dem Key
 `ff-accounts-view`, der Dauerbuchungen-Seite unter `ff-recurring-view`;
-eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
+eingeklappte Seitenleiste unter `ff-sidebar-collapsed`; gewählte
+Berichts-Abschnitte unter `ff-report-sections`.
 
 ## Seiten-Besonderheiten
 
@@ -173,6 +174,18 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   60/40, 70/30), „Als Vorlage speichern" aus den aktuellen Anteilen.
 - **Jahresvergleich**: `pages/YearReview.tsx` unter `/auswertung` (Nav
   „Auswertung").
+- **Bericht** (`pages/Report.tsx` unter `/bericht`, Nav „Bericht" nach
+  „Auswertung", Icon `FileDown`): stellt den Export zusammen — eine Checkbox
+  je Eintrag aus `REPORT_SECTIONS` (`contracts/report.ts`, geteilt mit der
+  Backend-Validierung), Horizont-Select für die Nettovermögens-Prognose,
+  zwei Download-Buttons. Die Auswahl liegt in `localStorage`
+  (`ff-report-sections`). Abschnitte ohne Daten bekommen ein „keine
+  Daten"-Badge aus den vorhandenen Summary-Queries (`mortgage.summary`,
+  `insurance.summary`, `pension.getProfile`, …) — das ist **nur ein
+  Vorab-Hinweis**, gesammelt wird serverseitig neu. Der Download läuft wie
+  `downloadBackup` in `pages/Settings.tsx` über `fetch` + Blob (die Routen
+  liefern Binärdaten, sind also bewusst kein tRPC-Endpunkt) und schickt
+  `getUserLocale()` mit, weil das PDF serverseitig formatiert wird.
 - **Prognosen** (`pages/Forecasts.tsx`): „Szenario"-Card (Slider +
   Kategorie-Select, Badge bei aktivem Szenario), ohne ETA-Anzeige bei
   offenen Sparzielen. Darunter die Card „Prognose-Tabelle"

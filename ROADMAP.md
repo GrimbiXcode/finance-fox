@@ -37,9 +37,9 @@ Jede Erweiterung muss zu diesen Grundsätzen passen:
 | **Kategorien** | Flache Liste (keine Über-/Unterkategorien), Inline-Anlage in der Erfassungsmaske, automatische Farbvergabe |
 | **Budgets** | Ein monatliches Limit pro Kategorie, Fortschrittsanzeige, kein Rollover, keine Jahresbudgets |
 | **Kostenaufteilung** | Splits pro Transaktion, Salden zwischen Personen, Ausgleichsvorschläge mit 1-Klick-Verbuchung (kein Gruppen-/Projektkonzept) |
-| **Wiederkehrende Buchungen** | Intervalle weekly/monthly/yearly, täglicher Cron-Job verbucht Fälliges automatisch |
+| **Wiederkehrende Buchungen** | Intervalle wöchentlich bis jährlich (auch viertel- & halbjährlich), Dauer-Umbuchungen zwischen Konten, Pausieren und optionales Enddatum (abgelaufen = archiviert), täglicher Cron-Job verbucht Fälliges automatisch — keine freien Intervalle (z. B. alle 2 Wochen) |
 | **Sparziele** | Zielbetrag, Stichtag, Fortschritt aus verknüpften Konten (ganzes Konto / fixer Anteil / Prozent, Sichtbarkeitsfilter), Herkunfts-Aufschlüsselung inkl. Alt-Bestand, ETA-Prognose über Dauerbuchungen |
-| **Prognosen** | Kontostand-Prognose inkl. Dauerbuchungen, Budget-Hochrechnung, Sparziel-ETA — ein Szenario, keine "Was-wäre-wenn"-Varianten |
+| **Prognosen** | Kontostand-Prognose inkl. Dauerbuchungen, Budget-Hochrechnung, Sparziel-ETA, Prognose-Tabelle (Horizont bis 10 Jahre, Spalten je Monat/Quartal/Halbjahr/Jahr) — ein Szenario, keine "Was-wäre-wenn"-Varianten |
 | **Benutzer & Auth** | Setup-Wizard, E-Mail/Passwort, Einladungslinks (Server-Log), Admin/Member-Rollen, keine 2FA |
 | **International** | Zahlen- und Datumsformate folgen der Systemregion (z. B. de-DE `1.234,56` vs. de-CH `1'234.56`), haushaltsweite Leitwährung (20 Währungen), UI-Sprache Deutsch |
 | **Hypotheken** | Liegenschaft mit Verkehrswert, Tranchen (Fest/SARON/variabel), direkte & indirekte Amortisation, Belehnung, Tragbarkeit, Schuldenverlauf, Nettovermögen; Übernahme als Dauerbuchung |
@@ -107,6 +107,13 @@ Erfassungsmaske.
   manuelle Einzahlungen/Beiträge gesperrt (Alt-Bestand bleibt lesbar).
   Davon unberührt bleibt der weiterhin offene Punkt „Automatische Zuweisung
   von Budget-Überschüssen an Sparziele".
+- ✅ Prognose-Tabelle mit frei wählbarem Horizont und Aggregationsgröße
+  (`forecast.table`): Kontosalden, Sparziel-Fortschritt (offene Ziele ohne
+  Zielbetrag inklusive), Ein-/Ausgaben und Nettovermögen je Periode, Ø
+  variabler Buchungen zuschaltbar; zusätzlich eine Prognose-Fortsetzung im
+  Saldo-Verlauf der Konten-Seite (`forecast.accountBalance`). Die
+  Dauerbuchungs-Simulation liegt dafür zentral in `api/lib/forecastEngine.ts`
+  — vorher dreifach kopiert, wobei die Prognose-Kopien `endDate` ignorierten.
 - Automatische Zuweisung von Budget-Überschüssen an Sparziele (unverbrauchtes
   Budget periodisch auf ein verknüpftes Ziel-Konto umbuchen)
 

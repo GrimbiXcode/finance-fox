@@ -2,7 +2,11 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { recurring, transactions } from "@db/schema";
 import { sendNotification } from "./notify";
-import { advanceDate, localISO } from "./recurringSchedule";
+import {
+  advanceDate,
+  localISO,
+  occurrencesInRange,
+} from "./recurringSchedule";
 import { notifyMaturities } from "./mortgage/maturityNotice";
 import { notifyNoticeDeadlines } from "./insurance/noticeReminder";
 
@@ -18,15 +22,11 @@ export async function runRecurringJob(): Promise<number> {
 
   for (const r of all) {
     if (!r.active) continue;
-    let next = r.nextDate;
-    const due: string[] = [];
     // Sicherheitsgrenze: max. 500 Nachbuchungen pro Dauerbuchung.
     // Enddatum: nur Vorkommen bis einschließlich endDate werden verbucht.
-    while (next <= today && (!r.endDate || next <= r.endDate) && due.length < 500) {
-      due.push(next);
-      next = advanceDate(next, r.interval);
-    }
+    const due = occurrencesInRange(r, r.nextDate, today, 500);
     if (due.length === 0) continue;
+    const next = advanceDate(due[due.length - 1], r.interval);
 
     // better-sqlite3 ist synchron: Transaktions-Callback darf kein Promise zurückgeben
     db.transaction((tx) => {
@@ -51,8 +51,8 @@ export async function runRecurringJob(): Promise<number> {
       }
       // nextDate steht nach dem letzten Lauf auf dem ersten Vorkommen, das
       // NICHT mehr gebucht wird — bei Enddatum ist das das erste Vorkommen
-      // jenseits von endDate. Es wird nicht weiter vorgespult (die Schleife
-      // oben trifft dann sofort die Enddatum-Bedingung und bucht nichts).
+      // jenseits von endDate. Es wird nicht weiter vorgespult
+      // (occurrencesInRange liefert dort ab dann eine leere Liste).
       tx.update(recurring).set({ nextDate: next }).where(eq(recurring.id, r.id)).run();
     });
     created += due.length;

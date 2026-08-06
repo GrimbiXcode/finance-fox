@@ -12,6 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/SearchableSelect';
+import { ForecastTable } from '@/components/ForecastTable';
 import { trpc } from '@/providers/trpc';
 import { currencySymbol, formatCents, formatMonth, formatMonthYearShort, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
@@ -241,6 +242,10 @@ export default function Forecasts() {
           </CardContent>
         )}
       </Card>
+
+      {/* Eigener Horizont/eigene Aggregation: die Auswahl oben rechts gehört
+          zum Diagramm und reicht nur bis 36 Monate. */}
+      <ForecastTable scenario={applied} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

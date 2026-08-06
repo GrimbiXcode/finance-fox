@@ -81,6 +81,35 @@ export const MONTHS_PER_INTERVAL: Record<
   yearly: 12,
 };
 
+/* -------------------------------- Prognosen -------------------------------- */
+
+/**
+ * Aggregationsgröße der Prognose-Tabelle (Spaltenbreite in Monaten).
+ * Bewusst eine Teilmenge von RECURRING_INTERVALS ohne `weekly`, damit die
+ * Monatszahl je Periode aus MONTHS_PER_INTERVAL kommt und es keine zweite
+ * Zahlentabelle gibt. Reihenfolge = Auswahlreihenfolge (kurz → lang).
+ */
+export const FORECAST_GRANULARITIES = [
+  "monthly",
+  "quarterly",
+  "semiannual",
+  "yearly",
+] as const;
+
+export type ForecastGranularity = (typeof FORECAST_GRANULARITIES)[number];
+
+/**
+ * Eigene Labels statt RECURRING_INTERVAL_LABELS: eine Spalte ist ein
+ * „Halbjahr", nicht „Halbjährlich".
+ */
+export const FORECAST_GRANULARITY_LABELS: Record<ForecastGranularity, string> =
+  {
+    monthly: "Monat",
+    quarterly: "Quartal",
+    semiannual: "Halbjahr",
+    yearly: "Jahr",
+  };
+
 /* ----------------------------------- Tags ---------------------------------- */
 
 /**

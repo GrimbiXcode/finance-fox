@@ -74,6 +74,8 @@ export function useInvalidateFinance() {
     utils.forecast.balance.invalidate();
     utils.forecast.budgetForecast.invalidate();
     utils.forecast.goalForecast.invalidate();
+    utils.forecast.table.invalidate();
+    utils.forecast.accountBalance.invalidate();
     // Eine neue Buchung verschiebt auch die Nettovermögens-Zeile
     utils.mortgage.summary.invalidate();
     // Gelöschte Dauerbuchungen/Konten wirken auf die Policen-Badges

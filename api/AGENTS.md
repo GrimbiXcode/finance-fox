@@ -42,8 +42,10 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   „Versicherungen").
 - `lib/` — `env.ts`, `session.ts`, `migrate.ts` (`ensureSchema`),
   `recurringJob.ts`, `recurringSchedule.ts` (Terminrechnung der
-  Dauerbuchungen — `advanceDate`/`localISO`, einzige Quelle der Wahrheit für
-  Cron UND Prognose), `accountAccess.ts`, `accountTypes.ts`, `csv.ts`,
+  Dauerbuchungen — `advanceDate`/`localISO`/`occurrencesInRange`, einzige
+  Quelle der Wahrheit für Cron UND Prognose), `forecastEngine.ts` (reine
+  monatliche Simulation der Kontostände, geteilt von allen vier
+  `forecast`-Endpunkten), `accountAccess.ts`, `accountTypes.ts`, `csv.ts`,
   `camt.ts`, `budgets.ts`, `attachments.ts`, `goalProgress.ts`, `http.ts`,
   `vite.ts` (statische Auslieferung in Produktion), `audit.ts`, `notify.ts`,
   `totp.ts`, `changeHistory.ts` (`buildFieldDiff` — geteiltes Feld-Diff der
@@ -374,6 +376,15 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   aber die Terminrechnung `advanceDate` (`lib/recurringSchedule.ts`) muss
   es kennen. `quarterly`/`semiannual` kamen mit dem Hypotheken-Modul dazu
   (Schweizer Hypothekarzins wird quartalsweise belastet).
+- **Terminrechnung**: `advanceDate` ist der Einzelschritt,
+  `occurrencesInRange(rule, from, to, cap)` zählt alle Fälligkeiten eines
+  Zeitraums auf (inklusive Grenzen, `endDate` inklusiv respektiert). Beides in
+  `lib/recurringSchedule.ts` — die Schleife darüber lag früher dreifach
+  kopiert im Cron-Job und in zwei Prognose-Endpunkten, wobei die beiden
+  Prognose-Kopien `endDate` ignorierten (abgelaufene Regeln projizierten
+  endlos weiter) und sich einen Zähler mit dem Vorspulen teilten (lange
+  Horizonte wurden still gekappt). Neue Prognosen gehen deshalb über
+  `lib/forecastEngine.ts`, nie über eine eigene Schleife.
 - **Umbuchungen**: `recurring.type` kann auch `transfer` sein (Dauerauftrag
   zwischen Konten) — dann ist `recurring.to_account_id` gesetzt (Pflicht, ≠
   `account_id`, Kategorie irrelevant). Rechte wie bei Buchungen: `edit` aufs
@@ -510,9 +521,46 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
 
 ## Prognosen & Auswertungen
 
-- **Szenario-Planung**: `forecast.balance` nimmt optional `incomePct`
+- **Gemeinsame Engine**: `lib/forecastEngine.ts` ist rein (keine DB — die
+  Zeilen kommen geladen herein, Muster wie `mortgage/portfolio.ts`) und wird
+  von `forecast.balance`, `table`, `accountBalance` und `goalForecast`
+  geteilt. `simulateMonths` schreibt die Kontostände Monat für Monat fort
+  (je Regel EIN Durchlauf über den Horizont, Termine in Monats-Buckets —
+  nicht pro Monat neu ab `nextDate`, das war O(Monate²)); `aggregatePeriods`
+  fasst Monate zu Perioden zusammen: Salden sind eine **Bestandsgröße**
+  (letzter Monat der Periode gewinnt), Flüsse eine **Bewegungsgröße**
+  (Summe). `startBalancesFromRows` liefert den Ausgangsstand mit derselben
+  Logik wie `listAccounts` (ohne Datumsfilter). Welche Konten in
+  `startBalances` stehen, entscheidet zugleich, welche die Simulation
+  verfolgt — der Sichtbarkeitsfilter liegt damit beim Aufrufer. Tests:
+  `api/forecastEngine.test.ts`.
+- **Prognose-Tabelle**: `forecast.table({ months: 1–120, granularity,
+  includeVariable, incomePct?, excludeCategoryId? })` liefert Zeilen für
+  Konten, Gesamt, Ein-/Ausgaben, Nettovermögen und Sparziele — jede mit
+  `current` (heute) und `values` je Periode. `granularity` kommt aus
+  `FORECAST_GRANULARITIES` (`contracts/types.ts`, Monate je Periode über
+  `MONTHS_PER_INTERVAL`); `months` wird auf ein Vielfaches der Periodengröße
+  aufgerundet und im Ergebnis zurückgemeldet. Perioden laufen **rollierend**
+  ab dem aktuellen Monat (keine Kalenderausrichtung, damit keine
+  angeschnittene erste Spalte entsteht). Die Gesamtzeile summiert die
+  Kontosalden und addiert den kumulierten Ø variabler Buchungen, aber
+  **nicht** `transferNet` — einseitige Umbuchungen stecken schon in den
+  Kontosalden. `includeVariable: false` (Default) rechnet ausschließlich mit
+  Dauerbuchungen; der Ø wirkt bewusst nie auf einzelne Konten. Sparziele
+  nutzen `progressFromBalances` (`lib/goalProgress.ts`) je Periode; offene
+  Ziele (targetAmount NULL) liefern `values`, aber `reachedIndex: null`.
+  Tests: `api/forecastTable.test.ts`.
+- **Konto-Prognose**: `forecast.accountBalance({ accountId, months: 1–36 })`
+  liefert Monatsendwerte eines Kontos für die Fortsetzung des Saldo-Verlaufs
+  auf der Konten-Seite — nur Dauerbuchungen, weil ein Ø variabler Buchungen
+  keinem einzelnen Konto zuordenbar ist. Zugriff über
+  `requireAccountAccess(…, "view")` (NOT_FOUND bei privaten Konten).
+- **Szenario-Planung**: `forecast.balance` und `forecast.table` nehmen optional
+  `incomePct`
   (Skalierung der wiederkehrenden Einnahmen in %, 100 = unverändert, 50–200)
-  und `excludeCategoryId` entgegen. Das Szenario wirkt NUR auf zukünftige
+  und `excludeCategoryId` entgegen — gleiche Semantik in beiden, damit die
+  Szenario-Card der Prognosen-Seite auf Diagramm UND Tabelle wirkt. Das
+  Szenario wirkt NUR auf zukünftige
   wiederkehrende Größen: Einnahmen werden skaliert, wiederkehrende Ausgaben
   der gewählten Oberkategorie inkl. Unterkategorien entfallen; Historie,
   Ist-Buchungen und variable Durchschnitte bleiben unverändert. Die Antwort

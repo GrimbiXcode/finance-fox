@@ -142,7 +142,10 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
 - **Konten**: Filter nach Bank/Kontotyp, Suche (Name/Bank/IBAN), Karten-/
   Tabellenansicht (sortierbar, Total in der Fußzeile), aufklappbarer Bereich
   „Saldo-Verlauf" pro Konto-Karte (Zeitraum-Wahl + recharts-AreaChart, Query
-  nur bei geöffnetem Zustand), Besitzer-Namen klein auf der Karte,
+  nur bei geöffnetem Zustand) inkl. gestrichelter Prognose-Fortsetzung über
+  12 Monate (`forecast.accountBalance`, Toggle „Prognose", Default an; der
+  letzte Ist-Wert wird zusätzlich als Prognose-Startpunkt gesetzt, sonst
+  klafft eine Lücke zwischen den Linien), Besitzer-Namen klein auf der Karte,
   Besitzer-Checkboxen in der Sichtbarkeits-Sektion des AccountDialog (nur
   für Besitzer), Sektion „Kontoabgleich" im Edit-Modus.
 - **Dauerbuchungen** (`pages/Recurring.tsx`): gemeinsame Formular-Komponente
@@ -172,7 +175,19 @@ eingeklappte Seitenleiste unter `ff-sidebar-collapsed`.
   „Auswertung").
 - **Prognosen** (`pages/Forecasts.tsx`): „Szenario"-Card (Slider +
   Kategorie-Select, Badge bei aktivem Szenario), ohne ETA-Anzeige bei
-  offenen Sparzielen.
+  offenen Sparzielen. Darunter die Card „Prognose-Tabelle"
+  (`components/ForecastTable.tsx`): eigene Toolbar mit Horizont-Select
+  (1/2/3/5/10 Jahre) und Aggregations-Select aus
+  `FORECAST_GRANULARITY_LABELS` plus Switch „Ø variable Buchungen
+  einbeziehen" — die Auswahl oben rechts gehört weiter zum Diagramm und
+  reicht nur bis 36 Monate. Die Tabelle hat eine **sticky erste Spalte**
+  (`sticky left-0 z-10 bg-card`) und scrollt im eigenen `overflow-x-auto`
+  von `ui/table` — bei Monatsspalten über 10 Jahre sind das 120 Spalten, die
+  Seite selbst darf nie seitlich scrollen. Zeilengruppen: Konten, Gesamt,
+  Nettovermögen, Bewegung je Periode, Sparziele; die Periode, in der ein
+  Sparziel seinen Zielbetrag erreicht, ist grün mit Häkchen markiert, offene
+  Ziele zeigen Badge „offenes Ziel" ohne Prozent. Das Szenario der Card
+  darüber wird als Prop durchgereicht.
 - **Einstellungen** (`pages/Settings.tsx`): Sektionen u. a. Kontotypen &
   Banken, Tags (Card), Kategorien-Baum mit Stift-Button pro Kategorie
   (`CategoryEditDialog`: Name, Farbpalette, Oberkategorie-Select deaktiviert

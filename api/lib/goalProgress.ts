@@ -49,6 +49,27 @@ export function commitmentOf(
   return sourceAmount(source.mode, source.value, balance);
 }
 
+/**
+ * Fortschritt eines Ziels aus einem gegebenen Satz Kontosalden — ohne
+ * DB-Zugriff, damit die monatliche Prognose-Simulation ihn je Monat neu
+ * anwenden kann. Quellen auf nicht verfolgten Konten zählen nicht (gleiche
+ * Sichtbarkeitsregel wie computeGoalProgress); der Alt-Bestand
+ * (`savedAmount` + Beiträge) kommt als `legacyAmount` herein und bleibt über
+ * die Simulation konstant.
+ */
+export function progressFromBalances(
+  sources: { accountId: number; mode: GoalSourceMode; value: number | null }[],
+  legacyAmount: number,
+  balances: Map<number, number>
+): number {
+  let total = legacyAmount;
+  for (const s of sources) {
+    if (!balances.has(s.accountId)) continue;
+    total += sourceAmount(s.mode, s.value, balances.get(s.accountId)!);
+  }
+  return total;
+}
+
 export interface AccountAvailability {
   balance: number;
   committedTotal: number;

@@ -34,6 +34,9 @@ const HISTORY_RANGES = [
 
 type HistoryMonths = (typeof HISTORY_RANGES)[number]['months'];
 
+/** Horizont der Prognose-Fortsetzung im Saldo-Verlauf */
+const FORECAST_MONTHS = 12;
+
 type AccountRow = ReturnType<typeof useFinanceData>['accounts'][number];
 
 /** Sortierbare Spalten der Tabellenansicht */
@@ -46,18 +49,42 @@ const VIEW_KEY = 'ff-accounts-view';
 const readViewMode = (): ViewMode =>
   localStorage.getItem(VIEW_KEY) === 'table' ? 'table' : 'cards';
 
-/** Aufklappbarer Saldo-Verlauf eines Kontos (AreaChart, Zeitraum wählbar) */
+/**
+ * Aufklappbarer Saldo-Verlauf eines Kontos (AreaChart, Zeitraum wählbar) mit
+ * gestrichelter Prognose-Fortsetzung aus den Dauerbuchungen. Ausführlichere
+ * Prognosen (freier Horizont, alle Konten, Sparziele) stehen unter
+ * „Prognosen" — hier geht es nur um die Fortsetzung dieser einen Kurve.
+ */
 function BalanceHistory({ accountId }: { accountId: number }) {
   const [months, setMonths] = useState<HistoryMonths>(12);
+  const [showForecast, setShowForecast] = useState(true);
   const query = trpc.finance.accountBalanceHistory.useQuery({ accountId, months });
-  const data = (query.data ?? []).map((p) => ({ date: p.date, saldo: p.balance / 100 }));
+  const forecast = trpc.forecast.accountBalance.useQuery(
+    { accountId, months: FORECAST_MONTHS },
+    { enabled: showForecast },
+  );
+  const history = (query.data ?? []).map((p) => ({ date: p.date, saldo: p.balance / 100 }));
+  const data: { date: string; saldo?: number; prognose?: number }[] = [
+    ...history,
+    ...(showForecast
+      ? (forecast.data ?? []).map((p) => ({ date: p.date, prognose: p.balance / 100 }))
+      : []),
+  ];
+  // Anschlusspunkt: der letzte Ist-Wert ist auch der Prognose-Start,
+  // sonst klafft eine Lücke zwischen den beiden Linien
+  if (showForecast && history.length > 0 && (forecast.data ?? []).length > 0) {
+    data[history.length - 1] = {
+      ...data[history.length - 1],
+      prognose: history[history.length - 1].saldo,
+    };
+  }
   const gradientId = `gSaldo${accountId}`;
 
   return (
     <div className="border-t px-4 pb-4 pt-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-medium text-muted-foreground">Saldo-Verlauf</span>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {HISTORY_RANGES.map((r) => (
             <Button
               key={r.months}
@@ -69,6 +96,15 @@ function BalanceHistory({ accountId }: { accountId: number }) {
               {r.label}
             </Button>
           ))}
+          <Button
+            size="sm"
+            variant={showForecast ? 'secondary' : 'ghost'}
+            className="ml-1 h-6 px-2 text-xs"
+            title={`Prognose der nächsten ${FORECAST_MONTHS} Monate aus den Dauerbuchungen`}
+            onClick={() => setShowForecast((v) => !v)}
+          >
+            Prognose
+          </Button>
         </div>
       </div>
       {query.isLoading ? (
@@ -100,7 +136,15 @@ function BalanceHistory({ accountId }: { accountId: number }) {
               <Area
                 type="monotone" dataKey="saldo" stroke="#10b981"
                 fill={`url(#${gradientId})`} strokeWidth={2}
+                connectNulls={false}
               />
+              {showForecast && (
+                <Area
+                  type="monotone" dataKey="prognose" stroke="#6366f1"
+                  fill="none" strokeWidth={2} strokeDasharray="6 4"
+                  dot={false} connectNulls={false}
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>

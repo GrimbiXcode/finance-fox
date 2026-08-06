@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FORECAST_GRANULARITIES } from "@contracts/types";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
@@ -8,20 +9,132 @@ import {
 } from "@db/schema";
 import { mortgageDebtProjection } from "./lib/mortgage/portfolio";
 import {
-  touchesVisibleAccount, visibleAccountIds,
+  requireAccountAccess, touchesVisibleAccount, visibleAccountIds,
 } from "./lib/accountAccess";
 import { computeBudgetStatuses } from "./lib/budgets";
-import { sourceAmount } from "./lib/goalProgress";
-import { advanceDate, localISO } from "./lib/recurringSchedule";
+import { progressFromBalances } from "./lib/goalProgress";
+import { localISO } from "./lib/recurringSchedule";
+import {
+  addMonths, aggregatePeriods, monthDelta, monthEndISO, monthKey,
+  monthsPerPeriod, simulateMonths, startBalancesFromRows,
+} from "./lib/forecastEngine";
 
-function monthKey(dateISO: string): string {
-  return dateISO.slice(0, 7);
+/** Szenario-Eingaben, die `balance` und `table` gleich interpretieren */
+const scenarioInput = {
+  // incomePct: Skalierung der wiederkehrenden Einnahmen in Prozent
+  // (100 = unverändert, 110 = +10 %).
+  incomePct: z.number().int().min(50).max(200).optional(),
+  // excludeCategoryId: wiederkehrende Ausgaben dieser Oberkategorie
+  // (inkl. ihrer Unterkategorien) entfallen im Szenario.
+  excludeCategoryId: z.number().int().optional(),
+};
+
+/** Oberkategorie inkl. Unterkategorien als Menge (null = kein Ausschluss) */
+async function excludedCategories(
+  db: ReturnType<typeof getDb>,
+  excludeCategoryId: number | undefined
+): Promise<Set<number> | null> {
+  if (excludeCategoryId === undefined) return null;
+  const allCats = await db.select().from(categories);
+  const ids = new Set([excludeCategoryId]);
+  for (const c of allCats) {
+    if (c.parentId === excludeCategoryId) ids.add(c.id);
+  }
+  return ids;
 }
 
-function addMonths(key: string, n: number): string {
-  const [y, m] = key.split("-").map(Number);
-  const d = new Date(y, m - 1 + n, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+/**
+ * Ø variable Ein-/Ausgaben pro Monat: Durchschnitt der letzten 3 Monate mit
+ * Buchungen, Buchungen aus Dauerbuchungen herausgerechnet (die stecken schon
+ * in der Simulation).
+ */
+function averageVariable(
+  txs: {
+    type: "income" | "expense" | "transfer";
+    date: string;
+    amount: number;
+    recurringId: number | null;
+  }[],
+  recurringIds: Set<number>,
+  currentKey: string
+): { income: number; expense: number } {
+  let income = 0;
+  let expense = 0;
+  let countedMonths = 0;
+  for (let i = 1; i <= 3; i += 1) {
+    const k = addMonths(currentKey, -i);
+    let inc = 0;
+    let exp = 0;
+    let has = false;
+    for (const t of txs) {
+      if (t.type === "transfer" || monthKey(t.date) !== k) continue;
+      has = true;
+      // variabel = ohne Dauerbuchungen
+      if (t.recurringId && recurringIds.has(t.recurringId)) continue;
+      if (t.type === "income") inc += t.amount;
+      else exp += t.amount;
+    }
+    if (has) {
+      income += inc;
+      expense += exp;
+      countedMonths += 1;
+    }
+  }
+  return {
+    income: countedMonths > 0 ? Math.round(income / countedMonths) : 0,
+    expense: countedMonths > 0 ? Math.round(expense / countedMonths) : 0,
+  };
+}
+
+/**
+ * Sparziel-Quellen je Ziel, gruppiert und auf sichtbare Konten reduziert —
+ * einmal statt einmal pro Ziel (die Liste ist haushaltsweit).
+ */
+function visibleSourcesByGoal<T extends { goalId: number; accountId: number }>(
+  sources: T[],
+  visible: Set<number>
+): Map<number, T[]> {
+  const map = new Map<number, T[]>();
+  for (const s of sources) {
+    if (!visible.has(s.accountId)) continue;
+    const list = map.get(s.goalId);
+    if (list) list.push(s);
+    else map.set(s.goalId, [s]);
+  }
+  return map;
+}
+
+/** Anzahl Quellen je Ziel — ungefiltert, für den Hinweis „verborgene Quellen" */
+function sourceCountByGoal(sources: { goalId: number }[]): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const s of sources) {
+    map.set(s.goalId, (map.get(s.goalId) ?? 0) + 1);
+  }
+  return map;
+}
+
+/** Summe der Alt-Beiträge je Ziel */
+function contributionsByGoal(
+  contribs: { goalId: number; amount: number }[]
+): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const c of contribs) {
+    map.set(c.goalId, (map.get(c.goalId) ?? 0) + c.amount);
+  }
+  return map;
+}
+
+/** Dauerbuchungen, die auf mindestens ein sichtbares Konto wirken */
+function visibleRules<
+  T extends { accountId: number; toAccountId: number | null },
+>(rows: T[], visible: Set<number>): T[] {
+  // Dauer-Umbuchungen mit nur einer sichtbaren Seite wirken auf den Saldo
+  // und dürfen daher nicht herausgefiltert werden.
+  return rows.filter(
+    r =>
+      visible.has(r.accountId) ||
+      (r.toAccountId !== null && visible.has(r.toAccountId))
+  );
 }
 
 export const forecastRouter = createRouter({
@@ -36,12 +149,7 @@ export const forecastRouter = createRouter({
       // Szenario-Planung (optional): wirkt NUR auf zukünftige, wiederkehrende
       // Größen — Historie, Ist-Buchungen und die variablen Durchschnitte
       // bleiben unverändert.
-      // incomePct: Skalierung der wiederkehrenden Einnahmen in Prozent
-      // (100 = unverändert, 110 = +10 %).
-      // excludeCategoryId: wiederkehrende Ausgaben dieser Oberkategorie
-      // (inkl. ihrer Unterkategorien) entfallen im Szenario.
-      incomePct: z.number().int().min(50).max(200).optional(),
-      excludeCategoryId: z.number().int().optional(),
+      ...scenarioInput,
     }))
     .query(async ({ ctx, input }) => {
       const db = getDb();
@@ -59,22 +167,15 @@ export const forecastRouter = createRouter({
       // Nur sichtbare Konten/Buchungen in die Prognose einbeziehen
       const accs = allAccs.filter((a) => visible.has(a.id));
       const txs = allTxs.filter((t) => touchesVisibleAccount(visible, t));
-      // Dauer-Umbuchungen mit nur einer sichtbaren Seite wirken auf den Saldo
-      // (s. Projektion unten) und dürfen daher nicht herausgefiltert werden.
-      const recs = allRecs.filter((r) => visible.has(r.accountId)
-        || (r.toAccountId !== null && visible.has(r.toAccountId)));
+      const recs = visibleRules(allRecs, visible);
 
       // Wirksame Szenario-Parameter: Einnahmen-Skalierung (100 = aus) und
       // Menge der ausgeschlossenen Kategorien (Oberkategorie + Unterkategorien)
       const incomePct = input.incomePct ?? 100;
-      let excludedCatIds: Set<number> | null = null;
-      if (input.excludeCategoryId !== undefined) {
-        const allCats = await db.select().from(categories);
-        excludedCatIds = new Set([input.excludeCategoryId]);
-        for (const c of allCats) {
-          if (c.parentId === input.excludeCategoryId) excludedCatIds.add(c.id);
-        }
-      }
+      const excludedCatIds = await excludedCategories(
+        db,
+        input.excludeCategoryId
+      );
 
       // Startvermögen (Anfangsbestände)
       const base = accs.reduce((s, a) => s + a.initialBalance, 0);
@@ -114,31 +215,11 @@ export const forecastRouter = createRouter({
       }
 
       // Variable Anteile: Durchschnitt der letzten 3 vollständigen Monate
-      // (Buchungen aus Dauerbuchungen werden herausgerechnet)
-      const recById = new Map(recs.map((r) => [r.id, r]));
-      let varIncome = 0;
-      let varExpense = 0;
-      let countedMonths = 0;
-      for (let i = 1; i <= 3; i += 1) {
-        const k = addMonths(currentKey, -i);
-        let inc = 0;
-        let exp = 0;
-        let has = false;
-        for (const t of txs) {
-          if (t.type === "transfer" || monthKey(t.date) !== k) continue;
-          has = true;
-          if (t.recurringId && recById.has(t.recurringId)) continue; // variabel = ohne Dauerbuchungen
-          if (t.type === "income") inc += t.amount;
-          else exp += t.amount;
-        }
-        if (has) {
-          varIncome += inc;
-          varExpense += exp;
-          countedMonths += 1;
-        }
-      }
-      const avgVarIncome = countedMonths > 0 ? Math.round(varIncome / countedMonths) : 0;
-      const avgVarExpense = countedMonths > 0 ? Math.round(varExpense / countedMonths) : 0;
+      const avgVar = averageVariable(
+        txs,
+        new Set(recs.map((r) => r.id)),
+        currentKey
+      );
 
       // Netto-Vermögen: Verkehrswert der Liegenschaften minus simulierte
       // Restschuld je Monat.
@@ -160,63 +241,33 @@ export const forecastRouter = createRouter({
             )
           : null;
 
-      // Projektion: wiederkehrende Buchungen + variable Durchschnitte
+      // Projektion: wiederkehrende Buchungen + variable Durchschnitte.
+      // Sie setzt bewusst auf `running` (Monatsend-Historie) auf, nicht auf
+      // die Summe der Kontosalden — so bleibt der Anschlusspunkt der Kurve
+      // identisch mit dem letzten Ist-Wert.
+      const simulated = simulateMonths({
+        startBalances: startBalancesFromRows(accs, txs),
+        rules: recs,
+        fromMonth: currentKey,
+        months: input.months,
+        scenario: {
+          incomePct,
+          excludedCategoryIds: excludedCatIds,
+          avgVariableIncome: avgVar.income,
+          avgVariableExpense: avgVar.expense,
+        },
+      });
       const projection: {
         month: string; balance: number; recurringIncome: number; recurringExpense: number;
       }[] = [];
       let projected = running;
-      for (let i = 1; i <= input.months; i += 1) {
-        const monthStart = `${addMonths(currentKey, i)}-01`;
-        const monthEndDate = new Date(`${addMonths(currentKey, i + 1)}-01T12:00:00`);
-        monthEndDate.setDate(0);
-        const monthEnd = localISO(monthEndDate);
-
-        let recInc = 0;
-        let recExp = 0;
-        // Netto-Saldo-Effekt von Dauer-Umbuchungen, getrennt von Einnahmen/
-        // Ausgaben, damit diese Anzeigen nicht verfälscht werden
-        let recTransferNet = 0;
-        for (const r of recs) {
-          if (!r.active) continue;
-          let next = r.nextDate;
-          // Auf Monatsanfang vorspulen
-          let guard = 0;
-          while (next < monthStart && guard < 1000) {
-            next = advanceDate(next, r.interval);
-            guard += 1;
-          }
-          while (next <= monthEnd && guard < 1000) {
-            if (r.type === "income") {
-              // Szenario: wiederkehrende Einnahmen prozentual skalieren
-              recInc += Math.round((r.amount * incomePct) / 100);
-            } else if (r.type === "expense") {
-              // Szenario: Ausgaben der ausgeschlossenen Kategorie entfallen
-              if (excludedCatIds === null || r.categoryId === null
-                || !excludedCatIds.has(r.categoryId)) {
-                recExp += r.amount;
-              }
-            } else {
-              // Umbuchung: zwischen zwei sichtbaren Konten saldo-neutral
-              // (Gesamtsicht). Ist nur eine Seite sichtbar, wirkt sie als
-              // Abfluss (Quelle sichtbar) bzw. Zufluss (Ziel sichtbar) —
-              // bewusst nicht in recurringIncome/Expense, da es sich nicht
-              // um Einnahmen/Ausgaben handelt.
-              const srcVisible = visible.has(r.accountId);
-              const dstVisible = r.toAccountId !== null
-                && visible.has(r.toAccountId);
-              if (srcVisible && !dstVisible) recTransferNet -= r.amount;
-              else if (!srcVisible && dstVisible) recTransferNet += r.amount;
-            }
-            next = advanceDate(next, r.interval);
-            guard += 1;
-          }
-        }
-        projected += recInc + avgVarIncome - recExp - avgVarExpense + recTransferNet;
+      for (const m of simulated) {
+        projected += monthDelta(m);
         projection.push({
-          month: addMonths(currentKey, i),
+          month: m.month,
           balance: projected,
-          recurringIncome: recInc,
-          recurringExpense: recExp,
+          recurringIncome: m.recurringIncome,
+          recurringExpense: m.recurringExpense,
         });
       }
 
@@ -240,8 +291,8 @@ export const forecastRouter = createRouter({
         // Posten ohne Dauerbuchung fehlen in der Projektion — das UI weist
         // darauf hin, statt ein zu optimistisches Vermögen zu zeigen
         mortgageMissingRecurring: mortgage?.missingRecurringCount ?? 0,
-        avgVariableIncome: avgVarIncome,
-        avgVariableExpense: avgVarExpense,
+        avgVariableIncome: avgVar.income,
+        avgVariableExpense: avgVar.expense,
         // Wirksame Szenario-Parameter — das Frontend zeigt damit an,
         // ob ein Szenario aktiv ist
         scenario: {
@@ -249,6 +300,236 @@ export const forecastRouter = createRouter({
           excludeCategoryId: input.excludeCategoryId ?? null,
         },
       };
+    }),
+
+  /**
+   * Prognose-Tabelle: Kontosalden, Sparziel-Fortschritt, Ein-/Ausgaben und
+   * Nettovermögen je Periode — Horizont (bis 120 Monate) und
+   * Aggregationsgröße (Monat/Quartal/Halbjahr/Jahr) sind frei wählbar.
+   *
+   * Salden sind eine Bestandsgröße: der Wert einer Spalte ist der Stand am
+   * ENDE der Periode. Ein-/Ausgaben sind Bewegungsgrößen und werden über die
+   * Periode summiert.
+   *
+   * `includeVariable` schaltet den Ø der variablen Buchungen zu. Er wirkt
+   * bewusst nur auf Gesamt- und Nettovermögens-Zeile, nicht auf einzelne
+   * Konten — ein Durchschnitt über alle Buchungen ist keinem Konto zuordenbar.
+   */
+  table: authedQuery
+    .input(z.object({
+      months: z.number().int().min(1).max(120).default(60),
+      granularity: z.enum(FORECAST_GRANULARITIES).default("semiannual"),
+      includeVariable: z.boolean().default(false),
+      ...scenarioInput,
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const visible = await visibleAccountIds(db, ctx.user);
+      const [
+        allAccs, allTxs, allRecs, goals, allSources, allContribs,
+        propertyRows, trancheRows, amortRows,
+      ] = await Promise.all([
+        db.select().from(accounts),
+        db.select().from(transactions),
+        db.select().from(recurring),
+        db.select().from(savingsGoals),
+        db.select().from(goalSources),
+        db.select().from(goalContributions),
+        db.select().from(properties),
+        db.select().from(mortgageTranches),
+        db.select().from(mortgageAmortizations),
+      ]);
+      const accs = allAccs.filter(a => visible.has(a.id));
+      const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
+      const recs = visibleRules(allRecs, visible);
+
+      const incomePct = input.incomePct ?? 100;
+      const excludedCatIds = await excludedCategories(
+        db,
+        input.excludeCategoryId
+      );
+      const currentKey = monthKey(localISO(new Date()));
+      const avgVar = averageVariable(
+        txs,
+        new Set(recs.map(r => r.id)),
+        currentKey
+      );
+
+      // Horizont auf ein Vielfaches der Periodengröße aufrunden, damit keine
+      // angeschnittene letzte Spalte entsteht
+      const size = monthsPerPeriod(input.granularity);
+      const months = Math.ceil(input.months / size) * size;
+
+      const startBalances = startBalancesFromRows(accs, txs);
+      const periods = aggregatePeriods(
+        simulateMonths({
+          startBalances,
+          rules: recs,
+          fromMonth: currentKey,
+          months,
+          scenario: {
+            incomePct,
+            excludedCategoryIds: excludedCatIds,
+            avgVariableIncome: input.includeVariable ? avgVar.income : 0,
+            avgVariableExpense: input.includeVariable ? avgVar.expense : 0,
+          },
+        }),
+        size
+      );
+
+      const accountRows = accs.map(a => ({
+        accountId: a.id,
+        name: a.name,
+        bankId: a.bankId,
+        current: startBalances.get(a.id) ?? 0,
+        values: periods.map(p => p.balances.get(a.id) ?? 0),
+      }));
+
+      // Gesamt = Summe der verfolgten Kontosalden. Der Ø variable Anteil
+      // steckt in keinem Konto und wird kumuliert dazugerechnet;
+      // `transferNet` NICHT — einseitige Umbuchungen sind in den
+      // Kontosalden bereits enthalten.
+      const sumOf = (balances: Map<number, number>): number => {
+        let sum = 0;
+        for (const v of balances.values()) sum += v;
+        return sum;
+      };
+      const totalCurrent = sumOf(startBalances);
+      const totalValues: number[] = [];
+      let cumVariable = 0;
+      for (const p of periods) {
+        cumVariable += p.variableIncome - p.variableExpense;
+        totalValues.push(sumOf(p.balances) + cumVariable);
+      }
+
+      const mortgage =
+        propertyRows.length > 0
+          ? mortgageDebtProjection(
+              propertyRows,
+              trancheRows,
+              amortRows,
+              months,
+              new Date(),
+              new Set(allRecs.map(r => r.id))
+            )
+          : null;
+      // Verkehrswert konstant fortgeschrieben (wie in `balance`)
+      const netWorth = mortgage
+        ? {
+            current:
+              totalCurrent + mortgage.propertyValue - mortgage.debtByMonth[0],
+            values: totalValues.map(
+              (v, i) =>
+                v +
+                mortgage.propertyValue -
+                mortgage.debtByMonth[(i + 1) * size]
+            ),
+          }
+        : null;
+
+      const contribSum = contributionsByGoal(allContribs);
+      const sourcesByGoal = visibleSourcesByGoal(allSources, visible);
+      const totalSources = sourceCountByGoal(allSources);
+      const goalRows = goals.map(g => {
+        const shown = sourcesByGoal.get(g.id) ?? [];
+        // Alt-Bestand (manuelle Basis + Beiträge) bleibt über den Horizont
+        // konstant — er wächst nicht aus Dauerbuchungen
+        const legacy = g.savedAmount + (contribSum.get(g.id) ?? 0);
+        const current = progressFromBalances(shown, legacy, startBalances);
+        const values = periods.map(p =>
+          progressFromBalances(shown, legacy, p.balances)
+        );
+        // Offene Ziele (targetAmount NULL) haben keinen Zielbetrag — sie
+        // liefern den prognostizierten Stand, aber kein Erreichen
+        const target = g.targetAmount;
+        const reachedNow = target !== null && current >= target;
+        // Erreicht das Ziel heute schon, markiert die „Heute"-Spalte das —
+        // dann darf nicht zusätzlich die erste Periode markiert werden, sonst
+        // liest es sich als „hier wird es erreicht".
+        const firstReached =
+          target === null || reachedNow
+            ? -1
+            : values.findIndex(v => v >= target);
+        return {
+          goalId: g.id,
+          name: g.name,
+          color: g.color,
+          targetAmount: g.targetAmount,
+          deadline: g.deadline,
+          current,
+          values,
+          reachedNow,
+          reachedIndex: firstReached === -1 ? null : firstReached,
+          hasHiddenSources: (totalSources.get(g.id) ?? 0) > shown.length,
+        };
+      });
+
+      return {
+        periods: periods.map(p => ({
+          startMonth: p.startMonth,
+          endMonth: p.endMonth,
+        })),
+        accounts: accountRows,
+        total: { current: totalCurrent, values: totalValues },
+        flows: {
+          income: periods.map(p => p.recurringIncome + p.variableIncome),
+          expense: periods.map(p => p.recurringExpense + p.variableExpense),
+          transferNet: periods.map(p => p.transferNet),
+        },
+        netWorth,
+        mortgageMissingRecurring: mortgage?.missingRecurringCount ?? 0,
+        goals: goalRows,
+        avgVariableIncome: avgVar.income,
+        avgVariableExpense: avgVar.expense,
+        includeVariable: input.includeVariable,
+        // Effektiver Horizont (aufgerundet) und Größe für die Anzeige
+        months,
+        granularity: input.granularity,
+        scenario: {
+          incomePct,
+          excludeCategoryId: input.excludeCategoryId ?? null,
+        },
+      };
+    }),
+
+  /**
+   * Saldo-Prognose eines einzelnen Kontos (Monatsendwerte) — Fortsetzung des
+   * Saldo-Verlaufs auf der Konten-Seite. Bewusst nur Dauerbuchungen: ein Ø
+   * variabler Buchungen ist keinem einzelnen Konto zuordenbar.
+   */
+  accountBalance: authedQuery
+    .input(z.object({
+      accountId: z.number().int().positive(),
+      months: z.number().int().min(1).max(36).default(12),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      // Wirft NOT_FOUND bei fehlender Sichtbarkeit (kein Leak privater Konten)
+      const account = await requireAccountAccess(
+        db,
+        ctx.user,
+        input.accountId,
+        "view"
+      );
+      const [allTxs, allRecs] = await Promise.all([
+        db.select().from(transactions),
+        db.select().from(recurring),
+      ]);
+      const startBalances = startBalancesFromRows([account], allTxs);
+      const rules = allRecs.filter(
+        r => r.accountId === account.id || r.toAccountId === account.id
+      );
+      return simulateMonths({
+        startBalances,
+        rules,
+        fromMonth: monthKey(localISO(new Date())),
+        months: input.months,
+      }).map(m => ({
+        month: m.month,
+        // Stichtag als Datum, damit die Punkte an den Ist-Verlauf anschließen
+        date: monthEndISO(m.month),
+        balance: m.balances.get(account.id) ?? 0,
+      }));
     }),
 
   /**
@@ -296,7 +577,7 @@ export const forecastRouter = createRouter({
   /**
    * Sparziel-Prognose (Sparziele 2.0): monatliche Simulation (max. 120
    * Monate) — die Salden der mit den Zielen verknüpften Konten werden mit
-   * den wiederkehrenden Buchungen fortgeschrieben (Vorgehen wie bei der
+   * den wiederkehrenden Buchungen fortgeschrieben (gemeinsame Engine mit der
    * Saldo-Prognose inkl. Sichtbarkeitsfilter), die Fortschrittsformel aus
    * api/lib/goalProgress.ts je Monat angewendet. ETA = erster Monat mit
    * Fortschritt ≥ Zielbetrag (null, wenn in 120 Monaten nicht erreicht);
@@ -317,114 +598,32 @@ export const forecastRouter = createRouter({
         db.select().from(goalContributions),
       ]);
 
-    // Start-Salden der sichtbaren Konten (Logik wie listAccounts)
-    const balances = new Map<number, number>();
-    for (const a of allAccs) {
-      if (visible.has(a.id)) balances.set(a.id, a.initialBalance);
-    }
-    for (const t of allTxs) {
-      if (t.type === "transfer") {
-        if (balances.has(t.accountId)) {
-          balances.set(t.accountId, balances.get(t.accountId)! - t.amount);
-        }
-        if (t.toAccountId !== null && balances.has(t.toAccountId)) {
-          balances.set(t.toAccountId, balances.get(t.toAccountId)! + t.amount);
-        }
-      } else if (balances.has(t.accountId)) {
-        balances.set(
-          t.accountId,
-          balances.get(t.accountId)! + (t.type === "income" ? t.amount : -t.amount)
-        );
-      }
-    }
-
-    // Dauerbuchungen: wie bei der Saldo-Prognose — eine sichtbare Seite
-    // (Quelle ODER Ziel) genügt für die Berücksichtigung
-    const recs = allRecs.filter(
-      r =>
-        r.active &&
-        (visible.has(r.accountId) ||
-          (r.toAccountId !== null && visible.has(r.toAccountId)))
-    );
-    const sourcesByGoal = new Map<number, typeof allSources>();
-    for (const s of allSources) {
-      const list = sourcesByGoal.get(s.goalId) ?? [];
-      list.push(s);
-      sourcesByGoal.set(s.goalId, list);
-    }
-    const contribSum = new Map<number, number>();
-    for (const c of allContribs) {
-      contribSum.set(c.goalId, (contribSum.get(c.goalId) ?? 0) + c.amount);
-    }
-
-    // Fortschritt eines Ziels aus einem Saldo-Stand: nur Quellen mit
-    // sichtbarem Konto, Alt-Bestand (savedAmount + Beiträge) konstant
-    const progressOf = (
-      goalId: number,
-      savedAmount: number,
-      bals: Map<number, number>
-    ) => {
-      let total = savedAmount + (contribSum.get(goalId) ?? 0);
-      for (const s of sourcesByGoal.get(goalId) ?? []) {
-        if (!visible.has(s.accountId)) continue;
-        total += sourceAmount(s.mode, s.value, bals.get(s.accountId) ?? 0);
-      }
-      return total;
-    };
+    const accs = allAccs.filter(a => visible.has(a.id));
+    const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
+    const startBalances = startBalancesFromRows(accs, txs);
+    const recs = visibleRules(allRecs, visible);
 
     const MAX_MONTHS = 120;
     const currentKey = monthKey(localISO(new Date()));
-    // totals[i] = Fortschritt nach i simulierten Monaten (Index 0 = heute)
-    const totalsByGoal = new Map<number, number[]>();
-    for (const g of goals) {
-      totalsByGoal.set(g.id, [progressOf(g.id, g.savedAmount, balances)]);
-    }
+    const simulated = simulateMonths({
+      startBalances,
+      rules: recs,
+      fromMonth: currentKey,
+      months: MAX_MONTHS,
+    });
 
-    for (let i = 1; i <= MAX_MONTHS; i += 1) {
-      const monthStart = `${addMonths(currentKey, i)}-01`;
-      const monthEndDate = new Date(`${addMonths(currentKey, i + 1)}-01T12:00:00`);
-      monthEndDate.setDate(0);
-      const monthEnd = localISO(monthEndDate);
-      for (const r of recs) {
-        // Auf Monatsanfang vorspulen, dann alle Fälligkeiten im Monat buchen
-        let next = r.nextDate;
-        let guard = 0;
-        while (next < monthStart && guard < 1000) {
-          next = advanceDate(next, r.interval);
-          guard += 1;
-        }
-        while (next <= monthEnd && guard < 1000) {
-          if (r.type === "income") {
-            if (balances.has(r.accountId)) {
-              balances.set(r.accountId, balances.get(r.accountId)! + r.amount);
-            }
-          } else if (r.type === "expense") {
-            if (balances.has(r.accountId)) {
-              balances.set(r.accountId, balances.get(r.accountId)! - r.amount);
-            }
-          } else {
-            // Umbuchung: Quelle −, Ziel + (nur soweit sichtbar/verfolgt)
-            if (balances.has(r.accountId)) {
-              balances.set(r.accountId, balances.get(r.accountId)! - r.amount);
-            }
-            if (r.toAccountId !== null && balances.has(r.toAccountId)) {
-              balances.set(
-                r.toAccountId,
-                balances.get(r.toAccountId)! + r.amount
-              );
-            }
-          }
-          next = advanceDate(next, r.interval);
-          guard += 1;
-        }
-      }
-      for (const g of goals) {
-        totalsByGoal.get(g.id)!.push(progressOf(g.id, g.savedAmount, balances));
-      }
-    }
+    const contribSum = contributionsByGoal(allContribs);
+    // Nur Quellen mit sichtbarem Konto; Alt-Bestand konstant
+    const sourcesByGoal = visibleSourcesByGoal(allSources, visible);
 
     return goals.map(g => {
-      const totals = totalsByGoal.get(g.id)!;
+      const shown = sourcesByGoal.get(g.id) ?? [];
+      const legacy = g.savedAmount + (contribSum.get(g.id) ?? 0);
+      // totals[i] = Fortschritt nach i simulierten Monaten (Index 0 = heute)
+      const totals = [
+        progressFromBalances(shown, legacy, startBalances),
+        ...simulated.map(m => progressFromBalances(shown, legacy, m.balances)),
+      ];
       const total = totals[0];
       // Offene Ziele (targetAmount NULL): kein Rest/ETA, nur der Fortschritt
       const remaining =

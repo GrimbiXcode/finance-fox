@@ -350,6 +350,17 @@ export const pensionProfiles = sqliteTable("pension_profiles", {
   country: text("country").notNull().default("CH"),
   birthDate: text("birth_date").notNull(), // YYYY-MM-DD
   retirementAge: integer("retirement_age").notNull().default(65),
+  /**
+   * Verweis auf das Haushaltsmitglied, mit dem man verheiratet ist — nötig
+   * für die Plafonierung der Ehepaar-Renten und die Einkommensteilung.
+   *
+   * **Wirksam nur bei gegenseitigem Eintrag**: Erst wenn auch das andere
+   * Profil zurückverweist, dürfen dessen Daten gelesen werden. Das ist die
+   * Zustimmung — einseitig gesetzt bleibt der Verweis folgenlos, sonst
+   * könnte sich jemand die privaten Vorsorgedaten eines anderen allein
+   * freischalten (siehe api/AGENTS.md, Abschnitt Vorsorge).
+   */
+  partnerUserId: integer("partner_user_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -398,9 +409,87 @@ export const pensionAhv = sqliteTable("pension_ahv", {
   userId: integer("user_id").notNull().unique(),
   ahvNumber: text("ahv_number"),
   contributionYears: integer("contribution_years"),
+  /**
+   * Rente aus einer amtlichen Rentenvorausberechnung (Cent). Bleibt als
+   * Abkürzung bestehen: Wer das Formular 318.282 bestellt hat, trägt die
+   * Zahl ein und muss keine Jahreszeilen erfassen.
+   */
   expectedMonthlyPension: integer("expected_monthly_pension"), // Cent
+  /**
+   * Erstes Jahr mit einem Eintrag im individuellen Konto — bestimmt den
+   * pauschalen Aufwertungsfaktor der Einkommenssumme (Merkblatt 3.01).
+   */
+  firstIkYear: integer("first_ik_year"),
+  /**
+   * Nur für das Referenzalter nötig: Frauen der Jahrgänge 1961–1963 haben
+   * ein Referenzalter zwischen 64 und 65 (Übergangsgeneration).
+   */
+  gender: text("gender", { enum: ["female", "male"] }),
+  civilStatus: text("civil_status", {
+    enum: ["single", "married", "divorced", "widowed"],
+  })
+    .notNull()
+    .default("single"),
+  /** Kalenderjahre der Ehe — Grundlage der Einkommensteilung (Splitting) */
+  marriedFromYear: integer("married_from_year"),
+  marriedUntilYear: integer("married_until_year"),
+  /** Geplanter Rentenbezug: ganze Rente, Vorbezug oder Aufschub */
+  withdrawalMode: text("withdrawal_mode", {
+    enum: ["none", "early", "deferral"],
+  })
+    .notNull()
+    .default("none"),
+  /** Volle Monate Vorbezug bzw. Aufschub */
+  withdrawalMonths: integer("withdrawal_months").notNull().default(0),
+  /** Bezogener Anteil in Prozent (100 = ganze Rente, sonst 20–80) */
+  withdrawalSharePct: integer("withdrawal_share_pct").notNull().default(100),
   notes: text("notes").notNull().default(""),
 });
+
+/**
+ * Jahreszeilen der AHV-Beitragsdauer — das Abbild des individuellen Kontos
+ * (IK), das man bei der Ausgleichskasse gratis bestellen kann.
+ *
+ * Eine Zeile je Kalenderjahr, weil das Merkblatt 3.01 genau so rechnet: Der
+ * Durchschnitt der Erwerbseinkommen ergibt sich aus der Summe aller Jahre
+ * geteilt durch die Beitragsdauer, und ein fehlendes Jahr kostet 1/44 der
+ * Rente. Die Lücken-Erfassung ist damit dieselbe Tabelle wie die
+ * Einkommens-Erfassung — kein zweiter Ort, an dem beides auseinanderlaufen
+ * könnte.
+ */
+export const pensionAhvYears = sqliteTable(
+  "pension_ahv_years",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    year: integer("year").notNull(),
+    /** Gemeldetes Erwerbseinkommen des Jahres (Cent) */
+    income: integer("income").notNull().default(0),
+    /**
+     * `gap` = Beitragslücke (zählt nicht als Beitragsjahr), `youth` =
+     * Jugendjahr (18–20), das später entstandene Lücken auffüllen kann.
+     */
+    status: text("status", {
+      enum: ["employed", "non_employed", "gap", "youth"],
+    })
+      .notNull()
+      .default("employed"),
+    /** Erziehungsgutschrift: bei Verheirateten hälftig geteilt */
+    parentingCredit: text("parenting_credit", {
+      enum: ["none", "full", "half"],
+    })
+      .notNull()
+      .default("none"),
+    careCredit: text("care_credit", { enum: ["none", "full", "half"] })
+      .notNull()
+      .default("none"),
+    note: text("note").notNull().default(""),
+  },
+  t => [
+    uniqueIndex("pension_ahv_years_unique_idx").on(t.userId, t.year),
+    index("pension_ahv_years_user_idx").on(t.userId),
+  ]
+);
 
 /** Säule 2: Pensionskassen und Freizügigkeitskonten (n pro Benutzer) */
 export const pensionFunds = sqliteTable("pension_funds", {

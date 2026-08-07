@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   Building2,
+  Calculator,
   FileText,
   History,
   Landmark,
@@ -78,12 +79,15 @@ import PensionFundDialog, {
   type DialogFund,
 } from "@/components/PensionFundDialog";
 import PensionFundStatement from "@/components/PensionFundStatement";
+import AhvYearsDialog from "@/components/AhvYearsDialog";
+import AhvStatement from "@/components/AhvStatement";
 import PensionPillar3Dialog, {
   type DialogPillar3,
 } from "@/components/PensionPillar3Dialog";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../api/router";
 import { accountLabel, useInvalidatePension } from "@/lib/data";
+import { ahvWarningText } from "@/lib/ahv";
 import {
   amountPlaceholder,
   currencySymbol,
@@ -97,6 +101,7 @@ import {
   parsePercent,
 } from "@/lib/finance";
 import { trpc } from "@/providers/trpc";
+import { useAuth } from "@/providers/auth";
 import { toast } from "sonner";
 
 /** Zeilen-Typen der Vorsorge-Queries (nur die hier benötigten Felder) */
@@ -128,6 +133,14 @@ interface AhvRow {
   ahvNumber: string | null;
   contributionYears: number | null;
   expectedMonthlyPension: number | null;
+  firstIkYear: number | null;
+  gender: "female" | "male" | null;
+  civilStatus: "single" | "married" | "divorced" | "widowed";
+  marriedFromYear: number | null;
+  marriedUntilYear: number | null;
+  withdrawalMode: "none" | "early" | "deferral";
+  withdrawalMonths: number;
+  withdrawalSharePct: number;
   notes: string;
 }
 type Pillar3Row = DialogPillar3 & {
@@ -1539,6 +1552,20 @@ function AhvDialogForm({
   const [pension, setPension] = useState(
     centsInput(ahv?.expectedMonthlyPension ?? 0)
   );
+  const [firstIkYear, setFirstIkYear] = useState(
+    ahv?.firstIkYear != null ? String(ahv.firstIkYear) : ""
+  );
+  const [gender, setGender] = useState<"female" | "male">(ahv?.gender ?? "male");
+  const [civilStatus, setCivilStatus] = useState(ahv?.civilStatus ?? "single");
+  const [marriedFrom, setMarriedFrom] = useState(
+    ahv?.marriedFromYear != null ? String(ahv.marriedFromYear) : ""
+  );
+  const [withdrawalMode, setWithdrawalMode] = useState(
+    ahv?.withdrawalMode ?? "none"
+  );
+  const [withdrawalMonths, setWithdrawalMonths] = useState(
+    String(ahv?.withdrawalMonths ?? 0)
+  );
   const [notes, setNotes] = useState(ahv?.notes ?? "");
   const [comment, setComment] = useState("");
 
@@ -1566,6 +1593,13 @@ function AhvDialogForm({
       ahvNumber: ahvNumber.trim() || null,
       contributionYears,
       expectedMonthlyPension: pension.trim() === "" ? null : parseEuro(pension),
+      firstIkYear: firstIkYear.trim() === "" ? null : Number(firstIkYear),
+      gender,
+      civilStatus,
+      marriedFromYear: marriedFrom.trim() === "" ? null : Number(marriedFrom),
+      withdrawalMode,
+      withdrawalMonths:
+        withdrawalMode === "none" ? 0 : Number(withdrawalMonths) || 0,
       notes: notes.trim(),
       comment: comment.trim() || undefined,
     });
@@ -1576,8 +1610,8 @@ function AhvDialogForm({
       <DialogHeader>
         <DialogTitle>AHV-Angaben</DialogTitle>
         <DialogDescription>
-          Angaben zur 1. Säule. Ohne erwartete Rente schätzt die Prognose aus
-          den Beitragsjahren.
+          Angaben zur 1. Säule. Die Rente rechnet die App aus den erfassten
+          Beitragsjahren — eine amtliche Rentenvorausberechnung hat Vorrang.
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-4 py-2">
@@ -1600,8 +1634,104 @@ function AhvDialogForm({
             />
           </div>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Geschlecht</Label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={gender}
+              onChange={e => setGender(e.target.value as "female" | "male")}
+            >
+              <option value="female">Weiblich</option>
+              <option value="male">Männlich</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Nur fürs Referenzalter: Frauen der Jahrgänge 1961–1963 liegen
+              zwischen 64 und 65.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Erstes Jahr im IK</Label>
+            <Input
+              inputMode="numeric"
+              placeholder="z. B. 1990"
+              value={firstIkYear}
+              onChange={e => setFirstIkYear(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Bestimmt die Aufwertung früherer Einkommen.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Zivilstand</Label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={civilStatus}
+              onChange={e =>
+                setCivilStatus(e.target.value as AhvRow["civilStatus"])
+              }
+            >
+              <option value="single">Ledig</option>
+              <option value="married">Verheiratet</option>
+              <option value="divorced">Geschieden</option>
+              <option value="widowed">Verwitwet</option>
+            </select>
+          </div>
+          {civilStatus === "married" && (
+            <div className="space-y-2">
+              <Label>Verheiratet seit (Jahr)</Label>
+              <Input
+                inputMode="numeric"
+                placeholder="z. B. 2005"
+                value={marriedFrom}
+                onChange={e => setMarriedFrom(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Grundlage der Einkommensteilung mit dem Ehepartner.
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Rentenbezug</Label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={withdrawalMode}
+              onChange={e =>
+                setWithdrawalMode(e.target.value as AhvRow["withdrawalMode"])
+              }
+            >
+              <option value="none">Ab Referenzalter</option>
+              <option value="early">Vorbezug</option>
+              <option value="deferral">Aufschub</option>
+            </select>
+          </div>
+          {withdrawalMode !== "none" && (
+            <div className="space-y-2">
+              <Label>
+                Monate {withdrawalMode === "early" ? "Vorbezug" : "Aufschub"}
+              </Label>
+              <Input
+                inputMode="numeric"
+                placeholder={withdrawalMode === "early" ? "12" : "24"}
+                value={withdrawalMonths}
+                onChange={e => setWithdrawalMonths(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {withdrawalMode === "early"
+                  ? "Höchstens 24 Monate (Frauen 1961–1969: 36)."
+                  : "Zwischen 12 und 60 Monaten."}
+              </p>
+            </div>
+          )}
+        </div>
         <div className="space-y-2">
-          <Label>Erwartete Monatsrente ({currencySymbol()})</Label>
+          <Label>
+            Rentenvorausberechnung — Monatsrente ({currencySymbol()})
+          </Label>
           <Input
             inputMode="decimal"
             placeholder={amountPlaceholder}
@@ -1609,7 +1739,9 @@ function AhvDialogForm({
             onChange={e => setPension(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Leer lassen für eine Schätzung aus den Beitragsjahren.
+            Aus dem Formular 318.282 der Ausgleichskasse. Ist der Wert gesetzt,
+            hat er Vorrang vor der eigenen Berechnung — leer lassen, um aus den
+            Beitragsjahren zu rechnen.
           </p>
         </div>
         <div className="space-y-2">
@@ -1638,6 +1770,156 @@ function AhvDialogForm({
         </Button>
       </DialogFooter>
     </DialogContent>
+  );
+}
+
+/**
+ * Berechnete Rente mit Rentenskala und Lücken-Hinweis. Die Zahlen kommen aus
+ * `pension.ahvDetail` (Rentenformel nach Merkblatt 3.01); die Details öffnet
+ * der „Berechnung ansehen"-Knopf.
+ */
+function AhvCalculation() {
+  const detail = trpc.pension.ahvDetail.useQuery(undefined, { retry: false });
+  const years = trpc.pension.listAhvYears.useQuery();
+  const yearCount = years.data?.length ?? 0;
+
+  // Ohne erfasste Jahre wird keine Rente angezeigt: Die Engine liefert dann
+  // rechnerisch die Mindestrente nach Skala 1/44 — als „berechnete
+  // Monatsrente" wäre das eine Zahl, die nichts bedeutet und in die Irre führt.
+  if (detail.error || !detail.data || yearCount === 0) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+        <p className="text-sm text-muted-foreground">
+          Erfasse deine Beitragsjahre, damit die Rente gerechnet werden kann.
+        </p>
+        <AhvYearsDialog
+          trigger={
+            <Button size="sm" variant="outline">
+              <Plus className="mr-2 h-4 w-4" /> Beitragsjahre erfassen
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  const d = detail.data;
+  const gaps = d.duration.missingYears;
+  return (
+    <div className="space-y-3 border-t pt-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-xs text-muted-foreground">
+            Berechnete Monatsrente
+          </div>
+          <div className="text-2xl font-bold">
+            {formatCents(d.monthlyPension)}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="secondary">Skala {d.duration.scale}/44</Badge>
+            {gaps > 0 && (
+              <Badge className="bg-amber-500/15 text-amber-700 hover:bg-amber-500/15 dark:text-amber-500">
+                {gaps} {gaps === 1 ? "Lücke" : "Lücken"}
+              </Badge>
+            )}
+            {d.partnerLinked && <Badge variant="outline">Ehepaar</Badge>}
+            <span>ab {formatDate(d.pensionStartDate)}</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <AhvYearsDialog
+            trigger={
+              <Button size="sm" variant="outline">
+                {yearCount} Beitragsjahre
+              </Button>
+            }
+          />
+          <AhvStatement
+            trigger={
+              <Button size="sm" variant="outline">
+                <Calculator className="mr-2 h-4 w-4" /> Berechnung ansehen
+              </Button>
+            }
+          />
+        </div>
+      </div>
+      {d.warnings.length > 0 && (
+        <ul className="space-y-1 text-xs text-muted-foreground">
+          {d.warnings.slice(0, 2).map((w, i) => (
+            <li key={i}>· {ahvWarningText(w)}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Ehepartner-Verknüpfung für Plafonierung und Einkommensteilung.
+ *
+ * Sie wirkt **nur, wenn beide Seiten sie setzen** — das ist die Zustimmung
+ * dafür, dass die sonst strikt privaten Vorsorgedaten der anderen Person für
+ * die Rechnung herangezogen werden. Der Zwischenzustand wird deshalb
+ * ausdrücklich angezeigt, statt einfach nichts zu tun.
+ */
+function PartnerLink() {
+  const invalidate = useInvalidatePension();
+  const detail = trpc.pension.ahvDetail.useQuery(undefined, { retry: false });
+  const profile = trpc.pension.getProfile.useQuery();
+  const users = trpc.auth.listUsers.useQuery();
+  const { user } = useAuth();
+  const setPartner = trpc.pension.setPartner.useMutation({
+    onSuccess: () => {
+      toast.success("Verknüpfung gespeichert.");
+      invalidate();
+      detail.refetch();
+      profile.refetch();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const others = (users.data ?? []).filter(u => u.active && u.id !== user?.id);
+  if (others.length === 0) return null;
+  const current = profile.data?.partnerUserId ?? null;
+
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <Label>Ehepartner (für Plafonierung und Splitting)</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          value={current === null ? "" : String(current)}
+          onChange={e =>
+            setPartner.mutate({
+              partnerUserId: e.target.value === "" ? null : Number(e.target.value),
+            })
+          }
+        >
+          <option value="">Nicht verknüpft</option>
+          {others.map(u => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+        {detail.data?.partnerPending && (
+          <span className="text-xs text-amber-600 dark:text-amber-500">
+            Warten auf Bestätigung — die andere Person muss dich ebenfalls
+            verknüpfen.
+          </span>
+        )}
+        {detail.data?.partnerLinked && (
+          <span className="text-xs text-emerald-600">
+            Beidseitig bestätigt — Renten werden plafoniert.
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Vorsorgedaten sind sonst strikt privat. Erst wenn beide Seiten die
+        Verknüpfung setzen, wird die Rente des Partners für die Plafonierung
+        herangezogen.
+      </p>
+    </div>
   );
 }
 
@@ -1689,7 +1971,7 @@ function AhvCard({ ahv }: { ahv: AhvRow | null }) {
             </div>
             <div>
               <div className="text-xs text-muted-foreground">
-                Erwartete Monatsrente
+                Rentenvorausberechnung
               </div>
               <div className="font-medium">
                 {ahv.expectedMonthlyPension != null
@@ -1705,6 +1987,8 @@ function AhvCard({ ahv }: { ahv: AhvRow | null }) {
             )}
           </div>
         )}
+        <AhvCalculation />
+        <PartnerLink />
         {ahv && (
           <div className="space-y-2 border-t pt-3">
             <Label>Anhänge (z. B. Kontoauszug der AHV)</Label>

@@ -63,9 +63,17 @@ export interface PensionPillar3Input {
   goalNames?: string[];
 }
 
+/**
+ * Die AHV-Rente kommt **fertig gerechnet** herein (`lib/pension/ahvCh.ts` bzw.
+ * eine hinterlegte Rentenvorausberechnung). Früher schätzte diese Datei sie
+ * linear aus den Beitragsjahren — das war fachlich falsch, weil die Rente am
+ * massgebenden durchschnittlichen Jahreseinkommen hängt und degressiv
+ * verläuft. Die erste Säule hat jetzt ihre eigene Engine.
+ */
 export interface PensionAhvInput {
-  contributionYears: number | null;
-  expectedMonthlyPension: number | null;
+  monthlyPension: number;
+  /** true = aus den Jahreszeilen gerechnet, false = amtliche Vorausberechnung */
+  estimated: boolean;
 }
 
 export interface ChForecastInput {
@@ -110,10 +118,6 @@ export interface PensionForecastResult {
 
 /** Maximale Simulationsdauer: 50 Jahre */
 const MAX_MONTHS = 600;
-
-/** Grobe AHV-Vollrente bei 44 Beitragsjahren (CHF 2'520/Monat, Stand 2025) */
-const AHV_FULL_PENSION = 302400;
-const AHV_FULL_YEARS = 44;
 
 /** Monatsschritt der Akkumulation: Einzahlung + Monatszins, auf Cent gerundet */
 function accumulateMonth(capital: number, yearlyAdd: number, rateBp: number) {
@@ -336,22 +340,12 @@ export function computeChForecast(
     monthlyWithdrawal: Math.round(pillar3Capital / 240),
   };
 
-  // Säule 1 (AHV): hinterlegte Rente oder grobe Schätzung aus Beitragsjahren
-  let ahv: PensionForecastResult["ahv"];
-  if (input.ahv?.expectedMonthlyPension != null) {
-    ahv = {
-      monthlyPension: input.ahv.expectedMonthlyPension,
-      estimated: false,
-    };
-  } else if (input.ahv?.contributionYears != null) {
-    ahv = {
-      monthlyPension: Math.round(
-        (AHV_FULL_PENSION * input.ahv.contributionYears) / AHV_FULL_YEARS
-      ),
-      estimated: true,
-    };
-  } else {
-    ahv = { monthlyPension: 0, estimated: true };
+  // Säule 1 (AHV): kommt fertig gerechnet herein (siehe PensionAhvInput)
+  const ahv: PensionForecastResult["ahv"] = input.ahv ?? {
+    monthlyPension: 0,
+    estimated: true,
+  };
+  if (!input.ahv) {
     warnings.push(
       "Keine AHV-Angaben hinterlegt — die Prognose enthält keine AHV-Rente."
     );

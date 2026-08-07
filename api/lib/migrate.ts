@@ -250,8 +250,31 @@ export function ensureSchema() {
       ahv_number TEXT,
       contribution_years INTEGER,
       expected_monthly_pension INTEGER,
+      first_ik_year INTEGER,
+      gender TEXT,
+      civil_status TEXT NOT NULL DEFAULT 'single',
+      married_from_year INTEGER,
+      married_until_year INTEGER,
+      withdrawal_mode TEXT NOT NULL DEFAULT 'none',
+      withdrawal_months INTEGER NOT NULL DEFAULT 0,
+      withdrawal_share_pct INTEGER NOT NULL DEFAULT 100,
       notes TEXT NOT NULL DEFAULT ''
     )`,
+    // Jahreszeilen der Beitragsdauer (Abbild des individuellen Kontos)
+    `CREATE TABLE IF NOT EXISTS pension_ahv_years (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      year INTEGER NOT NULL,
+      income INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'employed',
+      parenting_credit TEXT NOT NULL DEFAULT 'none',
+      care_credit TEXT NOT NULL DEFAULT 'none',
+      note TEXT NOT NULL DEFAULT ''
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS pension_ahv_years_unique_idx
+      ON pension_ahv_years (user_id, year)`,
+    `CREATE INDEX IF NOT EXISTS pension_ahv_years_user_idx
+      ON pension_ahv_years (user_id)`,
     `CREATE TABLE IF NOT EXISTS pension_funds (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -589,6 +612,56 @@ export function ensureSchema() {
       db.run(ddl as never);
     }
   }
+  // AHV: Felder der Rentenberechnung an Bestands-DBs nachrüsten. Bestehende
+  // Datensätze rechnen weiter über expected_monthly_pension, solange keine
+  // Jahreszeilen erfasst sind — das bisherige Verhalten bleibt erhalten.
+  const pensionAhvCols = raw
+    .prepare("PRAGMA table_info(pension_ahv)")
+    .raw()
+    .all();
+  for (const [col, ddl] of [
+    ["first_ik_year", "ALTER TABLE pension_ahv ADD COLUMN first_ik_year INTEGER"],
+    ["gender", "ALTER TABLE pension_ahv ADD COLUMN gender TEXT"],
+    [
+      "civil_status",
+      "ALTER TABLE pension_ahv ADD COLUMN civil_status TEXT NOT NULL DEFAULT 'single'",
+    ],
+    [
+      "married_from_year",
+      "ALTER TABLE pension_ahv ADD COLUMN married_from_year INTEGER",
+    ],
+    [
+      "married_until_year",
+      "ALTER TABLE pension_ahv ADD COLUMN married_until_year INTEGER",
+    ],
+    [
+      "withdrawal_mode",
+      "ALTER TABLE pension_ahv ADD COLUMN withdrawal_mode TEXT NOT NULL DEFAULT 'none'",
+    ],
+    [
+      "withdrawal_months",
+      "ALTER TABLE pension_ahv ADD COLUMN withdrawal_months INTEGER NOT NULL DEFAULT 0",
+    ],
+    [
+      "withdrawal_share_pct",
+      "ALTER TABLE pension_ahv ADD COLUMN withdrawal_share_pct INTEGER NOT NULL DEFAULT 100",
+    ],
+  ] as const) {
+    if (!pensionAhvCols.some(c => c[1] === col)) {
+      db.run(ddl as never);
+    }
+  }
+  // Ehepartner-Verweis im Profil (wirksam nur bei gegenseitigem Eintrag)
+  const pensionProfileCols = raw
+    .prepare("PRAGMA table_info(pension_profiles)")
+    .raw()
+    .all();
+  if (!pensionProfileCols.some(c => c[1] === "partner_user_id")) {
+    db.run(
+      "ALTER TABLE pension_profiles ADD COLUMN partner_user_id INTEGER" as never
+    );
+  }
+
   // Lohnabzüge: salary_id für eintragsbezogene Abzüge nachrüsten
   // (NULL = global, gilt für alle Löhne — Bestandszeilen bleiben global)
   const pensionDeductionCols = raw

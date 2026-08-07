@@ -51,7 +51,7 @@ const BASE_INPUT = {
       accountId: null,
     },
   ],
-  ahv: { contributionYears: 44, expectedMonthlyPension: null },
+  ahv: { monthlyPension: 302400, estimated: true },
   currentNet: 500000,
   now: NOW,
 };
@@ -124,10 +124,12 @@ describe("CH-Prognose (computeChForecast)", () => {
     expect(result.replacementRate).toBeNull();
   });
 
-  it("schätzt die AHV aus den Beitragsjahren bzw. warnt bei fehlenden Angaben", () => {
+  it("reicht die AHV-Rente durch und warnt bei fehlenden Angaben", () => {
+    // Die erste Säule rechnet seit der AHV-Engine nicht mehr hier, sondern in
+    // lib/pension/ahvCh.ts — diese Datei nimmt das Ergebnis nur entgegen.
     const halbe = computeChForecast({
       ...BASE_INPUT,
-      ahv: { contributionYears: 22, expectedMonthlyPension: null },
+      ahv: { monthlyPension: 151200, estimated: true },
     });
     expect(halbe.ahv).toEqual({ monthlyPension: 151200, estimated: true });
 
@@ -135,10 +137,9 @@ describe("CH-Prognose (computeChForecast)", () => {
     expect(leer.ahv).toEqual({ monthlyPension: 0, estimated: true });
     expect(leer.warnings.some(w => w.includes("Keine AHV-Angaben"))).toBe(true);
 
-    // hinterlegte Rente schlägt die Schätzung
     const fix = computeChForecast({
       ...BASE_INPUT,
-      ahv: { contributionYears: 22, expectedMonthlyPension: 200000 },
+      ahv: { monthlyPension: 200000, estimated: false },
     });
     expect(fix.ahv).toEqual({ monthlyPension: 200000, estimated: false });
   });
@@ -366,7 +367,10 @@ describe("forecast-Endpunkt", () => {
     });
 
     const result = await caller.pension.forecast();
-    expect(result.ahv).toEqual({ monthlyPension: 302400, estimated: true });
+    // Rückfall auf die grobe Näherung, weil nur Beitragsjahre erfasst sind:
+    // Maximalrente CHF 2'520 × 44/44. Bis zur AHV-Engine stand hier
+    // versehentlich CHF 3'024 — die alte Konstante war um 20 % zu hoch.
+    expect(result.ahv).toEqual({ monthlyPension: 252000, estimated: true });
     expect(result.pillar2.capital).toBeGreaterThan(120000);
     // 3a-Start = 100000 − 30000 verplant
     expect(result.pillar3.capital).toBeGreaterThanOrEqual(70000);

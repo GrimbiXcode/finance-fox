@@ -7,6 +7,7 @@ import {
   accounts,
   categories,
   pensionAhv,
+  pensionAhvYears,
   pensionAttachments,
   pensionChanges,
   pensionDeductions,
@@ -31,6 +32,13 @@ import {
 } from "./lib/pension/netSalary";
 import { pillar3AccountSync } from "./lib/pension/accountSync";
 import { getPensionCalculator } from "./lib/pension";
+import { computeAhv, computeAhvVariants } from "./lib/pension/ahvCh";
+import {
+  ahvMonthlyPensionFor,
+  findAhvYear,
+  loadAhvInput,
+} from "./lib/pension/ahvLoad";
+import { users } from "@db/schema";
 
 /**
  * Vorsorge-Modul (Schweizer 3-Säulen-Prinzip) — alle Daten sind strikt
@@ -38,6 +46,11 @@ import { getPensionCalculator } from "./lib/pension";
  * Haushalts-Sichtbarkeit. Jede Mutation schreibt bei echter Änderung einen
  * Eintrag in pension_changes (recordPensionChange) und best effort ins
  * Audit-Log (ohne sensible Werte wie die AHV-Nummer).
+ *
+ * **Eine einzige Ausnahme** vom userId-Scoping: die Ehepartner-Verknüpfung
+ * (`setPartner`) für Plafonierung und Einkommensteilung. Sie wirkt nur bei
+ * **gegenseitigem** Eintrag und liest ausschliesslich die dafür nötigen
+ * Werte — Details in `lib/pension/ahvLoad.ts`.
  */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
@@ -66,7 +79,23 @@ const AHV_LABELS = {
   ahvNumber: "AHV-Nummer",
   contributionYears: "Beitragsjahre",
   expectedMonthlyPension: "Erwartete Monatsrente",
+  firstIkYear: "Erstes IK-Jahr",
+  gender: "Geschlecht",
+  civilStatus: "Zivilstand",
+  marriedFromYear: "Verheiratet seit",
+  marriedUntilYear: "Verheiratet bis",
+  withdrawalMode: "Rentenbezug",
+  withdrawalMonths: "Monate Vorbezug/Aufschub",
+  withdrawalSharePct: "Bezogener Anteil (%)",
   notes: "Notizen",
+};
+const AHV_YEAR_LABELS = {
+  year: "Jahr",
+  income: "Erwerbseinkommen",
+  status: "Status",
+  parentingCredit: "Erziehungsgutschrift",
+  careCredit: "Betreuungsgutschrift",
+  note: "Notiz",
 };
 const FUND_LABELS = {
   name: "Name",
@@ -792,6 +821,29 @@ export const pensionRouter = createRouter({
           .nullable()
           .optional(),
         expectedMonthlyPension: z.number().int().min(0).nullable().optional(),
+        firstIkYear: z.number().int().min(1930).max(2100).nullable().optional(),
+        gender: z.enum(["female", "male"]).nullable().optional(),
+        civilStatus: z
+          .enum(["single", "married", "divorced", "widowed"])
+          .optional(),
+        marriedFromYear: z
+          .number()
+          .int()
+          .min(1930)
+          .max(2100)
+          .nullable()
+          .optional(),
+        marriedUntilYear: z
+          .number()
+          .int()
+          .min(1930)
+          .max(2100)
+          .nullable()
+          .optional(),
+        withdrawalMode: z.enum(["none", "early", "deferral"]).optional(),
+        withdrawalMonths: z.number().int().min(0).max(60).optional(),
+        // 100 = ganze Rente; ein Teilbezug liegt zwischen 20 und 80 %
+        withdrawalSharePct: z.number().int().min(20).max(100).optional(),
         notes: z.string().max(2000).optional(),
         comment: commentInput,
       })
@@ -801,18 +853,47 @@ export const pensionRouter = createRouter({
       const existing = await db.query.pensionAhv.findFirst({
         where: eq(pensionAhv.userId, ctx.user.id),
       });
+
+      /** Feldwerte für Historie und UPDATE — undefined = unverändert */
+      const merge = (base: Partial<typeof pensionAhv.$inferSelect> | null) => ({
+        ahvNumber: input.ahvNumber ?? base?.ahvNumber ?? null,
+        contributionYears:
+          input.contributionYears === undefined
+            ? (base?.contributionYears ?? null)
+            : input.contributionYears,
+        expectedMonthlyPension:
+          input.expectedMonthlyPension === undefined
+            ? (base?.expectedMonthlyPension ?? null)
+            : input.expectedMonthlyPension,
+        firstIkYear:
+          input.firstIkYear === undefined
+            ? (base?.firstIkYear ?? null)
+            : input.firstIkYear,
+        gender:
+          input.gender === undefined ? (base?.gender ?? null) : input.gender,
+        civilStatus: input.civilStatus ?? base?.civilStatus ?? "single",
+        marriedFromYear:
+          input.marriedFromYear === undefined
+            ? (base?.marriedFromYear ?? null)
+            : input.marriedFromYear,
+        marriedUntilYear:
+          input.marriedUntilYear === undefined
+            ? (base?.marriedUntilYear ?? null)
+            : input.marriedUntilYear,
+        withdrawalMode: input.withdrawalMode ?? base?.withdrawalMode ?? "none",
+        withdrawalMonths:
+          input.withdrawalMonths ?? base?.withdrawalMonths ?? 0,
+        withdrawalSharePct:
+          input.withdrawalSharePct ?? base?.withdrawalSharePct ?? 100,
+        notes: input.notes ?? base?.notes ?? "",
+      });
+
       // Audit-Detail bewusst ohne AHV-Nummer (sensibler Wert)
       if (!existing) {
-        const values = {
-          userId: ctx.user.id,
-          ahvNumber: input.ahvNumber ?? null,
-          contributionYears: input.contributionYears ?? null,
-          expectedMonthlyPension: input.expectedMonthlyPension ?? null,
-          notes: input.notes ?? "",
-        };
+        const values = merge(null);
         const inserted = await db
           .insert(pensionAhv)
-          .values(values)
+          .values({ userId: ctx.user.id, ...values })
           .returning({ id: pensionAhv.id });
         await recordPensionChange(db, {
           userId: ctx.user.id,
@@ -820,12 +901,7 @@ export const pensionRouter = createRouter({
           entityId: inserted[0].id,
           comment: input.comment,
           before: null,
-          after: {
-            ahvNumber: values.ahvNumber,
-            contributionYears: values.contributionYears,
-            expectedMonthlyPension: values.expectedMonthlyPension,
-            notes: values.notes,
-          },
+          after: values,
           fieldLabels: AHV_LABELS,
           summary: "AHV-Daten angelegt",
         });
@@ -840,19 +916,7 @@ export const pensionRouter = createRouter({
         return { ok: true };
       }
 
-      const next = {
-        ahvNumber:
-          input.ahvNumber === undefined ? existing.ahvNumber : input.ahvNumber,
-        contributionYears:
-          input.contributionYears === undefined
-            ? existing.contributionYears
-            : input.contributionYears,
-        expectedMonthlyPension:
-          input.expectedMonthlyPension === undefined
-            ? existing.expectedMonthlyPension
-            : input.expectedMonthlyPension,
-        notes: input.notes ?? existing.notes,
-      };
+      const next = merge(existing);
       const changed = await recordPensionChange(db, {
         userId: ctx.user.id,
         entity: "ahv",
@@ -862,6 +926,14 @@ export const pensionRouter = createRouter({
           ahvNumber: existing.ahvNumber,
           contributionYears: existing.contributionYears,
           expectedMonthlyPension: existing.expectedMonthlyPension,
+          firstIkYear: existing.firstIkYear,
+          gender: existing.gender,
+          civilStatus: existing.civilStatus,
+          marriedFromYear: existing.marriedFromYear,
+          marriedUntilYear: existing.marriedUntilYear,
+          withdrawalMode: existing.withdrawalMode,
+          withdrawalMonths: existing.withdrawalMonths,
+          withdrawalSharePct: existing.withdrawalSharePct,
           notes: existing.notes,
         },
         after: next,
@@ -883,6 +955,246 @@ export const pensionRouter = createRouter({
       }
       return { ok: true };
     }),
+
+  /* ------------------- Beitragsdauer: Jahreszeilen (IK) --------------------- */
+
+  listAhvYears: authedQuery.query(async ({ ctx }) => {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(pensionAhvYears)
+      .where(eq(pensionAhvYears.userId, ctx.user.id));
+    return rows.sort((a, b) => a.year - b.year);
+  }),
+
+  /**
+   * Anlegen oder Ändern einer Jahreszeile (Ersetzen-Semantik pro Jahr —
+   * ein Kalenderjahr kommt im individuellen Konto genau einmal vor).
+   */
+  upsertAhvYear: authedQuery
+    .input(
+      z.object({
+        year: z.number().int().min(1930).max(2100),
+        income: z.number().int().min(0).default(0),
+        status: z
+          .enum(["employed", "non_employed", "gap", "youth"])
+          .default("employed"),
+        parentingCredit: z.enum(["none", "full", "half"]).default("none"),
+        careCredit: z.enum(["none", "full", "half"]).default("none"),
+        note: z.string().max(500).default(""),
+        comment: commentInput,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const { comment, ...values } = input;
+      const existing = await findAhvYear(db, ctx.user.id, input.year);
+
+      if (!existing) {
+        const inserted = await db
+          .insert(pensionAhvYears)
+          .values({ userId: ctx.user.id, ...values })
+          .returning({ id: pensionAhvYears.id });
+        await recordPensionChange(db, {
+          userId: ctx.user.id,
+          entity: "ahv",
+          entityId: inserted[0].id,
+          comment,
+          before: null,
+          after: values,
+          fieldLabels: AHV_YEAR_LABELS,
+          summary: `Beitragsjahr ${input.year} erfasst`,
+        });
+        logAudit(
+          db,
+          ctx.user.id,
+          "pension.ahvYear.created",
+          "pension",
+          inserted[0].id,
+          `Beitragsjahr ${input.year} erfasst`
+        );
+        return { id: inserted[0].id };
+      }
+
+      const changed = await recordPensionChange(db, {
+        userId: ctx.user.id,
+        entity: "ahv",
+        entityId: existing.id,
+        comment,
+        before: {
+          year: existing.year,
+          income: existing.income,
+          status: existing.status,
+          parentingCredit: existing.parentingCredit,
+          careCredit: existing.careCredit,
+          note: existing.note,
+        },
+        after: values,
+        fieldLabels: AHV_YEAR_LABELS,
+      });
+      if (changed > 0) {
+        await db
+          .update(pensionAhvYears)
+          .set(values)
+          .where(eq(pensionAhvYears.id, existing.id));
+        logAudit(
+          db,
+          ctx.user.id,
+          "pension.ahvYear.updated",
+          "pension",
+          existing.id,
+          `Beitragsjahr ${input.year} geändert`
+        );
+      }
+      return { id: existing.id };
+    }),
+
+  deleteAhvYear: authedQuery
+    .input(z.object({ year: z.number().int().min(1930).max(2100) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const existing = await findAhvYear(db, ctx.user.id, input.year);
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Beitragsjahr nicht gefunden.",
+        });
+      }
+      await db
+        .delete(pensionAhvYears)
+        .where(eq(pensionAhvYears.id, existing.id));
+      await recordPensionChange(db, {
+        userId: ctx.user.id,
+        entity: "ahv",
+        entityId: existing.id,
+        before: { year: existing.year, income: existing.income },
+        after: null,
+        fieldLabels: AHV_YEAR_LABELS,
+        summary: `Beitragsjahr ${input.year} gelöscht`,
+      });
+      logAudit(
+        db,
+        ctx.user.id,
+        "pension.ahvYear.deleted",
+        "pension",
+        existing.id,
+        `Beitragsjahr ${input.year} gelöscht`
+      );
+      return { ok: true };
+    }),
+
+  /* --------------------- Ehepartner-Verknüpfung ---------------------------- */
+
+  /**
+   * Setzt oder löst den Verweis auf den Ehepartner. Wirksam wird er **erst,
+   * wenn die andere Person ihn erwidert** — bis dahin werden keine fremden
+   * Vorsorgedaten gelesen. Das ist bewusst die einzige Zustimmung im Modul
+   * und ersetzt ein eigenes Freigabe-Konzept.
+   */
+  setPartner: authedQuery
+    .input(z.object({ partnerUserId: z.number().int().positive().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const profile = await db.query.pensionProfiles.findFirst({
+        where: eq(pensionProfiles.userId, ctx.user.id),
+      });
+      if (!profile) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Vorsorgeprofil fehlt — bitte zuerst das Geburtsdatum hinterlegen.",
+        });
+      }
+      if (input.partnerUserId === ctx.user.id) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Du kannst dich nicht mit dir selbst verknüpfen.",
+        });
+      }
+      if (input.partnerUserId !== null) {
+        const partner = await db.query.users.findFirst({
+          where: eq(users.id, input.partnerUserId),
+        });
+        if (!partner || !partner.active) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Person nicht gefunden.",
+          });
+        }
+      }
+      await db
+        .update(pensionProfiles)
+        .set({ partnerUserId: input.partnerUserId })
+        .where(eq(pensionProfiles.id, profile.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        input.partnerUserId === null
+          ? "pension.partner.unlinked"
+          : "pension.partner.linked",
+        "pension",
+        profile.id,
+        input.partnerUserId === null
+          ? "Ehepartner-Verknüpfung gelöst"
+          : "Ehepartner-Verknüpfung gesetzt"
+      );
+      return { ok: true };
+    }),
+
+  /* ------------------------ AHV-Rentenberechnung --------------------------- */
+
+  /**
+   * Die Rentenberechnung nach Merkblatt 3.01 — mit Aufschlüsselung, damit
+   * im UI nachvollziehbar bleibt, woher die Zahl kommt. Der Rentenbezug
+   * lässt sich als Was-wäre-wenn übersteuern (Muster: `retirementAge` in
+   * `forecast`).
+   */
+  ahvDetail: authedQuery
+    .input(
+      z
+        .object({
+          withdrawalMode: z.enum(["none", "early", "deferral"]).optional(),
+          withdrawalMonths: z.number().int().min(0).max(60).optional(),
+          withdrawalSharePct: z.number().int().min(20).max(100).optional(),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const loaded = await loadAhvInput(
+        db,
+        ctx.user.id,
+        input?.withdrawalMode
+          ? {
+              withdrawal: {
+                mode: input.withdrawalMode,
+                months: input.withdrawalMonths ?? 0,
+                sharePct: input.withdrawalSharePct ?? 100,
+              },
+            }
+          : undefined
+      );
+      if (!loaded) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Vorsorgeprofil fehlt — bitte zuerst das Geburtsdatum hinterlegen.",
+        });
+      }
+      return {
+        ...computeAhv(loaded.input),
+        partnerLinked: loaded.partnerLinked,
+        partnerPending: loaded.partnerPending,
+      };
+    }),
+
+  /** Gegenüberstellung der Bezugsvarianten (Vorbezug … Aufschub) */
+  ahvVariants: authedQuery.query(async ({ ctx }) => {
+    const db = getDb();
+    const loaded = await loadAhvInput(db, ctx.user.id);
+    if (!loaded) return [];
+    return computeAhvVariants(loaded.input);
+  }),
 
   /* --------------------------- Säule 2 (Pensionskasse) ---------------------- */
 
@@ -1430,16 +1742,15 @@ export const pensionRouter = createRouter({
             "Vorsorgeprofil fehlt — bitte zuerst das Geburtsdatum hinterlegen.",
         });
       }
-      const [funds, pillar3Rows, ahvRow, salaryRows, deductionRows] =
+      // Die AHV lädt und rechnet ahvMonthlyPensionFor selbst (Merkblatt-
+      // Rentenformel), deshalb steht pension_ahv hier nicht mehr dabei.
+      const [funds, pillar3Rows, salaryRows, deductionRows] =
         await Promise.all([
           db.query.pensionFunds.findMany({
             where: eq(pensionFunds.userId, ctx.user.id),
           }),
           db.query.pensionPillar3.findMany({
             where: eq(pensionPillar3.userId, ctx.user.id),
-          }),
-          db.query.pensionAhv.findFirst({
-            where: eq(pensionAhv.userId, ctx.user.id),
           }),
           db.query.pensionSalaries.findMany({
             where: eq(pensionSalaries.userId, ctx.user.id),
@@ -1523,12 +1834,9 @@ export const pensionRouter = createRouter({
         retirementAge: input?.retirementAge ?? profile.retirementAge,
         funds: fundInputs,
         pillar3,
-        ahv: ahvRow
-          ? {
-              contributionYears: ahvRow.contributionYears,
-              expectedMonthlyPension: ahvRow.expectedMonthlyPension,
-            }
-          : null,
+        // Erste Säule aus der eigenen Engine (Merkblatt-Rentenformel);
+        // eine hinterlegte amtliche Vorausberechnung hat Vorrang.
+        ahv: await ahvMonthlyPensionFor(db, ctx.user.id),
         currentNet,
       });
     }),

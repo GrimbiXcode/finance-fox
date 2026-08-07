@@ -126,6 +126,17 @@ Erfassungsmaske.
   `lib/camt.ts`. Die Daten sammelt `lib/report/data.ts` über dieselben
   tRPC-Endpunkte wie die Oberfläche, damit Dokument und Bildschirm nicht
   auseinanderlaufen.
+- ✅ **AHV-Rentenberechnung statt Schätzung** — die erste Säule rechnet nach
+  der Rentenformel von Art. 34 AHVG (Merkblätter 3.01/3.03/3.04 der
+  Informationsstelle AHV/IV): massgebendes durchschnittliches Jahreseinkommen
+  aus einer Jahres-Timeline (IK-Auszug) inklusive Aufwertung, Erziehungs- und
+  Betreuungsgutschriften, Rentenskala mit Beitragslücken, flexibler
+  Rentenbezug (Vorbezug/Aufschub/Teilrente) im Variantenvergleich,
+  13. Altersrente, Hinterlassenenrenten sowie Plafonierung und
+  Einkommensteilung für Ehepaare. Die bisherige lineare Näherung
+  (`Vollrente × Beitragsjahre/44`) rechnete systematisch zu hoch — zusätzlich
+  lag ihre Konstante 20 % über der tatsächlichen Maximalrente. Die
+  Engine-Tests rechnen die publizierten Rechenbeispiele des Merkblatts nach.
 - Automatische Zuweisung von Budget-Überschüssen an Sparziele (unverbrauchtes
   Budget periodisch auf ein verknüpftes Ziel-Konto umbuchen)
 

@@ -122,6 +122,8 @@ GET /api/export/bericht.xlsx?…
 Modul in `pensionRouter.ts` (tRPC-Namespace `pension`) — **alle Daten sind
 strikt privat pro Benutzer**: jede Tabelle trägt `userId`, jeder Endpunkt
 scoped auf `ctx.user.id`, es gibt bewusst keine Haushalts-Sichtbarkeit.
+**Einzige Ausnahme** ist die Ehepartner-Verknüpfung für die Plafonierung —
+sie wirkt nur bei gegenseitigem Eintrag, siehe Abschnitt „AHV".
 Tabellen: `pension_profiles` (1:1, country Default "CH", birthDate,
 retirementAge), `pension_salaries` (Lohn-Timeline, Unique (user_id,
 valid_from) `YYYY-MM`; gültig = letzter Eintrag ≤ Monat),
@@ -175,6 +177,51 @@ Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
   Nachholmonate bereits), verzögert bei zukünftigem Stichtag.
   Der Endpunkt akzeptiert optional `retirementAge` (50–75) als Override
   für Was-wäre-wenn-Rechnungen (Default: Profil-Wert).
+- **AHV (1. Säule)** — rechnet die Rente nach der **Rentenformel von
+  Art. 34 AHVG**, wie sie Merkblatt 3.01 der Informationsstelle AHV/IV
+  beschreibt. Bis dahin schätzte die Prognose linear
+  (`Vollrente × Beitragsjahre/44`); das war fachlich falsch, weil die Rente am
+  massgebenden durchschnittlichen Jahreseinkommen (mdJE) hängt und degressiv
+  verläuft — die alte Konstante war zudem um 20 % zu hoch (CHF 3'024 statt
+  2'520 als Maximalrente).
+  - `lib/pension/ahvParameters.ts` — Kennzahlen **je Rentenfall-Jahr**
+    (Mindest-/Maximalrente, Tabellenraster, Plafonierungsgrenze, Gutschrift,
+    Aufwertungsfaktoren, Kürzungs-/Erhöhungssätze) plus `referenceAgeMonths`
+    für die Übergangsgeneration. **Beim jährlichen Update auch die
+    Aufwertungstabelle nachziehen** — sie ist aufs Jahr des
+    Versicherungsfalls bezogen und verschiebt sich jedes Jahr um eine Zeile.
+  - `lib/pension/ahvCh.ts` — reine Engine: mdJE (aufgewertete Einkommen +
+    Erziehungs-/Betreuungsgutschriften, aufgerundet aufs Raster),
+    Rentenformel, Rentenskala n/44, Vorbezug/Aufschub/Teilrente,
+    Plafonierung, Hinterlassenenrenten, 13. Altersrente. Warnungen sind
+    **strukturierte Daten** (`AhvWarning`) — Sätze baut `ahvWarningText` in
+    `src/lib/ahv.ts`.
+  - `lib/pension/ahvLoad.ts` — lädt die Eingaben und löst die
+    Ehepartner-Verknüpfung auf. Rangfolge der Rentenquelle:
+    hinterlegte **amtliche Vorausberechnung** → **Jahreszeilen** → alte
+    lineare Näherung aus `contribution_years` (nur damit Bestandsdaten nicht
+    still auf null fallen).
+  - Tabelle `pension_ahv_years`: eine Zeile je Kalenderjahr (Einkommen,
+    Status `employed|non_employed|gap|youth`, Erziehungs-/Betreuungs-
+    gutschrift `none|full|half`), Unique (user_id, year). Sie ist zugleich
+    Einkommens- **und** Lücken-Erfassung — kein zweiter Ort, an dem beides
+    auseinanderlaufen könnte.
+  - **Ehepartner-Verknüpfung** (`setPartner`, `pension_profiles.
+    partner_user_id`): Der Link wirkt **nur, wenn beide Profile aufeinander
+    zeigen**. Das ist die Zustimmung und ersetzt ein eigenes
+    Freigabe-Konzept — einseitig gesetzt bleibt er folgenlos, sonst könnte
+    sich jemand fremde Vorsorgedaten allein freischalten. Gelesen wird nur,
+    was Plafonierung und Splitting brauchen (berechnete Rente, Jahres-
+    einkommen der Ehejahre) — **nie** AHV-Nummer, Notizen oder Anhänge.
+    Setzen und Lösen landen im Audit-Log (`pension.partner.linked` /
+    `.unlinked`).
+  - Endpunkte: `listAhvYears`/`upsertAhvYear`/`deleteAhvYear`, `setPartner`,
+    `ahvDetail` (Aufschlüsselung, optionaler Was-wäre-wenn-Bezug),
+    `ahvVariants` (Vorbezug … Aufschub in einem Aufruf).
+  - Tests: `api/ahvCh.test.ts` rechnet die **Rechenbeispiele aus Merkblatt
+    3.01** nach (mdJE 36'288 → CHF 1'719; Ehepaar 1'915/1'935 → plafoniert
+    1'880/1'900) und prüft Stützstellen der publizierten Skala-44-Tabelle;
+    `api/ahv.test.ts` deckt CRUD, Isolation und die beidseitige Zustimmung ab.
 - **3a-Konto-Link**: Sync-Saldo (Logik wie `listAccounts`) minus in
   Sparzielen verplante Anteile (`availableForAccount`/`commitmentOf` aus
   `lib/goalProgress.ts`, Zielnamen über goal_sources → savings_goals) in

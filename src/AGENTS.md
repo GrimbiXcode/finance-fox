@@ -228,6 +228,16 @@ Berichts-Abschnitte unter `ff-report-sections`.
   3a mit optionaler Konto-Verknüpfung via SearchableSelect, Sync-Saldo-
   Badge und Sparziel-Warnhinweis), Verlauf (Änderungshistorie, Cent-Felder
   über `MONEY_FIELDS` mit `formatCents`, `(Bp)`-Felder als Prozent).
+  Die **AHV-Card** zeigt die berechnete Monatsrente, die Rentenskala n/44
+  und einen Lücken-Badge; `AhvYearsDialog.tsx` erfasst die Beitragsjahre als
+  Jahres-Tabelle (mit „Zeitraum füllen", weil 44 Jahre einzeln anzulegen
+  Quälerei wäre), `AhvStatement.tsx` zeigt die Rentenberechnung Schritt für
+  Schritt plus den Variantenvergleich Vorbezug/Aufschub. Ohne erfasste Jahre
+  wird **keine** Rente angezeigt — die Engine lieferte sonst die Mindestrente
+  nach Skala 1/44, eine Zahl ohne Bedeutung. Die strukturierten Warnungen
+  werden in `lib/ahv.ts` (`ahvWarningText`) zu Sätzen, Muster `warningText`.
+  Die Ehepartner-Verknüpfung zeigt den Zwischenzustand („Warten auf
+  Bestätigung") ausdrücklich an, statt stillschweigend nichts zu tun.
   Anhänge über `PensionAttachments.tsx` (Liste via `pension.listAttachments`,
   Upload per Fetch auf `/api/pension-attachments` mit `X-Filename`-Header).
   Invalidierung zentral `useInvalidatePension()` in `lib/data.ts`;

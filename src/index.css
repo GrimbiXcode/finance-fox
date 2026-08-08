@@ -69,6 +69,40 @@
   * {
     @apply border-border;
   }
+
+  /* Datums- und Zeitfelder zeichnet iOS/iPadOS sonst in der nativen
+     Systemdarstellung: eigene (grössere) Schrift, zusätzliche Innenabstände und
+     eine eigene Mindesthöhe. Dadurch werden die Felder auf iPhone und iPad
+     deutlich höher und breiter als alle anderen Eingabefelder und sprengen das
+     Formularraster. `appearance: none` nimmt diese Darstellung zurück — Höhe,
+     Schriftgrösse und Rahmen kommen dann wie bei jedem Textfeld aus den
+     Tailwind-Klassen der Input-Komponente. */
+  input[type='date'],
+  input[type='month'],
+  input[type='week'],
+  input[type='time'],
+  input[type='datetime-local'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* Die inneren Shadow-DOM-Elemente des Feldes erben auf WebKit weder
+     Schriftgrösse noch Ausrichtung und bringen eigene Ränder mit: ohne diese
+     Regeln steht der Wert auf iOS zentriert und in Systemgrösse im Feld. */
+  input::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0;
+    font-size: inherit;
+    /* Ohne feste Höhe fällt dieses Element auf iOS in sich zusammen und der
+       Wert klebt an der Oberkante des Feldes. */
+    height: 1.5em;
+  }
+
+  input::-webkit-datetime-edit,
+  input::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+    font-size: inherit;
+  }
   body {
     @apply bg-background text-foreground;
     /* Lange Wörter ohne Trennmöglichkeit (Kontonamen, IBANs, E-Mails) dürfen

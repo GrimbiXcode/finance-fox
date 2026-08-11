@@ -30,7 +30,7 @@ import { recordInsuranceChange } from "./lib/insurance/history";
 import { getInsuranceRules } from "./lib/insurance";
 import { computeNotice } from "./lib/insurance/notice";
 import { deleteInsuranceAttachmentsFor } from "./lib/attachments";
-import { localISO } from "./lib/recurringSchedule";
+import { anchorDayOf, localISO } from "./lib/recurringSchedule";
 import type { FieldValue } from "./lib/changeHistory";
 import type { GapPolicy } from "./lib/insurance/gaps";
 
@@ -1158,6 +1158,7 @@ export const insuranceRouter = createRouter({
           note: `Versicherungsprämie „${policy.name}“`,
           interval,
           nextDate,
+          anchorDay: anchorDayOf(nextDate),
           // Befristete Police → befristete Dauerbuchung
           endDate: policy.endDate,
           active: true,

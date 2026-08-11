@@ -167,6 +167,7 @@ export function ensureSchema() {
       note TEXT NOT NULL DEFAULT '',
       interval TEXT NOT NULL,
       next_date TEXT NOT NULL,
+      anchor_day INTEGER,
       end_date TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL
@@ -546,6 +547,18 @@ export function ensureSchema() {
   // Dauerbuchungen: optionales Enddatum nachrüsten (NULL = kein Ende)
   if (!recurringCols.some(col => col[1] === "end_date")) {
     db.run("ALTER TABLE recurring ADD COLUMN end_date TEXT" as never);
+  }
+  // Dauerbuchungen: Stichtag nachrüsten und aus dem laufenden Termin füllen.
+  // Mehr ist nicht rekonstruierbar — eine Buchung, die vor der Klemmung
+  // bereits auf den Monatsersten übergelaufen ist, behält diesen Tag. Die
+  // Reihe wandert danach aber nicht weiter (siehe recurringSchedule.ts).
+  if (!recurringCols.some(col => col[1] === "anchor_day")) {
+    db.run("ALTER TABLE recurring ADD COLUMN anchor_day INTEGER" as never);
+    db.run(
+      `UPDATE recurring
+         SET anchor_day = CAST(substr(next_date, 9, 2) AS INTEGER)
+       WHERE anchor_day IS NULL` as never
+    );
   }
   // Kategorien-Hierarchie: parent_id für Unterkategorien nachrüsten
   const categoryCols = raw.prepare("PRAGMA table_info(categories)").raw().all();

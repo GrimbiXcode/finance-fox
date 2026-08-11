@@ -39,6 +39,7 @@ import {
   loadAhvInput,
 } from "./lib/pension/ahvLoad";
 import { users } from "@db/schema";
+import { anchorDayOf } from "./lib/recurringSchedule";
 
 /**
  * Vorsorge-Modul (Schweizer 3-Säulen-Prinzip) — alle Daten sind strikt
@@ -1993,6 +1994,7 @@ export const pensionRouter = createRouter({
           note: "Nettolohn (Vorsorge)",
           interval: "monthly",
           nextDate,
+          anchorDay: anchorDayOf(nextDate),
           active: true,
           createdAt: new Date(),
         })

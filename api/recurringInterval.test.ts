@@ -4,7 +4,11 @@ import { appRouter } from "./router";
 import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
 import { runRecurringJob } from "./lib/recurringJob";
-import { advanceDate } from "./lib/recurringSchedule";
+import {
+  advanceDate,
+  anchorDayOf,
+  occurrencesInRange,
+} from "./lib/recurringSchedule";
 import { accounts, recurring, transactions, users } from "@db/schema";
 import { monthlyAmount } from "@/lib/moneyflow";
 import type { SessionUser, TrpcContext } from "./context";
@@ -46,11 +50,10 @@ function daysFromToday(n: number): string {
 
 /**
  * Der 15. des nächsten Monats — ein Termin, der sich über jeden Kalender
- * gleich verhält: immer in der Zukunft, immer im ersten Prognosemonat, und
- * weit genug vom Monatsende entfernt, dass `advanceDate` nicht überläuft.
- * Ein Termin am 29.–31. würde in kürzeren Monaten in den Folgemonat
- * rutschen (dokumentiert in `lib/recurringSchedule.ts`) und die Vorkommen
- * dadurch je nach heutigem Datum anders auf die Monate verteilen.
+ * gleich verhält: immer in der Zukunft, immer im ersten Prognosemonat und
+ * in jedem Monat vorhanden. Ein Termin am 29.–31. würde in kürzeren Monaten
+ * geklemmt; dieser Test soll die Intervall-Rechnung prüfen, nicht die
+ * Monatsenden (die stehen oben bei `advanceDate`).
  */
 function fifteenthOfNextMonth(): string {
   const d = new Date();
@@ -99,6 +102,57 @@ describe("advanceDate", () => {
     expect(advanceDate("2026-01-15", "monthly")).toBe("2026-02-15");
     expect(advanceDate("2026-01-15", "yearly")).toBe("2027-01-15");
   });
+
+  it("klemmt auf den Monatsletzten statt überzulaufen", () => {
+    // Früher: setMonth ließ den 31. still in den Folgemonat rutschen
+    // (31.08. + 3 Monate = 01.12.) — und blieb dort für immer.
+    expect(advanceDate("2026-08-31", "quarterly")).toBe("2026-11-30");
+    expect(advanceDate("2026-01-31", "monthly")).toBe("2026-02-28");
+    expect(advanceDate("2024-01-31", "monthly")).toBe("2024-02-29"); // Schaltjahr
+    expect(advanceDate("2024-02-29", "yearly")).toBe("2025-02-28");
+  });
+
+  it("findet mit Stichtag auf den ursprünglichen Tag zurück", () => {
+    // Der Stichtag (31.) überlebt den kurzen Monat: Die Klemmung gilt nur
+    // für den Monat, der den Tag nicht hat.
+    expect(advanceDate("2026-11-30", "quarterly", 31)).toBe("2027-02-28");
+    expect(advanceDate("2027-02-28", "quarterly", 31)).toBe("2027-05-31");
+    expect(advanceDate("2026-02-28", "monthly", 31)).toBe("2026-03-31");
+  });
+
+  it("wandert ohne Stichtag auf den kürzesten Monat zu", () => {
+    // Bestandszeilen ohne anchor_day: Der Tag kommt aus dem Termin selbst.
+    // Sauber geklemmt, aber ohne Rückkehr — dokumentiertes Verhalten.
+    expect(advanceDate("2026-01-31", "monthly")).toBe("2026-02-28");
+    expect(advanceDate("2026-02-28", "monthly")).toBe("2026-03-28");
+  });
+
+  it("ignoriert unplausible Stichtage aus der Datenbank", () => {
+    expect(advanceDate("2026-01-15", "monthly", 99)).toBe("2026-02-28");
+    expect(advanceDate("2026-01-15", "monthly", 0)).toBe("2026-02-01");
+  });
+});
+
+describe("occurrencesInRange mit Stichtag", () => {
+  it("hält eine Buchung am Monatsende über ein Jahr auf dem 31.", () => {
+    const dates = occurrencesInRange(
+      {
+        interval: "quarterly",
+        nextDate: "2026-08-31",
+        endDate: null,
+        anchorDay: 31,
+      },
+      "2026-08-01",
+      "2027-09-30"
+    );
+    expect(dates).toEqual([
+      "2026-08-31",
+      "2026-11-30", // November hat keinen 31. — geklemmt
+      "2027-02-28",
+      "2027-05-31", // Stichtag ist zurück
+      "2027-08-31",
+    ]);
+  });
 });
 
 describe("Cron-Verbuchung", () => {
@@ -123,15 +177,14 @@ describe("Cron-Verbuchung", () => {
       .select({ date: transactions.date })
       .from(transactions)
       .where(eq(transactions.accountId, accountId));
-    expect(booked.map(b => b.date).sort()).toEqual([
-      start,
-      advanceDate(start, "quarterly"),
-      advanceDate(advanceDate(start, "quarterly"), "quarterly"),
-      advanceDate(
-        advanceDate(advanceDate(start, "quarterly"), "quarterly"),
-        "quarterly"
-      ),
-    ]);
+    // Erwartung mit demselben Stichtag rechnen wie der Job — sonst laufen
+    // Test und Verbuchung auseinander, sobald `start` auf den 29.–31. fällt.
+    const anchor = anchorDayOf(start);
+    const expected = [start];
+    for (let i = 0; i < 3; i += 1) {
+      expected.push(advanceDate(expected[i], "quarterly", anchor));
+    }
+    expect(booked.map(b => b.date).sort()).toEqual(expected);
 
     // nextDate steht auf dem ersten Vorkommen in der Zukunft
     const row = await getDb().query.recurring.findFirst({

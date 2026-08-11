@@ -95,6 +95,8 @@ export interface ForecastRule {
   interval: RecurringInterval;
   nextDate: string;
   endDate: string | null;
+  /** Stichtag im Monat; NULL = Tag aus nextDate (siehe recurringSchedule.ts) */
+  anchorDay?: number | null;
   active: boolean;
 }
 

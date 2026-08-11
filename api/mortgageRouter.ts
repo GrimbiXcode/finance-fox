@@ -19,6 +19,7 @@ import { recordMortgageChange } from "./lib/mortgage/history";
 import { getMortgageCalculator } from "./lib/mortgage";
 import type { FieldValue } from "./lib/changeHistory";
 import type { PaymentInterval } from "./lib/mortgage/scheduleCh";
+import { anchorDayOf } from "./lib/recurringSchedule";
 
 /**
  * Hypotheken-Modul (Schweizer Modell) — anders als die Vorsorge
@@ -1058,6 +1059,7 @@ export const mortgageRouter = createRouter({
           note: `Hypothekarzins „${tranche.name}“`,
           interval,
           nextDate,
+          anchorDay: anchorDayOf(nextDate),
           endDate: null,
           active: true,
           createdAt: new Date(),
@@ -1146,6 +1148,7 @@ export const mortgageRouter = createRouter({
           note,
           interval,
           nextDate,
+          anchorDay: anchorDayOf(nextDate),
           endDate: row.endDate,
           active: true,
           createdAt: new Date(),

@@ -52,3 +52,9 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
   drizzle-kit es auflöst) wirkt rein typseitig. Ein neues Intervall braucht
   daher keine Migration, wohl aber einen Zweig in `advanceDate`
   (`api/lib/recurringSchedule.ts`).
+- `recurring.anchor_day` ist der **Stichtag** (Tag im Monat, 1–31): Er trägt
+  den Termin über kürzere Monate hinweg, damit eine Buchung am 31. nach dem
+  November wieder auf dem 31. landet. NULL heißt „Tag aus `next_date`" und
+  kommt nur in Zeilen vor, die die guardierte Migration nicht erreicht hat —
+  diese füllt beim Nachrüsten aus `next_date`. Fachlogik: `api/AGENTS.md`
+  Abschnitt „Dauerbuchungen".

@@ -45,6 +45,7 @@ import {
 } from "@contracts/types";
 import type { ShareWeight } from "@contracts/splitShares";
 import { runRecurringJob } from "./lib/recurringJob";
+import { anchorDayOf } from "./lib/recurringSchedule";
 import {
   CSV_HEADER,
   TYPE_LABELS,
@@ -2300,6 +2301,9 @@ export const financeRouter = createRouter({
       }
       await db.insert(recurring).values({
         ...input,
+        // Stichtag aus dem gewählten Termin: Er trägt die Buchung über
+        // kürzere Monate hinweg (siehe lib/recurringSchedule.ts).
+        anchorDay: anchorDayOf(input.nextDate),
         // Kategorie ist bei Umbuchungen irrelevant
         categoryId: input.type === "transfer" ? undefined : input.categoryId,
         toAccountId: input.type === "transfer" ? input.toAccountId : undefined,
@@ -2397,6 +2401,13 @@ export const financeRouter = createRouter({
           interval: input.interval ?? row.interval,
           // Der Cron-Job verbucht ab dem neuen Termin (nächste Fälligkeit)
           nextDate,
+          // Nur ein selbst gewählter Termin setzt den Stichtag neu. Sonst
+          // bliebe er am zuletzt gerechneten Tag hängen — und eine auf den
+          // 30.11. geklemmte Buchung verlöre ihren 31. bei jedem Speichern.
+          anchorDay:
+            input.nextDate === undefined
+              ? row.anchorDay
+              : anchorDayOf(input.nextDate),
           // null entfernt das Enddatum; ein späteres Enddatum „reaktiviert"
           // eine abgelaufene Dauerbuchung wieder
           endDate,

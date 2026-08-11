@@ -44,6 +44,28 @@ beforeAll(async () => {
        (user_id, name, mode, value, active, created_at)
      VALUES (1, 'AHV', 'percent', 530, 1, 0)` as never
   );
+  // Dauerbuchungen aus der Zeit vor dem Stichtag (recurring.anchor_day)
+  db.run(
+    `CREATE TABLE recurring (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      account_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      interval TEXT NOT NULL,
+      next_date TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    )` as never
+  );
+  db.run(
+    `INSERT INTO recurring
+       (type, account_id, amount, user_id, note, interval, next_date,
+        active, created_at)
+     VALUES ('expense', 1, 200000, 1, 'Miete', 'monthly', '2026-03-31', 1, 0),
+            ('expense', 1, 50000, 1, 'Abo', 'monthly', '2026-03-05', 1, 0)` as never
+  );
 });
 
 describe("ensureSchema auf Bestands-Datenbanken", () => {
@@ -74,6 +96,18 @@ describe("ensureSchema auf Bestands-Datenbanken", () => {
       "SELECT name, salary_id FROM pension_deductions ORDER BY id"
     );
     expect(rows).toEqual([["AHV", null]]);
+  });
+
+  it("füllt recurring.anchor_day aus dem laufenden Termin", () => {
+    const cols = rawAll("PRAGMA table_info(recurring)").map(c => c[1]);
+    expect(cols).toContain("anchor_day");
+    // Der Stichtag ist der Tag des bestehenden Termins — mehr ist aus einer
+    // Bestandszeile nicht rekonstruierbar.
+    const rows = rawAll("SELECT note, anchor_day FROM recurring ORDER BY id");
+    expect(rows).toEqual([
+      ["Miete", 31],
+      ["Abo", 5],
+    ]);
   });
 
   it("legt die Hypotheken-Tabellen samt Indizes an", () => {

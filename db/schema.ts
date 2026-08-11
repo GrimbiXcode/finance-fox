@@ -276,6 +276,11 @@ export const recurring = sqliteTable("recurring", {
     enum: RECURRING_INTERVALS,
   }).notNull(),
   nextDate: text("next_date").notNull(), // YYYY-MM-DD
+  // Stichtag: Tag im Monat, an dem die Buchung gemeint ist (1–31). Trägt den
+  // Termin über kürzere Monate hinweg — der 31. wird im November auf den 30.
+  // geklemmt und im Dezember wieder zum 31. NULL = Tag aus next_date
+  // (Bestandszeilen von vor der Spalte), siehe lib/recurringSchedule.ts.
+  anchorDay: integer("anchor_day"),
   // Optionales Enddatum (YYYY-MM-DD): letztes verbuchtes Vorkommen; NULL =
   // kein Ende. Abgelaufen (endDate < heute) = „archiviert" in der UI.
   endDate: text("end_date"),

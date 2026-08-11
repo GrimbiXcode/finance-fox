@@ -328,8 +328,9 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   aufs Folgejahr und `currentPeriodMissed` liefert das Signal für den
   ehrlichen UI-Satz. Die Datumsarithmetik rechnet auf y/m/d **mit Klemmung**
   (`subMonths("2026-12-31", 3) === "2026-09-30"`, `addYears("2024-02-29", 1)
-  === "2025-02-28"`) — der bei `advanceDate` dokumentiert akzeptierte
-  Überlauf von `Date.setMonth` würde hier einen ganzen Vertragszyklus kosten.
+  === "2025-02-28"`) — der stille Überlauf von `Date.setMonth` würde hier
+  einen ganzen Vertragszyklus kosten. `advanceDate` rechnet inzwischen
+  nach demselben Muster (siehe „Dauerbuchungen").
 - **Lückenanalyse**: `lib/insurance/gaps.ts::analyzeGaps` hinter der Factory
   `getInsuranceRules(country)`. Zentrale Definition ist `covers()`: Eine
   **gekündigte, aber noch laufende** Police deckt weiterhin (sonst schlägt
@@ -493,6 +494,19 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   endlos weiter) und sich einen Zähler mit dem Vorspulen teilten (lange
   Horizonte wurden still gekappt). Neue Prognosen gehen deshalb über
   `lib/forecastEngine.ts`, nie über eine eigene Schleife.
+- **Monatsende und Stichtag**: Die Monatsschritte rechnen auf y/m/d **mit
+  Klemmung** (wie `lib/insurance/notice.ts`), nicht über `Date.setMonth`.
+  Dessen stiller Überlauf machte aus dem 31.08. vierteljährlich den 01.12.
+  statt des 30.11. — und weil der übergelaufene Termin zum Ausgangspunkt des
+  nächsten Schritts wurde, blieb die Buchung dauerhaft auf dem Monatsersten.
+  Damit die Reihe nach einem kurzen Monat auf ihren Tag zurückfindet
+  (31.08. → 30.11. → 28.02. → 31.05.), zählt `recurring.anchor_day` und
+  nicht der Tag des zuletzt gerechneten Termins. Der Stichtag wird beim
+  Anlegen aus dem gewählten Termin abgeleitet (`anchorDayOf`) und beim
+  Bearbeiten **nur** dann neu gesetzt, wenn der Termin selbst geändert wird
+  — sonst verlöre eine geklemmte Buchung ihren 31. bei jedem Speichern.
+  Zeilen ohne Stichtag (NULL, aus der Zeit vor der Spalte) klemmen sauber,
+  wandern aber wie bisher auf den kürzesten Monat zu.
 - **Umbuchungen**: `recurring.type` kann auch `transfer` sein (Dauerauftrag
   zwischen Konten) — dann ist `recurring.to_account_id` gesetzt (Pflicht, ≠
   `account_id`, Kategorie irrelevant). Rechte wie bei Buchungen: `edit` aufs

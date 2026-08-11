@@ -26,7 +26,7 @@ export async function runRecurringJob(): Promise<number> {
     // Enddatum: nur Vorkommen bis einschließlich endDate werden verbucht.
     const due = occurrencesInRange(r, r.nextDate, today, 500);
     if (due.length === 0) continue;
-    const next = advanceDate(due[due.length - 1], r.interval);
+    const next = advanceDate(due[due.length - 1], r.interval, r.anchorDay);
 
     // better-sqlite3 ist synchron: Transaktions-Callback darf kein Promise zurückgeben
     db.transaction((tx) => {

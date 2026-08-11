@@ -44,6 +44,19 @@ function daysFromToday(n: number): string {
   return localISO(d);
 }
 
+/**
+ * Der 15. des nächsten Monats — ein Termin, der sich über jeden Kalender
+ * gleich verhält: immer in der Zukunft, immer im ersten Prognosemonat, und
+ * weit genug vom Monatsende entfernt, dass `advanceDate` nicht überläuft.
+ * Ein Termin am 29.–31. würde in kürzeren Monaten in den Folgemonat
+ * rutschen (dokumentiert in `lib/recurringSchedule.ts`) und die Vorkommen
+ * dadurch je nach heutigem Datum anders auf die Monate verteilen.
+ */
+function fifteenthOfNextMonth(): string {
+  const d = new Date();
+  return localISO(new Date(d.getFullYear(), d.getMonth() + 1, 15));
+}
+
 let nameCounter = 0;
 
 async function insertAccount(): Promise<number> {
@@ -131,6 +144,11 @@ describe("Cron-Verbuchung", () => {
 describe("Saldo-Prognose", () => {
   it("zählt eine vierteljährliche Ausgabe in 12 Monaten viermal", async () => {
     const accountId = await insertAccount();
+    // Die Prognose summiert über alle Konten — also gegen einen vorher
+    // gemessenen Nullpunkt vergleichen statt gegen absolute Beträge.
+    // Sonst zählt dieser Test die Dauerbuchungen der anderen Tests mit.
+    const before = await callerFor(admin).forecast.balance({ months: 12 });
+
     await callerFor(admin).finance.createRecurring({
       type: "expense",
       accountId,
@@ -138,12 +156,13 @@ describe("Saldo-Prognose", () => {
       userId: admin.id,
       note: "Quartalszins Prognose",
       interval: "quarterly",
-      nextDate: daysFromToday(20),
+      nextDate: fifteenthOfNextMonth(),
     });
 
-    const before = await callerFor(admin).forecast.balance({ months: 12 });
-    const quarterMonths = before.projection.filter(
-      p => p.recurringExpense >= 300000
+    const after = await callerFor(admin).forecast.balance({ months: 12 });
+    const quarterMonths = after.projection.filter(
+      (p, i) =>
+        p.recurringExpense - before.projection[i].recurringExpense === 300000
     );
     expect(quarterMonths).toHaveLength(4);
   });

@@ -52,6 +52,7 @@ import { Switch } from "@/components/ui/switch";
 import { CURRENCIES, type CurrencyCode } from "@contracts/types";
 import { useAuth } from "@/providers/auth";
 import { useFinanceData, useInvalidateFinance } from "@/lib/data";
+import { filenameFromResponse, saveBlobAsFile } from "@/lib/download";
 import { setAppCurrency, getUserLocale } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/providers/trpc";
@@ -536,15 +537,7 @@ export default function Settings() {
         );
       }
       const blob = await res.blob();
-      const match = /filename="?([^";]+)"?/.exec(
-        res.headers.get("Content-Disposition") ?? ""
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = match?.[1] ?? "finance-fox-backup.db";
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlobAsFile(blob, filenameFromResponse(res, "finance-fox-backup.db"));
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Backup fehlgeschlagen."

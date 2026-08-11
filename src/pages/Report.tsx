@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { trpc } from '@/providers/trpc';
+import { filenameFromResponse, saveBlobAsFile } from '@/lib/download';
 import { getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
@@ -98,13 +99,7 @@ export default function Report() {
         throw new Error(data?.error ?? `Export fehlgeschlagen (Status ${res.status}).`);
       }
       const blob = await res.blob();
-      const match = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = match?.[1] ?? `finance-fox-bericht.${format}`;
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlobAsFile(blob, filenameFromResponse(res, `finance-fox-bericht.${format}`));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export fehlgeschlagen.');
     } finally {

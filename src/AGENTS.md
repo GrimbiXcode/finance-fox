@@ -31,7 +31,9 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   `AppRouter` aus `api/router.ts`), `auth.tsx`.
 - `lib/` — `finance.ts` (Berechnungen, Cent-Helfer, Locale), `data.ts`,
   `utils.ts` (cn), `moneyflow.ts`, `recurring.ts`, `insurance.ts`
-  (`buildComparison` — Zeilen der Policen-Vergleichstabelle).
+  (`buildComparison` — Zeilen der Policen-Vergleichstabelle),
+  `download.ts` (`saveBlobAsFile`/`filenameFromResponse` — **jeder**
+  Dateidownload läuft darüber, siehe „Downloads").
 
 ## Navigation (Layout.tsx)
 
@@ -113,6 +115,17 @@ Dauerbuchung in `pages/Recurring.tsx`, CategoryEditDialog in
 `sm:max-w-lg`). Zusammengehörige Felder stehen zweispaltig per `grid gap-4
 sm:grid-cols-2` (mobil einspaltig gestapelt); lange Bereiche (Splits, Tags,
 Freigaben, Kontoabgleich, Gefahrenzone) bleiben vollbreit.
+
+## Downloads
+
+Alle Dateidownloads (Bericht als PDF/Excel, Datenbank-Backup, CSV-Export)
+laufen über `lib/download.ts` — nie von Hand einen Anker bauen. Der Helfer
+hängt den Anker ins Dokument und gibt die Objekt-URL erst verzögert frei;
+ein `URL.revokeObjectURL` direkt nach dem Klick lässt den Download in
+Chromium-Browsern (Chrome, Arc, Edge) bei vollständig geladener Datei
+hängen, ohne dass er je abschliesst. Den Dateinamen liefert
+`filenameFromResponse(res, fallback)` aus dem `Content-Disposition`-Header
+der Antwort.
 
 ## UI-State in localStorage
 

@@ -20,6 +20,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
+import { saveBlobAsFile } from '@/lib/download';
 import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import TransactionAttachmentsDialog from '@/components/TransactionAttachmentsDialog';
@@ -71,12 +72,7 @@ export default function Transactions() {
       const csv = await utils.finance.exportTransactionsCsv.fetch({ locale: getUserLocale() });
       // BOM, damit Excel die UTF-8-Umlaute korrekt erkennt
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `transaktionen-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlobAsFile(blob, `transaktionen-${new Date().toISOString().slice(0, 10)}.csv`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'CSV-Export fehlgeschlagen.');
     } finally {

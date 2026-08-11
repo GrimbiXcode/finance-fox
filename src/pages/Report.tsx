@@ -10,7 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { trpc } from '@/providers/trpc';
-import { filenameFromResponse, saveBlobAsFile } from '@/lib/download';
+import {
+  filenameFromResponse,
+  insecureDownloadHint,
+  saveBlobAsFile,
+} from '@/lib/download';
 import { getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
@@ -99,7 +103,12 @@ export default function Report() {
         throw new Error(data?.error ?? `Export fehlgeschlagen (Status ${res.status}).`);
       }
       const blob = await res.blob();
-      saveBlobAsFile(blob, filenameFromResponse(res, `finance-fox-bericht.${format}`));
+      const filename = filenameFromResponse(res, `finance-fox-bericht.${format}`);
+      saveBlobAsFile(blob, filename);
+      // Über HTTP sperrt Chromium genau diese Dateitypen — dann hängt der
+      // Download stumm, statt fehlzuschlagen. Ursache benennen.
+      const hint = insecureDownloadHint(filename);
+      if (hint) toast.warning(hint.title, { description: hint.description, duration: 15000 });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export fehlgeschlagen.');
     } finally {

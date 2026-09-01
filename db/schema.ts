@@ -3,6 +3,7 @@ import {
   text,
   integer,
   index,
+  primaryKey,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 // Bewusst relativ statt über @contracts/* — drizzle-kit liest diese Datei
@@ -952,4 +953,96 @@ export const auditLog = sqliteTable(
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
+});
+
+/* ------------------------- Abgleich (Offline-Betrieb) --------------------- */
+
+/**
+ * Schalter für die Änderungs-Trigger (immer genau eine Zeile mit id = 1).
+ * Wird kurzzeitig auf 1 gesetzt, während vom Server geholte Zeilen eingespielt
+ * werden — sonst gälten sie als lokale Änderung und liefen zurück.
+ * Erzeugt werden die Trigger in `api/lib/sync/triggers.ts`.
+ */
+export const syncGuard = sqliteTable("sync_guard", {
+  id: integer("id").primaryKey(),
+  suspended: integer("suspended", { mode: "boolean" }).notNull().default(false),
+});
+
+/**
+ * Änderungsprotokoll, von SQLite-Triggern gefüllt.
+ * Auf dem Server der fortlaufende Feed, aus dem `sync.pull` das Delta
+ * schneidet; in der lokalen Replik die Liste der noch nicht übertragenen
+ * Änderungen, die `sync.push` abarbeitet und danach löscht.
+ */
+export const syncLog = sqliteTable(
+  "sync_log",
+  {
+    seq: integer("seq").primaryKey({ autoIncrement: true }),
+    entity: text("entity").notNull(),
+    /** Primärschlüssel als Text — `app_settings` hat einen TEXT-Schlüssel */
+    rowId: text("row_id").notNull(),
+    op: text("op", { enum: ["insert", "update", "delete"] }).notNull(),
+    changedAt: integer("changed_at").notNull(),
+  },
+  t => [index("sync_log_row_idx").on(t.entity, t.rowId)]
+);
+
+/** Nur serverseitig: bekannte Geräte mit ID-Block und quittiertem Stand */
+export const syncDevices = sqliteTable("sync_devices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  deviceId: text("device_id").notNull().unique(),
+  userId: integer("user_id").notNull(),
+  /** Erste ID des Zahlenraums, in dem dieses Gerät IDs vergibt */
+  idBlockStart: integer("id_block_start").notNull(),
+  ackedSeq: integer("acked_seq").notNull().default(0),
+  /** Fingerabdruck der zuletzt sichtbaren Kontenmenge */
+  visibility: text("visibility").notNull().default(""),
+  /** Epoche der Serverdatenbank — ändert sich nach einem Restore */
+  epoch: text("epoch").notNull().default(""),
+  lastSeenAt: integer("last_seen_at").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+/** Nur in der Replik: zuletzt bekannter Serverstand je Zeile (Merge-Basis) */
+export const syncBase = sqliteTable(
+  "sync_base",
+  {
+    entity: text("entity").notNull(),
+    rowId: text("row_id").notNull(),
+    /** JSON der Zeile; NULL = auf dem Server nicht vorhanden */
+    payload: text("payload"),
+  },
+  t => [primaryKey({ columns: [t.entity, t.rowId] })]
+);
+
+/** Nur in der Replik: offene Konflikte, die der Benutzer entscheiden muss */
+export const syncConflicts = sqliteTable(
+  "sync_conflicts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    entity: text("entity").notNull(),
+    rowId: text("row_id").notNull(),
+    kind: text("kind", {
+      enum: ["fields", "deleted-remote", "deleted-local", "forbidden"],
+    }).notNull(),
+    base: text("base"),
+    mine: text("mine"),
+    theirs: text("theirs"),
+    /** JSON-Array der betroffenen Spalten */
+    fields: text("fields").notNull().default("[]"),
+    detail: text("detail").notNull().default(""),
+    detectedAt: integer("detected_at").notNull(),
+  },
+  t => [uniqueIndex("sync_conflicts_row_idx").on(t.entity, t.rowId)]
+);
+
+/** Nur in der Replik: Protokoll der automatisch zusammengeführten Datensätze */
+export const syncMerges = sqliteTable("sync_merges", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  entity: text("entity").notNull(),
+  rowId: text("row_id").notNull(),
+  /** JSON-Arrays der Spalten, die von hier bzw. vom Server übernommen wurden */
+  mineFields: text("mine_fields").notNull(),
+  theirFields: text("their_fields").notNull(),
+  mergedAt: integer("merged_at").notNull(),
 });

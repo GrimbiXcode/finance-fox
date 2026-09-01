@@ -1,4 +1,5 @@
 import { getDb, markDirty } from "../queries/connection";
+import { syncTriggerStatements } from "./sync/triggers";
 
 /** Minimal-Typ für den better-sqlite3-kompatiblen Proxy hinter db.$client */
 type RawClient = {
@@ -485,6 +486,76 @@ export function ensureSchema() {
       note TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL
     )`,
+
+    /* ── Abgleich zwischen Heimserver und lokalen Repliken ───────────────
+       Details zur Rollenverteilung: api/lib/sync/triggers.ts */
+
+    // Schalter, mit dem sich die Änderungs-Trigger vorübergehend abschalten
+    // lassen — nötig, während vom Server geholte Zeilen eingespielt werden.
+    `CREATE TABLE IF NOT EXISTS sync_guard (
+      id INTEGER PRIMARY KEY,
+      suspended INTEGER NOT NULL DEFAULT 0
+    )`,
+    `INSERT OR IGNORE INTO sync_guard (id, suspended) VALUES (1, 0)`,
+
+    // Änderungsprotokoll. Server: fortlaufender Feed für pull.
+    // Replik: Liste der noch nicht übertragenen lokalen Änderungen.
+    `CREATE TABLE IF NOT EXISTS sync_log (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      op TEXT NOT NULL,
+      changed_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS sync_log_row_idx ON sync_log (entity, row_id)`,
+
+    // Nur serverseitig benutzt: bekannte Geräte mit ihrem ID-Block und dem
+    // zuletzt quittierten Stand.
+    `CREATE TABLE IF NOT EXISTS sync_devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id TEXT NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL,
+      id_block_start INTEGER NOT NULL,
+      acked_seq INTEGER NOT NULL DEFAULT 0,
+      visibility TEXT NOT NULL DEFAULT '',
+      epoch TEXT NOT NULL DEFAULT '',
+      last_seen_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+
+    // Nur in der Replik benutzt: der zuletzt bekannte Serverstand je Zeile.
+    // Basis des Drei-Wege-Vergleichs beim Push.
+    `CREATE TABLE IF NOT EXISTS sync_base (
+      entity TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      payload TEXT,
+      PRIMARY KEY (entity, row_id)
+    )`,
+
+    // Nur in der Replik: offene Konflikte und das Protokoll der automatisch
+    // zusammengeführten Datensätze.
+    `CREATE TABLE IF NOT EXISTS sync_conflicts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      base TEXT,
+      mine TEXT,
+      theirs TEXT,
+      fields TEXT NOT NULL DEFAULT '[]',
+      detail TEXT NOT NULL DEFAULT '',
+      detected_at INTEGER NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS sync_conflicts_row_idx
+       ON sync_conflicts (entity, row_id)`,
+    `CREATE TABLE IF NOT EXISTS sync_merges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      mine_fields TEXT NOT NULL,
+      their_fields TEXT NOT NULL,
+      merged_at INTEGER NOT NULL
+    )`,
   ];
   for (const sql of stmts) {
     db.run(sql as never);
@@ -723,6 +794,14 @@ export function ensureSchema() {
       `INSERT OR IGNORE INTO account_types (key, name, builtin)
        VALUES ('${key}', '${name}', 1)` as never
     );
+  }
+
+  // Änderungs-Trigger zuletzt: Ein Tabellen-Rebuild weiter oben (siehe
+  // savings_goals) verwirft die Trigger seiner Tabelle, und ein Trigger auf
+  // einer erst per ALTER TABLE ergänzten Spalte ließe sich vorher nicht
+  // anlegen. DROP + CREATE macht den Schritt idempotent.
+  for (const sql of syncTriggerStatements()) {
+    db.run(sql as never);
   }
 
   markDirty();

@@ -17,6 +17,7 @@ import {
   replaceDatabase,
 } from "./queries/connection";
 import {
+  appSettings,
   insuranceAttachments,
   insurancePolicies,
   pensionAhv,
@@ -29,6 +30,7 @@ import {
 import { requireAccountAccess, type AccessLevel } from "./lib/accountAccess";
 import { buildSessionCookie } from "./lib/session";
 import { REPORT_MONTHS, parseReportSections } from "@contracts/report";
+import { TRPC_LIVE_PATH } from "@contracts/offline";
 import { collectReport } from "./lib/report/data";
 import { renderReportPdf } from "./lib/report/pdf";
 import { renderReportXlsx } from "./lib/report/xlsx";
@@ -45,12 +47,14 @@ import {
   deleteAttachment,
   deleteInsuranceAttachment,
   deletePensionAttachment,
-  initAttachmentsDir,
-  readAttachmentFile,
   saveAttachment,
   saveInsuranceAttachment,
   savePensionAttachment,
 } from "./lib/attachments";
+import {
+  initAttachmentsDir,
+  readAttachmentFile,
+} from "./lib/attachmentStore";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
@@ -92,6 +96,17 @@ app.post("/api/backup/restore", async c => {
   }
   replaceDatabase(bytes);
   ensureSchema();
+  // Nach einem Restore stimmen die Änderungsstände aller Geräte nicht mehr:
+  // Die wiederhergestellte Datei bringt ihr eigenes Protokoll mit. Eine neue
+  // Epoche zwingt jedes Gerät beim nächsten Abgleich zu einem vollständigen
+  // Neuaufbau, statt Deltas gegen eine fremde Zeitlinie zu rechnen.
+  await getDb()
+    .insert(appSettings)
+    .values({ key: "sync_epoch", value: crypto.randomUUID() })
+    .onConflictDoUpdate({
+      target: appSettings.key,
+      set: { value: crypto.randomUUID() },
+    });
   return c.json({ ok: true });
 });
 
@@ -546,6 +561,26 @@ app.delete("/api/insurance-attachments/:id", async c => {
   await deleteInsuranceAttachment(getDb(), id);
   return c.json({ ok: true });
 });
+
+/**
+ * Derselbe Router unter zwei Pfaden.
+ *
+ * `/api/trpc/live` ist die Leitung, die **immer** ans Netz geht: Anmeldung,
+ * Verwaltung und der Abgleich selbst (`ONLINE_ONLY_PROCEDURES` in
+ * `contracts/offline.ts`). `/api/trpc` beantwortet auf Geräten mit
+ * Offline-Betrieb der Service Worker aus der lokalen Replik — der Server
+ * bedient ihn weiterhin für alle anderen Fälle unverändert.
+ *
+ * Reihenfolge beachten: Der spezifischere Pfad muss zuerst stehen.
+ */
+app.use(`${TRPC_LIVE_PATH}/*`, async c =>
+  fetchRequestHandler({
+    endpoint: TRPC_LIVE_PATH,
+    req: c.req.raw,
+    router: appRouter,
+    createContext,
+  })
+);
 
 app.use("/api/trpc/*", async c => {
   return fetchRequestHandler({

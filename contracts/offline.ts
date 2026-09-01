@@ -131,3 +131,51 @@ export type SyncStatus = {
   /** Letzter Fehler in Klartext (deutsch), sonst null */
   error: string | null;
 };
+
+/* ────────────────────────── Abgleich: Datenformen ────────────────────────── */
+
+/** Eine Datenbankzeile, wie SQLite sie liefert: Spaltenname → Wert */
+export type SyncRowPayload = Record<string, unknown>;
+
+export type SyncOp = "insert" | "update" | "delete";
+
+/** Eine lokale Änderung auf dem Weg zum Server */
+export type SyncChange = {
+  entity: string;
+  rowId: string;
+  op: SyncOp;
+  /** Der lokale Stand; null beim Löschen */
+  row: SyncRowPayload | null;
+  /** Der Stand, den das Gerät beim letzten Abgleich vom Server bekam */
+  base: SyncRowPayload | null;
+};
+
+/** Art eines Konflikts, wie ihn die Oberfläche erklärt */
+export type SyncConflictKind =
+  "fields" | "deleted-remote" | "deleted-local" | "forbidden";
+
+export type SyncConflict = {
+  entity: string;
+  rowId: string;
+  kind: SyncConflictKind;
+  /** Betroffene Spalten (nur bei `fields`) */
+  fields: string[];
+  base: SyncRowPayload | null;
+  mine: SyncRowPayload | null;
+  theirs: SyncRowPayload | null;
+  /** Klartext-Begründung, heute nur bei `forbidden` gefüllt */
+  detail: string;
+};
+
+/** Was aus einer einzelnen gepushten Änderung geworden ist */
+export type SyncPushOutcome = {
+  entity: string;
+  rowId: string;
+  status: "applied" | "merged" | "conflict" | "skipped";
+  /** Der Stand, der jetzt auf dem Server steht (bei „merged" der Mischstand) */
+  row?: SyncRowPayload | null;
+  /** Automatisch zusammengeführte Felder — für das Merge-Protokoll */
+  mergedMine?: string[];
+  mergedTheirs?: string[];
+  conflict?: SyncConflict;
+};

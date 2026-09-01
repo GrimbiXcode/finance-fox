@@ -133,23 +133,35 @@ function procedurePaths(url: URL): string[] {
 
 /**
  * Rolle und Name kommen aus der Replik, nicht aus der gespeicherten Kopie:
- * Wird jemand im Heimnetz zum Administrator gemacht, gilt das nach dem
- * nächsten Abgleich auch offline.
+ * Wird jemand im Heimnetz zum Administrator gemacht — oder deaktiviert —,
+ * gilt das nach dem nächsten Abgleich auch offline.
+ *
+ * `undefined` heißt: kein angemeldeter Benutzer. Der Router antwortet dann
+ * wie auf dem Server mit „Nicht angemeldet", und `auth.me` liefert null —
+ * die App führt zur Anmeldung.
  */
-async function resolveUser(identity: SessionUser): Promise<SessionUser> {
+async function resolveUser(
+  identity: SessionUser
+): Promise<SessionUser | undefined> {
+  let row;
   try {
-    const row = await getDb().query.users.findFirst({
+    row = await getDb().query.users.findFirst({
       where: eq(users.id, identity.id),
     });
-    if (!row || !row.active) return identity;
-    return {
-      id: row.id,
-      email: row.email,
-      name: row.name,
-      role: row.role,
-      color: row.color,
-    };
   } catch {
+    // Replik (noch) nicht lesbar — mit der gespeicherten Identität weiter.
     return identity;
   }
+  // Die Zeile ist da und sagt „deaktiviert": Dann gilt das auch hier. Auf die
+  // zwischengespeicherte Identität zurückzufallen hieße, dass ein entzogener
+  // Zugang offline weiterläuft — womöglich noch mit der alten Rolle.
+  if (row && !row.active) return undefined;
+  if (!row) return identity;
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    color: row.color,
+  };
 }

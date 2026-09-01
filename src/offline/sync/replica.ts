@@ -74,14 +74,28 @@ export function readRow(entity: string, rowId: string): SyncRow | null {
 
 /* ────────────────────────── Lokale Änderungen ────────────────────────────── */
 
-export type LocalMark = { entity: string; rowId: string; seq: number };
+export type LocalMark = {
+  entity: string;
+  rowId: string;
+  /** Jüngster Vermerk — Obergrenze beim Aufräumen */
+  seq: number;
+  /** Erster Vermerk — bestimmt die Reihenfolge beim Senden */
+  firstSeq: number;
+};
 
-/** Noch nicht übertragene lokale Änderungen, je Zeile der jüngste Vermerk */
+/**
+ * Noch nicht übertragene lokale Änderungen, je Zeile ein Eintrag.
+ *
+ * Sortiert nach der **ersten** Änderung, nicht der letzten: Wer offline ein
+ * Konto anlegt, darauf bucht und das Konto danach umbenennt, muss das Konto
+ * trotzdem vor der Buchung schicken — sonst prüft der Server das Recht der
+ * Buchung gegen ein Konto, das er noch nicht kennt.
+ */
 export function pendingMarks(): LocalMark[] {
   return raw()
     .prepare(
-      `SELECT entity, row_id AS rowId, MAX(seq) AS seq
-         FROM sync_log GROUP BY entity, row_id ORDER BY seq`
+      `SELECT entity, row_id AS rowId, MAX(seq) AS seq, MIN(seq) AS firstSeq
+         FROM sync_log GROUP BY entity, row_id ORDER BY firstSeq`
     )
     .all() as unknown as LocalMark[];
 }

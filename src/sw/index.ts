@@ -27,7 +27,12 @@ import {
   requestSync,
   resetReplica,
 } from "../offline/sync/engine";
-import { loadIdentity, saveBlobBudget, saveIdentity } from "../offline/state";
+import {
+  clearBootstrapped,
+  loadIdentity,
+  saveBlobBudget,
+  saveIdentity,
+} from "../offline/state";
 import { idbClearAll } from "../offline/db/idb";
 
 declare const self: ServiceWorkerGlobalScope;
@@ -222,14 +227,26 @@ self.addEventListener("message", event => {
         (async () => {
           // Meldet sich jemand anderes an — oder überhaupt jemand ab —, darf
           // die lokale Kopie nicht liegen bleiben: Sie enthält auch private
-          // Konten und Vorsorgedaten der vorigen Person.
+          // Konten, Vorsorgedaten und Belege der vorigen Person.
           const previous = await loadIdentity();
           const changed = (previous?.id ?? null) !== (message.user?.id ?? null);
-          if (previous && changed) await resetReplica();
 
+          // Reihenfolge mit Bedacht: erst die Identität ersetzen und die
+          // lokale Beantwortung sperren, dann aufräumen. Scheitert das
+          // Aufräumen (kein Speicherplatz, verworfene Datenbank), bleibt die
+          // Person trotzdem abgemeldet — andersherum liefe sie weiter, als
+          // wäre nichts gewesen.
           await saveIdentity(message.user);
-          // Antwort zuerst: Die Seite lädt gleich danach `auth.me` neu, und
-          // die Antwort darf nicht mehr vom alten Benutzer kommen.
+          if (previous && changed) {
+            await clearBootstrapped();
+            try {
+              await resetReplica();
+            } catch (err) {
+              console.error("[Finance Fox] Lokale Kopie nicht verworfen:", err);
+            }
+          }
+          // Antwort erst danach: Die Seite lädt gleich `auth.me` neu, und die
+          // Antwort darf nicht mehr vom alten Benutzer kommen.
           reply(event, { type: "ff:status", status: await currentStatus() });
           if (message.user) await runSync("start");
           await broadcastStatus();

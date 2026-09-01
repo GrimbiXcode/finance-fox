@@ -5,6 +5,8 @@ import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
 import { rawClient, withTriggersSuspended } from "./lib/sync/store";
 import { accountOwners, accounts, transactions, users } from "@db/schema";
+import { saveAttachment } from "./lib/attachments";
+import { readAttachmentFile } from "./lib/attachmentStore";
 import type { SessionUser, TrpcContext } from "./context";
 import { SYNC_PROTOCOL_VERSION } from "@contracts/offline";
 
@@ -472,7 +474,17 @@ describe("push", () => {
 
   it("übernimmt aus einem Push niemals Rolle oder Passwort-Hash", async () => {
     const device = await callerFor(bruno).sync.claimDevice({});
-    const base = serverRow("users", bruno.id)!;
+    // Die Basis so aufbauen, wie ein Gerät sie hat: aus dem Pull — also ohne
+    // Passwort-Hash und TOTP-Geheimnis. Nähme man hier die rohe Serverzeile,
+    // liefe der Test an genau dem Fehler vorbei, den er absichern soll.
+    const pulled = await callerFor(bruno).sync.pull({
+      deviceId: device.deviceId,
+      since: 0,
+      protocolVersion: SYNC_PROTOCOL_VERSION,
+    });
+    const base = pulled.changes
+      .find(c => c.entity === "users")!
+      .upserts.find(row => row.id === bruno.id)!;
     const result = await callerFor(bruno).sync.push({
       deviceId: device.deviceId,
       protocolVersion: SYNC_PROTOCOL_VERSION,
@@ -492,6 +504,9 @@ describe("push", () => {
         },
       ],
     });
+    // „applied", nicht „merged": Die Geheimnisse dürfen nicht als
+    // Serveränderung durchgehen, sonst stünde nach jeder Profiländerung ein
+    // Eintrag „password_hash" im Merge-Protokoll des Benutzers.
     expect(result.outcomes[0].status).toBe("applied");
     const row = serverRow("users", bruno.id);
     expect(row?.name).toBe("Bruno neu");
@@ -518,6 +533,108 @@ describe("push", () => {
     });
     expect(result.outcomes[0].status).toBe("conflict");
     expect(serverRow("users", anna.id)?.name).toBe("Anna");
+  });
+
+  it("nimmt ein offline angelegtes Konto samt Buchung an", async () => {
+    // Der Fall, für den der ganze Offline-Betrieb da ist: unterwegs ein Konto
+    // anlegen und gleich darauf buchen. Beides kommt im selben Paket, und die
+    // Buchung bezieht ihr Recht auf ein Konto, das der Server noch nicht
+    // kennt — die Rechteprüfung muss innerhalb des Pushs mitwachsen.
+    const device = await callerFor(anna).sync.claimDevice({});
+    const accountId = 1_001_000_000_100;
+    const txId = 1_001_000_000_101;
+
+    const result = await callerFor(anna).sync.push({
+      deviceId: device.deviceId,
+      protocolVersion: SYNC_PROTOCOL_VERSION,
+      changes: [
+        {
+          entity: "accounts",
+          rowId: String(accountId),
+          op: "insert",
+          row: {
+            id: accountId,
+            name: "Offline-Konto",
+            type: "checking",
+            initial_balance: 0,
+            created_at: Date.now(),
+          },
+          base: null,
+        },
+        {
+          entity: "transactions",
+          rowId: String(txId),
+          op: "insert",
+          row: {
+            id: txId,
+            type: "expense",
+            account_id: accountId,
+            amount: 2500,
+            user_id: anna.id,
+            date: "2026-03-20",
+            note: "Unterwegs gebucht",
+            created_at: Date.now(),
+          },
+          base: null,
+        },
+        {
+          entity: "transaction_splits",
+          rowId: String(txId + 1),
+          op: "insert",
+          row: {
+            id: txId + 1,
+            transaction_id: txId,
+            user_id: anna.id,
+            amount: 1250,
+          },
+          base: null,
+        },
+      ],
+    });
+
+    expect(result.outcomes.map(o => o.status)).toEqual([
+      "applied",
+      "applied",
+      "applied",
+    ]);
+    expect(serverRow("accounts", accountId)?.name).toBe("Offline-Konto");
+    expect(serverRow("transactions", txId)?.note).toBe("Unterwegs gebucht");
+    expect(serverRow("transaction_splits", txId + 1)?.amount).toBe(1250);
+  });
+
+  it("löscht mit dem Anhang auch dessen Datei", async () => {
+    const accountId = await insertAccount(null);
+    const txId = await insertTransaction(accountId, "Mit Beleg");
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const meta = await saveAttachment(
+      getDb(),
+      txId,
+      bytes,
+      "beleg.png",
+      "image/png"
+    );
+    const stored = serverRow("transaction_attachments", meta.id)!
+      .stored_name as string;
+    expect(readAttachmentFile(stored)).not.toBeNull();
+
+    const device = await callerFor(anna).sync.claimDevice({});
+    await callerFor(anna).sync.push({
+      deviceId: device.deviceId,
+      protocolVersion: SYNC_PROTOCOL_VERSION,
+      changes: [
+        {
+          entity: "transaction_attachments",
+          rowId: String(meta.id),
+          op: "delete",
+          row: null,
+          base: serverRow("transaction_attachments", meta.id)!,
+        },
+      ],
+    });
+    expect(serverRow("transaction_attachments", meta.id)).toBeFalsy();
+    // Die Datei liegt außerhalb der Datenbank — ohne diesen Schritt bliebe
+    // sie für immer im Anhang-Verzeichnis liegen.
+    expect(readAttachmentFile(stored)).toBeNull();
   });
 
   it("ignoriert unbekannte Tabellen", async () => {

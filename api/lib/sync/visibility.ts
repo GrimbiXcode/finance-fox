@@ -2,7 +2,11 @@ import { eq } from "drizzle-orm";
 import { accountOwners, pensionFunds, transactions } from "@db/schema";
 import type { Db } from "../../queries/connection";
 import type { SessionUser } from "../../context";
-import { listVisibleAccounts, type AccessLevel } from "../accountAccess";
+import {
+  accessLevelFor,
+  listVisibleAccounts,
+  type AccessLevel,
+} from "../accountAccess";
 import type { SyncRow } from "./merge";
 import type { SyncTable } from "./tables";
 
@@ -133,6 +137,90 @@ export function isRowVisible(
 }
 
 /**
+ * Die Sichtbarkeit **während** eines Pushs nachziehen.
+ *
+ * Der Zustand oben ist eine Momentaufnahme von vor dem Push. Wer offline ein
+ * Konto anlegt und darauf bucht, schickt beides im selben Paket — die Buchung
+ * bezöge ihr Recht dann auf ein Konto, das es in der Momentaufnahme noch nicht
+ * gibt, und würde als „keine Berechtigung" abgewiesen. Deshalb wird jede
+ * angewandte Zeile hier eingetragen, bevor die nächste geprüft wird.
+ */
+export function noteApplied(
+  table: SyncTable,
+  row: SyncRow,
+  vis: Visibility
+): void {
+  switch (table.name) {
+    case "accounts": {
+      const id = asNumber(row[table.pk]);
+      if (id === null) return;
+      vis.accountIds.add(id);
+      // Ein frisch angelegtes Konto hat noch keine Besitzer und ist damit ein
+      // Gemeinschaftskonto — dieselbe Regel wie in `accessLevelFor`.
+      const owners = vis.ownersByAccount.get(id) ?? [];
+      if (accessLevelFor(owners, vis.user) === "edit") {
+        vis.editableAccountIds.add(id);
+      }
+      return;
+    }
+    case "account_owners": {
+      const accountId = asNumber(row["account_id"]);
+      const userId = asNumber(row["user_id"]);
+      if (accountId === null || userId === null) return;
+      const owners = vis.ownersByAccount.get(accountId) ?? [];
+      if (!owners.includes(userId)) owners.push(userId);
+      vis.ownersByAccount.set(accountId, owners);
+      const level = accessLevelFor(owners, vis.user);
+      if (level === "none") {
+        vis.accountIds.delete(accountId);
+        vis.editableAccountIds.delete(accountId);
+      } else if (level === "edit") {
+        vis.editableAccountIds.add(accountId);
+      } else {
+        vis.editableAccountIds.delete(accountId);
+      }
+      return;
+    }
+    case "transactions": {
+      const id = asNumber(row[table.pk]);
+      const a = asNumber(row["account_id"]);
+      const b = asNumber(row["to_account_id"]);
+      if (id === null) return;
+      const visible =
+        (a !== null && vis.accountIds.has(a)) ||
+        (b !== null && vis.accountIds.has(b));
+      if (visible) vis.transactionIds.add(id);
+      else vis.transactionIds.delete(id);
+      return;
+    }
+    case "pension_funds": {
+      const id = asNumber(row[table.pk]);
+      if (id === null || asNumber(row["user_id"]) !== vis.user.id) return;
+      vis.parentIds.get("pension_funds")?.add(id);
+      return;
+    }
+  }
+}
+
+/** Nach einem Löschen: Zeile aus der Sichtbarkeit nehmen */
+export function noteRemoved(
+  table: SyncTable,
+  row: SyncRow,
+  vis: Visibility
+): void {
+  const id = asNumber(row[table.pk]);
+  if (id === null) return;
+  if (table.name === "accounts") {
+    vis.accountIds.delete(id);
+    vis.editableAccountIds.delete(id);
+  } else if (table.name === "transactions") {
+    vis.transactionIds.delete(id);
+  } else if (table.name === "pension_funds") {
+    vis.parentIds.get("pension_funds")?.delete(id);
+  }
+}
+
+/**
  * Fingerabdruck der sichtbaren Kontenmenge. Ändert sie sich (ein Konto wird
  * privat gestellt oder freigegeben), müssen die betroffenen Zeilen auf dem
  * Gerät verschwinden bzw. auftauchen — das erledigt ein vollständiger
@@ -170,13 +258,22 @@ function requireEdit(
  *
  * Geprüft wird gegen den Zustand auf dem Server — ein Gerät kann offline
  * durchaus etwas ändern, wofür ihm inzwischen das Recht fehlt.
+ *
+ * `isInsert` markiert Zeilen, die es auf dem Server noch gar nicht gibt. Das
+ * ist bei Konten der Unterschied zwischen „darfst du nicht" und „gibt es
+ * noch nicht": Ein neu angelegtes Konto hat noch keine Besitzer und ist damit
+ * ein Gemeinschaftskonto, das jede angemeldete Person bearbeiten darf — genau
+ * wie `finance.createAccount` es zulässt. Ohne diese Unterscheidung wäre es
+ * unmöglich, unterwegs ein Konto anzulegen.
  */
 export function checkRowWrite(
   table: SyncTable,
   row: SyncRow,
-  vis: Visibility
+  vis: Visibility,
+  isInsert = false
 ): WriteDenial | null {
   const scope = table.scope;
+  if (scope.kind === "accounts" && isInsert) return null;
 
   // Die haushaltsweite Währung (und alle anderen App-Einstellungen) ändern
   // nur Admins — wie in finance.setCurrency.

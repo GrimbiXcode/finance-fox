@@ -1,4 +1,4 @@
-import { idbDelete, idbGet, idbSet } from "../db/idb";
+import { idbDelete, idbGet, idbKeys, idbSet } from "../db/idb";
 import { getDb } from "../db/connection";
 import { rawClient } from "../../../api/lib/sync/store";
 
@@ -17,7 +17,12 @@ import { rawClient } from "../../../api/lib/sync/store";
  * bedient nur die Hono-Routen des Servers, die hier gar nicht mitlaufen.
  */
 
-/** Zuletzt geschriebene/gelesene Bytes, damit die sync-API etwas liefern kann */
+/**
+ * Nur ein Puffer für gerade geschriebene Bytes, bis sie in IndexedDB stehen —
+ * ausdrücklich **kein** Cache: Bei einem Speicher-Budget von bis zu 2 GB
+ * hielte ein Cache den halben Belegbestand im Arbeitsspeicher des Workers.
+ * Gelesen wird über `readAttachmentBlob()` direkt aus IndexedDB.
+ */
 const memory = new Map<string, Uint8Array>();
 
 /** Laufende Schreib-/Löschvorgänge nach IndexedDB */
@@ -63,7 +68,10 @@ function noteBlob(
 /** Datei vom Heimserver übernehmen (kein Upload nötig) */
 export function storeSyncedBlob(storedName: string, bytes: Uint8Array) {
   memory.set(storedName, bytes);
-  enqueue(() => idbSet("blobs", storedName, bytes));
+  enqueue(async () => {
+    await idbSet("blobs", storedName, bytes);
+    memory.delete(storedName);
+  });
   noteBlob(storedName, "present", bytes.byteLength);
 }
 
@@ -76,12 +84,17 @@ export function markBlobUploaded(storedName: string, sizeBytes: number) {
 export async function readAttachmentBlob(
   storedName: string
 ): Promise<Uint8Array | null> {
-  const cached = memory.get(storedName);
-  if (cached) return cached;
-  const stored = await idbGet<Uint8Array>("blobs", storedName);
-  if (!stored) return null;
-  memory.set(storedName, stored);
-  return stored;
+  const buffered = memory.get(storedName);
+  if (buffered) return buffered;
+  return (await idbGet<Uint8Array>("blobs", storedName)) ?? null;
+}
+
+/** Alle Anhang-Dateien verwerfen (Benutzerwechsel, Zurücksetzen) */
+export async function clearAttachmentBlobs(): Promise<void> {
+  await flushAttachmentWrites();
+  memory.clear();
+  const names = await idbKeys("blobs");
+  await Promise.all(names.map(name => idbDelete("blobs", name)));
 }
 
 /** Nur der Vollständigkeit halber — offline gibt es kein Verzeichnis */
@@ -108,7 +121,10 @@ export function readAttachmentFile(storedName: string): Uint8Array | null {
 
 export function writeAttachmentFile(storedName: string, bytes: Uint8Array) {
   memory.set(storedName, bytes);
-  enqueue(() => idbSet("blobs", storedName, bytes));
+  enqueue(async () => {
+    await idbSet("blobs", storedName, bytes);
+    memory.delete(storedName);
+  });
   // Hier entstanden — muss beim nächsten Abgleich zum Heimserver.
   noteBlob(storedName, "pending-upload", bytes.byteLength);
 }

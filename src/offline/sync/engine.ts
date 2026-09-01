@@ -32,6 +32,7 @@ import {
   saveLastSync,
 } from "../state";
 import { blobBytesStored, blobCount, syncBlobs } from "./blobs";
+import { clearAttachmentBlobs } from "../shims/attachmentStore";
 import {
   applyRemoteRow,
   changedAfter,
@@ -269,8 +270,14 @@ async function pushLocalChanges(deviceId: string): Promise<boolean> {
         // Vorerst gilt der Stand aus dem Heimnetz — die eigene Fassung ist im
         // Konflikt festgehalten und geht nicht verloren. So bleibt die lokale
         // Datenbank widerspruchsfrei, bis der Benutzer entschieden hat.
-        if (conflict.theirs) applyRemoteRow(entity, conflict.theirs);
-        else removeRemoteRow(entity, rowId);
+        if (conflict.theirs) {
+          applyRemoteRow(entity, conflict.theirs);
+        } else if (conflict.kind === "deleted-remote") {
+          removeRemoteRow(entity, rowId);
+        }
+        // Bei „keine Berechtigung" gibt es keinen Serverstand, der gelten
+        // könnte — die lokale Zeile bleibt unangetastet, bis der Benutzer
+        // entscheidet. Sie hier zu löschen wäre stiller Datenverlust.
         continue;
       }
 
@@ -337,6 +344,12 @@ async function pullRemoteChanges(deviceId: string): Promise<boolean> {
     }
   }
 
+  // Erst das Datenbank-Abbild sichern, dann den Stand quittieren: Bricht der
+  // Worker dazwischen ab, wird derselbe Ausschnitt einfach noch einmal geholt.
+  // Andersherum wäre der Cursor weiter als die Daten — und beim allerersten
+  // Abgleich stünde `bootstrapped` über einer leeren Replik, aus der die App
+  // auf eine nötige Ersteinrichtung schlösse.
+  await flushDatabase();
   await saveCursor(result.seq);
   await markBootstrapped();
   return touched;
@@ -411,7 +424,11 @@ export async function resetReplica(): Promise<void> {
     raw.prepare("DELETE FROM sync_base").run();
     raw.prepare("DELETE FROM sync_conflicts").run();
     raw.prepare("DELETE FROM sync_merges").run();
+    raw.prepare("DELETE FROM sync_blobs").run();
   });
+  // Die Anhang-Dateien liegen nicht in der Datenbank — ohne diesen Schritt
+  // blieben Belege, Vorsorge- und Versicherungsdokumente auf dem Gerät.
+  await clearAttachmentBlobs();
   await flushDatabase();
   await saveCursor(0);
   await saveDevice(null);

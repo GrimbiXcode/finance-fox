@@ -21,6 +21,9 @@ import { assignInsertIds, type IdAllocator } from "./idSpace";
  * `db/idSpace.ts`.
  */
 
+/** Anweisungen, die den Datenbestand ändern — unabhängig vom Ausführungsweg */
+const IS_WRITE = /^\s*(insert|update|delete|replace)\b/i;
+
 export type Db = ReturnType<typeof createProxyDb>;
 
 export function createProxyDb(
@@ -38,6 +41,12 @@ export function createProxyDb(
        * benutzt für `insert … returning` nicht `run`, sondern `all`.
        */
       const sql = () => (ids ? assignInsertIds(sqlText, ids) : sqlText);
+      // Drizzle führt `insert … returning` über `all()` aus, nicht über
+      // `run()`. Ohne diese Erkennung bliebe eine solche Mutation ungemeldet:
+      // Auf dem Server verzögerte sich das Speichern bis zum nächsten
+      // Schreibzugriff, in der Replik ginge sie beim Beenden des Service
+      // Workers verloren.
+      const writes = IS_WRITE.test(sqlText);
       const stmtApi = {
         run(...params: unknown[]) {
           db.run(sql(), params as never[]);
@@ -59,6 +68,7 @@ export function createProxyDb(
             return rows;
           } finally {
             stmt.free();
+            if (writes) onWrite();
           }
         },
         get(...params: unknown[]) {
@@ -68,6 +78,7 @@ export function createProxyDb(
             return stmt.step() ? stmt.getAsObject() : undefined;
           } finally {
             stmt.free();
+            if (writes) onWrite();
           }
         },
         raw() {

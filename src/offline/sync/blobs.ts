@@ -118,7 +118,9 @@ export async function syncBlobs(): Promise<boolean> {
   if (budget > 0) {
     let used = blobBytesStored();
     for (const row of missingBlobs()) {
-      if (used + row.size_bytes > budget) break;
+      // `continue`, nicht `break`: Eine große Datei, die nicht mehr ins
+      // Budget passt, darf nicht alle kleineren dahinter blockieren.
+      if (used + row.size_bytes > budget) continue;
       const res = await fetch(
         `${BLOB_PATH}?name=${encodeURIComponent(row.stored_name)}`,
         { credentials: "include" }

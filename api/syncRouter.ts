@@ -12,6 +12,7 @@ import {
   merge3,
   type SyncRow,
 } from "./lib/sync/merge";
+import { deleteAttachmentFile } from "./lib/attachmentStore";
 import {
   deleteById,
   rawClient,
@@ -25,6 +26,8 @@ import {
   checkRowWrite,
   loadVisibility,
   isRowVisible,
+  noteApplied,
+  noteRemoved,
   visibilityFingerprint,
   WRITABLE_USER_COLUMNS,
   type Visibility,
@@ -53,6 +56,16 @@ import type { SessionUser } from "./context";
 
 /** Ab dieser Größe wird das Änderungsprotokoll beim Pull aufgeräumt */
 const LOG_PRUNE_THRESHOLD = 5000;
+
+/** Tabellen, deren Zeilen eine Datei außerhalb der Datenbank hinter sich haben */
+const ATTACHMENT_TABLES = new Set([
+  "transaction_attachments",
+  "pension_attachments",
+  "insurance_attachments",
+]);
+
+/** Die `users`-Registry — für `stripSecrets` außerhalb der Push-Schleife */
+const usersTable = syncTable("users")!;
 
 const rowSchema = z.record(z.string(), z.unknown());
 
@@ -249,7 +262,9 @@ function sanitizeIncoming(
 ): SyncRow | null {
   if (entity !== "users") return incoming;
   if (!server) return null;
-  const row: SyncRow = { ...server };
+  // Ohne Geheimnisse: Was hier nicht drinsteht, schreibt `upsertRow` auch
+  // nicht — Passwort-Hash und TOTP-Geheimnis bleiben unangetastet.
+  const row: SyncRow = { ...(stripSecrets(usersTable, server) as SyncRow) };
   for (const column of WRITABLE_USER_COLUMNS) {
     if (column in incoming) row[column] = incoming[column];
   }
@@ -406,7 +421,10 @@ export const syncRouter = createRouter({
            WHERE id = ?`
         )
         .run(
-          full ? 0 : Math.max(device.acked_seq, input.since),
+          // Nach einem vollständigen Abgleich ist das Gerät auf dem aktuellen
+          // Stand. Hier 0 zu schreiben hielte `pruneLog` für immer bei 0 fest
+          // — das Änderungsprotokoll wüchse dann unbegrenzt.
+          full ? seq : Math.max(device.acked_seq, input.since),
           fingerprint,
           epoch,
           Date.now(),
@@ -496,7 +514,19 @@ export const syncRouter = createRouter({
               });
               continue;
             }
-            if (server) deleteById(db, table.name, table.pk, id);
+            if (server) {
+              deleteById(db, table.name, table.pk, id);
+              noteRemoved(table, server, vis);
+              // Anhang-Dateien liegen außerhalb der Datenbank: Die
+              // Zeilen-Replikation allein ließe sie für immer liegen.
+              const storedName = server["stored_name"];
+              if (
+                ATTACHMENT_TABLES.has(table.name) &&
+                typeof storedName === "string"
+              ) {
+                deleteAttachmentFile(storedName);
+              }
+            }
             outcomes.push({
               entity: change.entity,
               rowId: change.rowId,
@@ -522,7 +552,7 @@ export const syncRouter = createRouter({
           }
 
           const denial =
-            checkRowWrite(table, incoming, vis) ??
+            checkRowWrite(table, incoming, vis, !server) ??
             (server ? checkRowWrite(table, server, vis) : null);
           if (denial) {
             outcomes.push({
@@ -566,6 +596,7 @@ export const syncRouter = createRouter({
 
           if (!server) {
             upsertRow(db, table.name, table.pk, incoming);
+            noteApplied(table, incoming, vis);
             outcomes.push({
               entity: change.entity,
               rowId: change.rowId,
@@ -575,7 +606,16 @@ export const syncRouter = createRouter({
             continue;
           }
 
-          const outcome = merge3(base ?? server, incoming, server);
+          // Der Server-Stand muss für den Vergleich so aussehen, wie ihn das
+          // Gerät kennt — sonst gälten Passwort-Hash und TOTP-Geheimnis als
+          // Serveränderung, und jede Profiländerung käme als „zusammengeführt"
+          // zurück.
+          const serverForMerge = stripSecrets(table, server) as SyncRow;
+          const outcome = merge3(
+            base ?? serverForMerge,
+            incoming,
+            serverForMerge
+          );
           if (outcome.kind === "conflict") {
             outcomes.push({
               entity: change.entity,
@@ -595,6 +635,7 @@ export const syncRouter = createRouter({
           }
 
           upsertRow(db, table.name, table.pk, outcome.row);
+          noteApplied(table, outcome.row, vis);
           outcomes.push({
             entity: change.entity,
             rowId: change.rowId,

@@ -175,6 +175,12 @@ export function fieldLabel(column: string): string {
 
 /** Ein Wert so, wie er auch sonst in der App erscheint */
 export function formatFieldValue(column: string, value: unknown): string {
+  // Die einzige Spalte im Schema, in der NULL „unbegrenzt" heißt und nicht
+  // „nicht erfasst" (siehe db/AGENTS.md). Als „—" dargestellt würde der
+  // Benutzer im Konfliktdialog eine unbegrenzte Deckung wegklicken.
+  if (column === "sum_insured" && (value === null || value === undefined)) {
+    return "unbegrenzt";
+  }
   if (value === null || value === undefined || value === "") return "—";
   if (BOOLEAN_FIELDS.has(column)) return value ? "ja" : "nein";
   if (MONEY_FIELDS.has(column) && typeof value === "number") {

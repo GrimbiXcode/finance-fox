@@ -73,4 +73,7 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
   eigenen Zahlenraum. Grund und Mechanik stehen dort im Kopfkommentar — kurz:
   `max(rowid) + 1` richtet sich nach eingespielten fremden Zeilen und ließe
   zwei Geräte dieselbe ID vergeben. Für neue Tabellen ist nichts zu tun,
-  solange der Primärschlüssel `id` heißt.
+  solange der Primärschlüssel `id` heißt **und als erste Spalte deklariert
+  ist** — daran erkennt `assignInsertIds` die Drizzle-Inserts. Ein Test in
+  `api/syncIdSpace.test.ts` hält das fest, weil ein Verstoß sonst nicht
+  auffiele, sondern still zu kollidierenden IDs führte.

@@ -12,6 +12,10 @@ import {
   SERVER_ID_SPACE,
 } from "@db/idSpace";
 import { banks } from "@db/schema";
+import * as schema from "@db/schema";
+import { getTableColumns, getTableName, is } from "drizzle-orm";
+import { SQLiteTable } from "drizzle-orm/sqlite-core";
+import { SYNC_TABLES } from "./lib/sync/tables";
 
 /**
  * Die ID-Vergabe ist die Voraussetzung dafür, dass Heimserver und Geräte
@@ -137,5 +141,29 @@ describe("Zusammenspiel mit Drizzle", () => {
       .values({ name: `Bank ${Math.random()}` })
       .returning({ id: banks.id });
     expect(rows[0].id).toBeLessThan(ID_BLOCK_BASE);
+  });
+});
+
+describe("Voraussetzung der ID-Vergabe", () => {
+  it("führt jede abgeglichene Tabelle mit `id` als erster Spalte", () => {
+    // `assignInsertIds` erkennt Drizzles Inserts an `insert into "t" ("id",`.
+    // Rutscht `id` in `db/schema.ts` an eine andere Stelle, greift die
+    // Erkennung stillschweigend nicht mehr — und die Vergabe fiele auf
+    // SQLites AUTOINCREMENT zurück, also genau auf die Kollision zwischen
+    // zwei Geräten, die dieses Modul verhindern soll. Deshalb hier festgehalten.
+    const byName = new Map<string, SQLiteTable>();
+    for (const value of Object.values(schema)) {
+      if (is(value, SQLiteTable)) byName.set(getTableName(value), value);
+    }
+
+    const wrong: string[] = [];
+    for (const table of SYNC_TABLES) {
+      if (table.pkType !== "integer") continue;
+      const drizzleTable = byName.get(table.name);
+      expect(drizzleTable, `${table.name} fehlt in db/schema.ts`).toBeDefined();
+      const first = Object.values(getTableColumns(drizzleTable!))[0];
+      if (first.name !== table.pk) wrong.push(`${table.name} → ${first.name}`);
+    }
+    expect(wrong).toEqual([]);
   });
 });

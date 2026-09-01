@@ -85,6 +85,54 @@ npm run build
 JWT_SECRET="langer-zufallsstring" PUBLIC_URL="http://localhost:3000" npm start
 ```
 
+### HTTPS im Heimnetz (für die Offline-App)
+
+Die App lässt sich auf dem iPhone zum Home-Bildschirm hinzufügen und dann auch
+**ohne Verbindung zum Heimserver** benutzen (siehe „Offline-Betrieb"). Dafür
+braucht der Browser einen sogenannten *secure context* — also `https://` oder
+`localhost`. Ein Aufruf über `http://192.168.1.10:8080` genügt **nicht**: dort
+registriert iOS Safari keinen Service Worker, und ohne den gibt es keinen
+Offline-Betrieb. Die App weist im Bereich Einstellungen darauf hin, wenn sie in
+einem unsicheren Kontext läuft.
+
+Wer bereits einen Reverse-Proxy mit gültigem Zertifikat betreibt (Traefik,
+Nginx Proxy Manager, eigene Caddy-Instanz), stellt Finance Fox einfach dahinter
+und ist fertig. Für alle anderen liegt ein fertiges Profil bei:
+
+```bash
+# 192.168.1.10 durch die Adresse ersetzen, unter der ihr die App aufruft
+export FF_PUBLIC_HOST="192.168.1.10"
+export PUBLIC_URL="https://192.168.1.10"
+
+docker compose --profile tls up -d
+```
+
+Caddy stellt das Zertifikat mit einer **eigenen lokalen CA** aus — ohne
+Internet, ohne Domain, ohne Let's Encrypt. Die App läuft danach unter
+`https://192.168.1.10` (Port 443).
+
+Damit die Geräte dem Zertifikat vertrauen, muss das Root-Zertifikat dieser CA
+einmalig auf jedes Gerät:
+
+```bash
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./finance-fox-ca.crt
+```
+
+**Auf dem iPhone** (zwei Schritte — der zweite wird gerne vergessen):
+
+1. `finance-fox-ca.crt` aufs Gerät bringen (AirDrop, Mail an sich selbst oder
+   im Safari herunterladen) und antippen → *Einstellungen* → *Profil geladen* →
+   **Installieren**.
+2. *Einstellungen* → *Allgemein* → *Info* → **Zertifikatsvertrauenseinstellungen**
+   → Finance Fox aktivieren. Ohne diesen Schritt bleibt das Zertifikat
+   installiert, aber ungültig.
+
+Auf macOS: Doppelklick auf die Datei → Schlüsselbundverwaltung → *System* →
+Zertifikat auf „Immer vertrauen" stellen. Unter Android/Windows analog über
+den jeweiligen Zertifikatsspeicher.
+
+Danach die App unter `https://…` aufrufen und zum Home-Bildschirm hinzufügen.
+
 ## Ersteinrichtung
 
 1. App im Browser öffnen → der **Setup-Wizard** startet automatisch

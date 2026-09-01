@@ -4,6 +4,7 @@ import { HashRouter } from 'react-router'
 import { ThemeProvider } from 'next-themes'
 import './index.css'
 import App from './App.tsx'
+import { registerServiceWorker } from '@/lib/serviceWorker'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -14,3 +15,6 @@ createRoot(document.getElementById('root')!).render(
     </ThemeProvider>
   </StrictMode>,
 )
+
+// Offline-Betrieb: nur im Produktions-Build und nur über HTTPS/localhost.
+void registerServiceWorker()

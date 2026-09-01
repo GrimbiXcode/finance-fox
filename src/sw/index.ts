@@ -27,7 +27,7 @@ import {
   requestSync,
   resetReplica,
 } from "../offline/sync/engine";
-import { saveBlobBudget, saveIdentity } from "../offline/state";
+import { loadIdentity, saveBlobBudget, saveIdentity } from "../offline/state";
 import { idbClearAll } from "../offline/db/idb";
 
 declare const self: ServiceWorkerGlobalScope;
@@ -220,7 +220,17 @@ self.addEventListener("message", event => {
     case "ff:identity":
       event.waitUntil(
         (async () => {
+          // Meldet sich jemand anderes an — oder überhaupt jemand ab —, darf
+          // die lokale Kopie nicht liegen bleiben: Sie enthält auch private
+          // Konten und Vorsorgedaten der vorigen Person.
+          const previous = await loadIdentity();
+          const changed = (previous?.id ?? null) !== (message.user?.id ?? null);
+          if (previous && changed) await resetReplica();
+
           await saveIdentity(message.user);
+          // Antwort zuerst: Die Seite lädt gleich danach `auth.me` neu, und
+          // die Antwort darf nicht mehr vom alten Benutzer kommen.
+          reply(event, { type: "ff:status", status: await currentStatus() });
           if (message.user) await runSync("start");
           await broadcastStatus();
         })()

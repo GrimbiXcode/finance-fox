@@ -181,12 +181,22 @@ export function writeBaseRow(
  * Nötig beim Einspielen fremder Zeilen: Ohne das würde jede vom Server geholte
  * Zeile als lokale Änderung gelten und beim nächsten Abgleich zurücklaufen.
  */
+let suspendDepth = 0;
+
 export function withTriggersSuspended<T>(db: Db, fn: () => T): T {
   const raw = rawClient(db);
-  raw.prepare("UPDATE sync_guard SET suspended = 1 WHERE id = 1").run();
+  // Verschachtelbar: Ein innerer Aufruf darf die Trigger nicht schon wieder
+  // einschalten, während der äußere noch Zeilen einspielt.
+  if (suspendDepth === 0) {
+    raw.prepare("UPDATE sync_guard SET suspended = 1 WHERE id = 1").run();
+  }
+  suspendDepth += 1;
   try {
     return fn();
   } finally {
-    raw.prepare("UPDATE sync_guard SET suspended = 0 WHERE id = 1").run();
+    suspendDepth -= 1;
+    if (suspendDepth === 0) {
+      raw.prepare("UPDATE sync_guard SET suspended = 0 WHERE id = 1").run();
+    }
   }
 }

@@ -1,5 +1,6 @@
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { createProxyDb, type Db } from "@db/sqlJsProxy";
+import { createIdAllocator, deviceIdSpace, SERVER_ID_SPACE } from "@db/idSpace";
 import { idbGet, idbSet } from "./idb";
 
 /**
@@ -27,6 +28,18 @@ let instance: Db | undefined;
 let SQL: SqlJsStatic | undefined;
 let sqlDb: Database | undefined;
 let ready: Promise<Db> | undefined;
+
+/**
+ * Bis der erste Abgleich den Geräteblock geliefert hat, gilt der Zahlenraum
+ * des Servers — vor dem Abgleich legt die Replik ohnehin nichts an, und ein
+ * falscher Raum wäre schlimmer als ein vorläufiger (siehe `db/idSpace.ts`).
+ */
+const ids = createIdAllocator(() => sqlDb, SERVER_ID_SPACE);
+
+/** Eigenen Zahlenraum übernehmen — vom Abgleich nach der Geräte-Anmeldung */
+export function setIdBlock(blockStart: number) {
+  ids.setSpace(deviceIdSpace(blockStart));
+}
 
 let dirty = false;
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -81,7 +94,7 @@ async function init(): Promise<Db> {
   sqlDb = stored ? new sqlJs.Database(stored) : new sqlJs.Database();
   sqlDb.run("PRAGMA foreign_keys = ON");
 
-  instance = createProxyDb(sqlDb, scheduleFlush);
+  instance = createProxyDb(sqlDb, scheduleFlush, ids);
   return instance;
 }
 
@@ -126,7 +139,8 @@ export function replaceDatabase(bytes: Uint8Array): void {
   sqlDb.close();
   sqlDb = new SQL.Database(bytes);
   sqlDb.run("PRAGMA foreign_keys = ON");
-  instance = createProxyDb(sqlDb, scheduleFlush);
+  ids.reset();
+  instance = createProxyDb(sqlDb, scheduleFlush, ids);
   scheduleFlush();
 }
 

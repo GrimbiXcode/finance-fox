@@ -134,6 +134,47 @@ export function deleteById(
   rawClient(db).prepare(`DELETE FROM ${table} WHERE ${pk} = ?`).run(id);
 }
 
+/* ─────────────────────────── Merge-Basis ─────────────────────────────────── */
+
+/**
+ * `sync_base` hält je Zeile den zuletzt vom Server bekannten Stand — den
+ * gemeinsamen Ausgangspunkt des Drei-Wege-Vergleichs. Die Tabelle wird nur in
+ * der lokalen Replik benutzt, die Helfer stehen aber hier, weil sowohl die
+ * Sync-Engine als auch die Konfliktauflösung im Router sie brauchen.
+ */
+export function readBaseRow(
+  db: Db,
+  entity: string,
+  rowId: string
+): SyncRow | null {
+  const row = rawClient(db)
+    .prepare("SELECT payload FROM sync_base WHERE entity = ? AND row_id = ?")
+    .get(entity, rowId);
+  const payload = row?.payload;
+  return typeof payload === "string" ? (JSON.parse(payload) as SyncRow) : null;
+}
+
+export function writeBaseRow(
+  db: Db,
+  entity: string,
+  rowId: string,
+  payload: SyncRow | null
+): void {
+  const raw = rawClient(db);
+  if (payload === null) {
+    raw
+      .prepare("DELETE FROM sync_base WHERE entity = ? AND row_id = ?")
+      .run(entity, rowId);
+    return;
+  }
+  raw
+    .prepare(
+      `INSERT INTO sync_base (entity, row_id, payload) VALUES (?, ?, ?)
+       ON CONFLICT (entity, row_id) DO UPDATE SET payload = excluded.payload`
+    )
+    .run(entity, rowId, JSON.stringify(payload));
+}
+
 /**
  * Führt `fn` mit abgeschalteten Änderungs-Triggern aus.
  *

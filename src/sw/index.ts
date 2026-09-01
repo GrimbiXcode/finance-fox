@@ -1,20 +1,34 @@
 /**
  * Service Worker von Finance Fox.
  *
- * Aufgabe in dieser Ausbaustufe: die App-Shell vorhalten, damit die App auch
- * ohne Verbindung zum Heimserver startet. Gebaut wird die Datei mit esbuild
- * (`scripts/build-sw.mjs`) nach `dist/public/sw.js` — die Liste der zu
- * cachenden Dateien und die Build-Kennung kommen dabei als `define` herein,
- * gehören also untrennbar zu genau dieser Worker-Version.
+ * Zwei Aufgaben:
  *
- * Registriert wird der Worker nur im Produktions-Build und nur in einem
- * „secure context" (siehe `src/lib/serviceWorker.ts`).
+ * 1. **App-Shell vorhalten**, damit die App auch ohne Verbindung zum
+ *    Heimserver startet.
+ * 2. **Die API lokal beantworten** — mit demselben tRPC-Router, der sonst auf
+ *    dem Server läuft, gegen eine SQLite-Replik im Browser. Die Seite merkt
+ *    davon nichts: Sie spricht wie bisher `/api/trpc`.
+ *
+ * Gebaut wird die Datei mit esbuild (`scripts/build-sw.mjs`) nach
+ * `dist/public/sw.js`; die Liste der zu cachenden Dateien und die Build-Kennung
+ * kommen dabei als `define` herein und gehören damit untrennbar zu genau dieser
+ * Worker-Version. Registriert wird der Worker nur im Produktions-Build und nur
+ * in einem „secure context" (siehe `src/lib/serviceWorker.ts`).
  */
 
 import type {
   PageToWorkerMessage,
   WorkerToPageMessage,
 } from "@contracts/offline";
+import { TRPC_LOCAL_PATH } from "@contracts/offline";
+import { handleApiRequest } from "../offline/localApi";
+import {
+  currentStatus,
+  requestSync,
+  resetReplica,
+} from "../offline/sync/engine";
+import { saveIdentity } from "../offline/state";
+import { idbClearAll } from "../offline/db/idb";
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -62,22 +76,102 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   const request = event.request;
-  if (request.method !== "GET") return;
-
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Die API bleibt vorerst unangetastet — sie bekommt in der nächsten
-  // Ausbaustufe einen eigenen, lokalen Router.
-  if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(handleApi(event, request));
+    return;
+  }
+
+  if (request.method !== "GET") return;
 
   if (request.mode === "navigate") {
     event.respondWith(serveAppShell(request));
     return;
   }
-
   event.respondWith(cacheFirst(request));
 });
+
+/* ────────────────────────────── API ──────────────────────────────────────── */
+
+async function handleApi(
+  event: FetchEvent,
+  request: Request
+): Promise<Response> {
+  try {
+    const local = await handleApiRequest(request);
+    if (local) {
+      if (request.method !== "GET") event.waitUntil(afterLocalMutation());
+      return local;
+    }
+  } catch (err) {
+    console.error("[Finance Fox] Lokale API:", err);
+    // Bei einer Mutation nicht aufs Netz ausweichen: Sie könnte lokal bereits
+    // ganz oder teilweise gelaufen sein, und ein zweiter Durchlauf auf dem
+    // Server würde sie verdoppeln.
+    if (request.method !== "GET") {
+      return offlineResponse(
+        request,
+        "Die Änderung konnte auf diesem Gerät nicht gespeichert werden."
+      );
+    }
+  }
+
+  try {
+    return await fetch(request);
+  } catch {
+    return offlineResponse(
+      request,
+      "Diese Funktion ist nur im Heimnetz verfügbar."
+    );
+  }
+}
+
+/** Nach einer lokalen Änderung: gleich abgleichen und die Seite informieren */
+async function afterLocalMutation() {
+  await notifyClients({ type: "ff:data-changed" });
+  const changed = await requestSync("mutation");
+  if (changed) await notifyClients({ type: "ff:data-changed" });
+  await broadcastStatus();
+}
+
+/**
+ * Fehlerantwort im Format, das der tRPC-Client versteht — sonst käme beim
+ * Benutzer statt der deutschen Erklärung ein Parser-Fehler an.
+ */
+function offlineResponse(request: Request, message: string): Response {
+  const url = new URL(request.url);
+  const headers = {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+  };
+  if (!url.pathname.startsWith(`${TRPC_LOCAL_PATH}/`)) {
+    return new Response(JSON.stringify({ error: message }), {
+      status: 503,
+      headers,
+    });
+  }
+  const envelope = {
+    error: {
+      json: {
+        message,
+        code: -32003,
+        data: { code: "PRECONDITION_FAILED", httpStatus: 503 },
+      },
+    },
+  };
+  const batched = url.searchParams.get("batch") === "1";
+  const count = url.pathname
+    .slice(TRPC_LOCAL_PATH.length + 1)
+    .split(",").length;
+  const body = batched
+    ? JSON.stringify(Array.from({ length: count }, () => envelope))
+    : JSON.stringify(envelope);
+  return new Response(body, { status: 503, headers });
+}
+
+/* ─────────────────────────── Statische Dateien ───────────────────────────── */
 
 /** Navigation: immer die gecachte Shell, damit die App offline startet */
 async function serveAppShell(request: Request): Promise<Response> {
@@ -112,31 +206,76 @@ async function cacheFirst(request: Request): Promise<Response> {
   }
 }
 
+/* ──────────────────────────── Nachrichten ────────────────────────────────── */
+
 self.addEventListener("message", event => {
   const message = event.data as PageToWorkerMessage | undefined;
   if (!message || typeof message.type !== "string") return;
 
-  if (message.type === "ff:skip-waiting") {
-    void self.skipWaiting();
-    return;
-  }
-  if (message.type === "ff:status?") {
-    reply(event, {
-      type: "ff:status",
-      status: {
-        offline: "bootstrapping",
-        reachable: true,
-        syncing: false,
-        lastSyncAt: null,
-        pending: 0,
-        conflicts: 0,
-        error: null,
-      },
-    });
+  switch (message.type) {
+    case "ff:skip-waiting":
+      void self.skipWaiting();
+      return;
+
+    case "ff:identity":
+      event.waitUntil(
+        (async () => {
+          await saveIdentity(message.user);
+          if (message.user) await runSync("start");
+          await broadcastStatus();
+        })()
+      );
+      return;
+
+    case "ff:sync":
+      event.waitUntil(runSync(message.reason).then(broadcastStatus));
+      return;
+
+    case "ff:status?":
+      event.waitUntil(
+        currentStatus().then(status =>
+          reply(event, { type: "ff:status", status })
+        )
+      );
+      return;
+
+    case "ff:reset":
+      event.waitUntil(
+        (async () => {
+          await resetReplica();
+          await idbClearAll();
+          // Antwort abwarten lassen: Die Seite meldet den Worker gleich danach
+          // ab, und ein halb aufgeräumter Zustand wäre schlimmer als keiner.
+          reply(event, { type: "ff:status", status: await currentStatus() });
+          await broadcastStatus();
+        })()
+      );
+      return;
   }
 });
 
+async function runSync(reason: Parameters<typeof requestSync>[0]) {
+  const changed = await requestSync(reason);
+  if (changed) await notifyClients({ type: "ff:data-changed" });
+}
+
+async function notifyClients(message: WorkerToPageMessage) {
+  const clients = await self.clients.matchAll({ type: "window" });
+  for (const client of clients) client.postMessage(message);
+}
+
+async function broadcastStatus() {
+  await notifyClients({ type: "ff:status", status: await currentStatus() });
+}
+
 function reply(event: ExtendableMessageEvent, message: WorkerToPageMessage) {
+  // Fragt die Seite über einen MessageChannel, geht die Antwort dorthin
+  // zurück — nur so kann sie gezielt darauf warten.
+  const port = event.ports[0];
+  if (port) {
+    port.postMessage(message);
+    return;
+  }
   const source = event.source;
   if (source && "postMessage" in source) {
     (source as Client).postMessage(message);

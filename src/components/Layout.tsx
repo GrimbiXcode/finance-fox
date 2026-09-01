@@ -5,6 +5,7 @@ import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
   Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn, Landmark,
   PanelLeftClose, PanelLeftOpen, GitBranch, House, Menu, Umbrella, FileDown,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
@@ -16,6 +17,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
 } from '@/components/ui/sheet';
 import QuickAddDialog from '@/components/QuickAddDialog';
+import SyncStatus from '@/components/SyncStatus';
 
 // Menüstruktur (Desktop-Seitenleiste und mobiles „Mehr“-Menü): thematisch
 // gruppiert — Alltag (buchen & teilen), Konten, Planung, Analyse, Verwaltung.
@@ -58,6 +60,7 @@ const navGroups = [
     label: 'Verwaltung',
     items: [
       { to: '/personen', label: 'Personen', icon: UserCog },
+      { to: '/abgleich', label: 'Abgleich', icon: RefreshCw },
       { to: '/einstellungen', label: 'Einstellungen', icon: Settings },
     ],
   },
@@ -172,6 +175,7 @@ export default function Layout() {
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <QuickAddDialog />
+            <SyncStatus />
             <Button
               variant="ghost"
               size="icon"

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { createProxyDb, type Db } from "@db/sqlJsProxy";
+import { createIdAllocator, SERVER_ID_SPACE } from "@db/idSpace";
 
 /**
  * SQLite über sql.js (WebAssembly) — kein natives Modul, kein Compile-Step,
@@ -21,6 +22,14 @@ let sqlDb: Database | undefined;
 let dbFilePath: string | undefined;
 let flushTimer: NodeJS.Timeout | undefined;
 let flushing = false;
+
+/**
+ * Der Server vergibt seine IDs aus dem Bereich unterhalb aller Geräteblöcke.
+ * Ohne das würden von Geräten gepushte Zeilen den AUTOINCREMENT-Zähler
+ * mitziehen und der Server begänne, IDs mitten aus einem Geräteblock zu
+ * vergeben (siehe `db/idSpace.ts`).
+ */
+const ids = createIdAllocator(() => sqlDb, SERVER_ID_SPACE);
 
 function doFlush() {
   if (flushing || !sqlDb || !dbFilePath) return;
@@ -69,7 +78,7 @@ async function init(): Promise<Db> {
   }
   sqlDb.run("PRAGMA foreign_keys = ON");
 
-  instance = createProxyDb(sqlDb, scheduleFlush);
+  instance = createProxyDb(sqlDb, scheduleFlush, ids);
   registerShutdownHandlers();
   return instance;
 }
@@ -121,6 +130,8 @@ export function replaceDatabase(bytes: Uint8Array): void {
   sqlDb.close();
   sqlDb = new SQL.Database(bytes);
   sqlDb.run("PRAGMA foreign_keys = ON");
-  instance = createProxyDb(sqlDb, scheduleFlush);
+  // Die eingespielte Datei bringt eigene Höchststände mit.
+  ids.reset();
+  instance = createProxyDb(sqlDb, scheduleFlush, ids);
   scheduleFlush();
 }

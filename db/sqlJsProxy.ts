@@ -1,6 +1,7 @@
 import type { Database } from "sql.js";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
+import { assignInsertIds, type IdAllocator } from "./idSpace";
 
 /**
  * better-sqlite3-kompatibler Proxy um eine sql.js-Database.
@@ -13,16 +14,33 @@ import * as schema from "./schema";
  * Bytes am Ende landen — Datei oder IndexedDB — unterscheiden sich die beiden
  * Seiten; deshalb bekommt der Proxy den Schreib-Hinweis als `onWrite` herein
  * statt ihn selbst zu kennen.
+ *
+ * Zweite Aufgabe: die Vergabe der Primärschlüssel. Server und Geräte schreiben
+ * beide, dürfen sich dabei aber niemals dieselbe ID geben — warum SQLites
+ * AUTOINCREMENT das nicht leisten kann und wie es stattdessen läuft, steht in
+ * `db/idSpace.ts`.
  */
 
 export type Db = ReturnType<typeof createProxyDb>;
 
-export function createProxyDb(db: Database, onWrite: () => void) {
+export function createProxyDb(
+  db: Database,
+  onWrite: () => void,
+  ids?: IdAllocator
+) {
   const proxy = {
     prepare(sqlText: string) {
+      /**
+       * Erst zum Ausführungszeitpunkt: Ein INSERT ohne gesetzte `id` bekommt
+       * hier frische Schlüssel aus dem eigenen Zahlenraum. Nicht schon beim
+       * `prepare`, damit dieselbe Anweisung zweimal ausgeführt nicht zweimal
+       * dieselbe ID vergibt — und in jedem Ausführungspfad, denn Drizzle
+       * benutzt für `insert … returning` nicht `run`, sondern `all`.
+       */
+      const sql = () => (ids ? assignInsertIds(sqlText, ids) : sqlText);
       const stmtApi = {
         run(...params: unknown[]) {
-          db.run(sqlText, params as never[]);
+          db.run(sql(), params as never[]);
           onWrite();
           return {
             changes: db.getRowsModified(),
@@ -33,7 +51,7 @@ export function createProxyDb(db: Database, onWrite: () => void) {
           };
         },
         all(...params: unknown[]) {
-          const stmt = db.prepare(sqlText);
+          const stmt = db.prepare(sql());
           try {
             stmt.bind(params as never[]);
             const rows: Record<string, unknown>[] = [];
@@ -44,7 +62,7 @@ export function createProxyDb(db: Database, onWrite: () => void) {
           }
         },
         get(...params: unknown[]) {
-          const stmt = db.prepare(sqlText);
+          const stmt = db.prepare(sql());
           try {
             stmt.bind(params as never[]);
             return stmt.step() ? stmt.getAsObject() : undefined;
@@ -55,7 +73,7 @@ export function createProxyDb(db: Database, onWrite: () => void) {
         raw() {
           return {
             all(...params: unknown[]) {
-              const stmt = db.prepare(sqlText);
+              const stmt = db.prepare(sql());
               try {
                 stmt.bind(params as never[]);
                 const rows: unknown[][] = [];
@@ -66,7 +84,7 @@ export function createProxyDb(db: Database, onWrite: () => void) {
               }
             },
             get(...params: unknown[]) {
-              const stmt = db.prepare(sqlText);
+              const stmt = db.prepare(sql());
               try {
                 stmt.bind(params as never[]);
                 return stmt.step() ? (stmt.get() as unknown[]) : undefined;

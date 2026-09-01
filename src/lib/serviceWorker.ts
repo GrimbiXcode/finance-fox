@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 import type {
   PageToWorkerMessage,
+  SyncReason,
   WorkerToPageMessage,
 } from "@contracts/offline";
 
@@ -46,8 +47,40 @@ export function onWorkerMessage(listener: Listener): () => void {
 }
 
 /** Nachricht an den aktiven Service Worker (still, wenn keiner läuft) */
-export function postToWorker(message: PageToWorkerMessage): void {
-  navigator.serviceWorker?.controller?.postMessage(message);
+export async function postToWorker(message: PageToWorkerMessage): Promise<void> {
+  if (offlineUnsupportedReason() !== null) return;
+  // `ready` statt `controller`: Direkt nach der Registrierung kontrolliert der
+  // Worker die bereits geladene Seite noch nicht, ist aber schon aktiv.
+  const registration = await navigator.serviceWorker.ready;
+  registration.active?.postMessage(message);
+}
+
+/**
+ * Nachricht mit Antwort. Wird gebraucht, wo die Seite auf das Ergebnis warten
+ * muss — etwa beim Zurücksetzen, bevor sie den Worker abmeldet.
+ */
+export async function askWorker(
+  message: PageToWorkerMessage,
+  timeoutMs = 5000
+): Promise<WorkerToPageMessage | null> {
+  if (offlineUnsupportedReason() !== null) return null;
+  const registration = await navigator.serviceWorker.ready;
+  const worker = registration.active;
+  if (!worker) return null;
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    const timer = window.setTimeout(() => resolve(null), timeoutMs);
+    channel.port1.onmessage = event => {
+      window.clearTimeout(timer);
+      resolve(event.data as WorkerToPageMessage);
+    };
+    worker.postMessage(message, [channel.port2]);
+  });
+}
+
+/** Abgleich anstoßen (App-Start, Fokus, Intervall, Knopfdruck) */
+export function syncNow(reason: SyncReason): void {
+  void postToWorker({ type: "ff:sync", reason });
 }
 
 /**

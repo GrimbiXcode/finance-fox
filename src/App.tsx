@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router'
 import { TRPCProvider } from '@/providers/trpc'
 import { AuthProvider, useAuth } from '@/providers/auth'
+import { OfflineProvider } from '@/providers/offline'
 import { Toaster } from '@/components/ui/sonner'
 import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
@@ -17,6 +18,7 @@ import Insurances from '@/pages/Insurances'
 import Forecasts from '@/pages/Forecasts'
 import YearReview from '@/pages/YearReview'
 import Report from '@/pages/Report'
+import Sync from '@/pages/Sync'
 import Settings from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
 import Login from '@/pages/Login'
@@ -64,6 +66,7 @@ function Root() {
         <Route path="/prognosen" element={<Forecasts />} />
         <Route path="/auswertung" element={<YearReview />} />
         <Route path="/bericht" element={<Report />} />
+        <Route path="/abgleich" element={<Sync />} />
         <Route path="/personen" element={<UsersPage />} />
         <Route path="/einstellungen" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -76,8 +79,10 @@ export default function App() {
   return (
     <TRPCProvider>
       <AuthProvider>
-        <Root />
-        <Toaster richColors position="bottom-right" />
+        <OfflineProvider>
+          <Root />
+          <Toaster richColors position="bottom-right" />
+        </OfflineProvider>
       </AuthProvider>
     </TRPCProvider>
   )

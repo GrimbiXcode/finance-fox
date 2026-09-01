@@ -14,12 +14,20 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { build } from "esbuild";
+import { offlineBundleOptions } from "./offlineBundle.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const publicDir = path.join(root, "dist", "public");
 
 /** Dateien, die nie in den Precache gehören */
 const EXCLUDED = new Set(["sw.js", "sw.js.map"]);
+
+/**
+ * WASM-Datei des Browser-Builds von sql.js. `locateFile` in
+ * `src/offline/db/connection.ts` sucht sie unter genau diesem Namen im Wurzel-
+ * verzeichnis.
+ */
+const SQL_WASM = "sql-wasm-browser.wasm";
 
 function collectFiles(dir, base = "") {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -44,6 +52,14 @@ if (!fs.existsSync(publicDir)) {
   process.exit(1);
 }
 
+// sql.js braucht seine WASM-Datei zur Laufzeit. Sie muss neben der App liegen
+// und in den Precache — ohne sie startet die lokale Datenbank offline nicht.
+// (Der Server benutzt dieselbe Bibliothek, aber deren Node-Build in dist/.)
+fs.copyFileSync(
+  path.join(root, "node_modules", "sql.js", "dist", SQL_WASM),
+  path.join(publicDir, SQL_WASM)
+);
+
 const files = collectFiles(publicDir).sort();
 
 // Build-Kennung: Hash über Pfad + Inhalt aller Dateien. Damit ändert sich der
@@ -58,21 +74,13 @@ const buildId = hash.digest("hex").slice(0, 16);
 const precache = files.map(rel => `/${rel}`);
 
 await build({
+  ...offlineBundleOptions(root),
   entryPoints: [path.join(root, "src", "sw", "index.ts")],
   outfile: path.join(publicDir, "sw.js"),
-  bundle: true,
-  format: "iife",
-  platform: "browser",
-  target: ["es2022"],
   minify: true,
   define: {
     __FF_BUILD_ID__: JSON.stringify(buildId),
     __FF_PRECACHE__: JSON.stringify(precache),
-  },
-  alias: {
-    "@contracts": path.join(root, "contracts"),
-    "@db": path.join(root, "db"),
-    "@": path.join(root, "src"),
   },
 });
 

@@ -5,6 +5,7 @@ import { getDb } from "./queries/connection";
 import { appSettings } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { SYNC_TABLES, stripSecrets, syncTable } from "./lib/sync/tables";
+import { ID_BLOCK_BASE, ID_BLOCK_SIZE } from "@db/idSpace";
 import {
   changedFields,
   classifyDelete,
@@ -18,6 +19,7 @@ import {
   selectById,
   selectByIds,
   upsertRow,
+  writeBaseRow,
 } from "./lib/sync/store";
 import {
   checkRowWrite,
@@ -48,11 +50,6 @@ import type { SessionUser } from "./context";
  * Zeilenänderung im selben Changeset. Deshalb prüft der Server hier die Rechte
  * noch einmal auf Zeilenebene (`lib/sync/visibility.ts`).
  */
-
-/** Erste ID eines Geräteblocks — weit oberhalb aller Server-IDs */
-const ID_BLOCK_BASE = 1_000_000_000_000;
-/** IDs je Gerät. Zusammen mit der Basis bleibt alles im sicheren Zahlenraum. */
-const ID_BLOCK_SIZE = 1_000_000_000;
 
 /** Ab dieser Größe wird das Änderungsprotokoll beim Pull aufgeräumt */
 const LOG_PRUNE_THRESHOLD = 5000;
@@ -273,6 +270,25 @@ function conflictOf(
 }
 
 /* ─────────────────────────────── Router ──────────────────────────────────── */
+
+/* ──────────────────── Konflikte in der lokalen Replik ────────────────────── */
+
+type ConflictRow = {
+  id: number;
+  entity: string;
+  row_id: string;
+  kind: string;
+  base: string | null;
+  mine: string | null;
+  theirs: string | null;
+  fields: string;
+  detail: string;
+  detected_at: number;
+};
+
+function parseRow(value: string | null): SyncRowPayload | null {
+  return value === null ? null : (JSON.parse(value) as SyncRowPayload);
+}
 
 export const syncRouter = createRouter({
   /** Eckdaten des Servers — für die Erreichbarkeitsprüfung und Versionscheck */
@@ -592,4 +608,145 @@ export const syncRouter = createRouter({
         return { seq: maxSeq(), outcomes };
       });
     }),
+
+  /* ── Konflikte und Merge-Protokoll ───────────────────────────────────────
+     Diese vier Prozeduren stehen bewusst **nicht** in
+     `ONLINE_ONLY_PROCEDURES`: Konflikte entstehen auf dem Gerät und werden
+     dort entschieden. Auf dem Server sind die Tabellen leer — eine Instanz
+     ohne Offline-Betrieb bekommt schlicht leere Listen. */
+
+  /** Offene Konflikte, die der Benutzer entscheiden muss */
+  listConflicts: authedQuery.query(() => {
+    const rows = rawClient(getDb())
+      .prepare("SELECT * FROM sync_conflicts ORDER BY detected_at DESC")
+      .all() as unknown as ConflictRow[];
+    return rows.map(row => ({
+      id: row.id,
+      entity: row.entity,
+      rowId: row.row_id,
+      kind: row.kind as SyncConflict["kind"],
+      fields: JSON.parse(row.fields) as string[],
+      base: parseRow(row.base),
+      mine: parseRow(row.mine),
+      theirs: parseRow(row.theirs),
+      detail: row.detail,
+      detectedAt: row.detected_at,
+    }));
+  }),
+
+  /**
+   * Konflikt entscheiden.
+   *
+   * Wichtig ist, was **danach** passiert: Die gewählte Fassung wird ganz
+   * normal in die lokale Tabelle geschrieben — mit eingeschalteten Triggern.
+   * Sie gilt damit als neue lokale Änderung und geht beim nächsten Abgleich
+   * raus. Als Basis dient der Stand, den der Server zum Zeitpunkt des
+   * Konflikts hatte; deshalb läuft sie dann konfliktfrei durch.
+   */
+  resolveConflict: authedQuery
+    .input(
+      z.object({
+        entity: z.string().min(1).max(64),
+        rowId: z.string().min(1).max(64),
+        choice: z.union([
+          z.literal("mine"),
+          z.literal("theirs"),
+          z.object({
+            fields: z.record(z.string(), z.enum(["mine", "theirs"])),
+          }),
+        ]),
+      })
+    )
+    .mutation(({ input }) => {
+      const db = getDb();
+      const raw = rawClient(db);
+      const conflict = raw
+        .prepare("SELECT * FROM sync_conflicts WHERE entity = ? AND row_id = ?")
+        .get(input.entity, input.rowId) as ConflictRow | undefined;
+      if (!conflict) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Dieser Konflikt ist bereits entschieden.",
+        });
+      }
+      const table = syncTable(conflict.entity);
+      if (!table) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Unbekannter Datensatz.",
+        });
+      }
+
+      const mine = parseRow(conflict.mine) as SyncRow | null;
+      const theirs = parseRow(conflict.theirs) as SyncRow | null;
+      const id = toPk(conflict.entity, conflict.row_id);
+
+      // Der Stand aus dem Heimnetz ist bereits eingespielt (das passiert
+      // direkt beim Erkennen des Konflikts) und dient nun als Basis.
+      writeBaseRow(db, conflict.entity, conflict.row_id, theirs);
+
+      let resolved: SyncRow | null;
+      if (input.choice === "theirs") {
+        resolved = theirs;
+      } else if (input.choice === "mine") {
+        resolved = mine;
+      } else {
+        // Feldweise: auf dem Stand aus dem Heimnetz aufsetzen und die
+        // ausgewählten Felder durch die eigenen ersetzen.
+        if (!theirs || !mine) {
+          resolved = mine ?? theirs;
+        } else {
+          resolved = { ...theirs };
+          for (const [field, side] of Object.entries(input.choice.fields)) {
+            if (side === "mine") resolved[field] = mine[field] ?? null;
+          }
+        }
+      }
+
+      // Bewusst ohne withTriggersSuspended: Genau dieser Schreibvorgang macht
+      // die Entscheidung zu einer lokalen Änderung, die zum Server geht.
+      if (resolved === null) {
+        deleteById(db, table.name, table.pk, id);
+      } else if (
+        theirs === null ||
+        changedFields(theirs, resolved).length > 0
+      ) {
+        upsertRow(db, table.name, table.pk, resolved);
+      }
+
+      raw
+        .prepare("DELETE FROM sync_conflicts WHERE entity = ? AND row_id = ?")
+        .run(conflict.entity, conflict.row_id);
+      return { ok: true };
+    }),
+
+  /** Protokoll der automatisch zusammengeführten Datensätze */
+  listMerges: authedQuery
+    .input(z.object({ limit: z.number().int().min(1).max(200).default(50) }))
+    .query(({ input }) => {
+      const rows = rawClient(getDb())
+        .prepare("SELECT * FROM sync_merges ORDER BY merged_at DESC LIMIT ?")
+        .all(input.limit) as unknown as {
+        id: number;
+        entity: string;
+        row_id: string;
+        mine_fields: string;
+        their_fields: string;
+        merged_at: number;
+      }[];
+      return rows.map(row => ({
+        id: row.id,
+        entity: row.entity,
+        rowId: row.row_id,
+        mineFields: JSON.parse(row.mine_fields) as string[],
+        theirFields: JSON.parse(row.their_fields) as string[],
+        mergedAt: row.merged_at,
+      }));
+    }),
+
+  /** Merge-Protokoll leeren, wenn es gesichtet ist */
+  clearMerges: authedQuery.mutation(() => {
+    rawClient(getDb()).prepare("DELETE FROM sync_merges").run();
+    return { ok: true };
+  }),
 });

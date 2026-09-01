@@ -44,7 +44,7 @@ Jede Erweiterung muss zu diesen Grundsätzen passen:
 | **International** | Zahlen- und Datumsformate folgen der Systemregion (z. B. de-DE `1.234,56` vs. de-CH `1'234.56`), haushaltsweite Leitwährung (20 Währungen), UI-Sprache Deutsch |
 | **Hypotheken** | Liegenschaft mit Verkehrswert, Tranchen (Fest/SARON/variabel), direkte & indirekte Amortisation, Belehnung, Tragbarkeit, Schuldenverlauf, Nettovermögen; Übernahme als Dauerbuchung |
 | **Versicherungen** | Policen des Haushalts (gemeinsam & personenbezogen) mit Sparte, Prämie, Selbstbehalt, freien Deckungs-Zeilen, Dokumenten und Angeboten; Vergleich von bis zu vier Policen, regelbasierter Deckungs-Check, Kündigungsfrist-Erinnerung, Übernahme als Dauerbuchung |
-| **Daten & Betrieb** | SQLite-Datei via sql.js, ein Docker-Container, Backup/Restore in den Einstellungen, CSV-Export, PWA (installierbar), Dark Mode |
+| **Daten & Betrieb** | SQLite-Datei via sql.js, ein Docker-Container, Backup/Restore in den Einstellungen, CSV-Export, **PWA mit vollem Offline-Betrieb** (lokale Replik, Zwei-Wege-Abgleich, Konfliktauflösung), Dark Mode |
 
 **Kurz gesagt:** Kern und Alltagstauglichkeit stehen — buchen, teilen,
 budgetieren, prognostizieren, sichern, auch unterwegs. Die nächsten Lücken
@@ -63,6 +63,13 @@ Phase 1 (Fundament & Alltagstauglichkeit) ist vollständig umgesetzt:
 6. ✅ Ausgleichszahlung mit einem Klick verbuchen
 7. ✅ Dark-Mode-Toggle
 8. ✅ PWA-Grundgerüst (installierbar, Manifest, Icons)
+9. ✅ Offline-Betrieb: Service Worker mit lokaler SQLite-Replik, die den
+   gesamten tRPC-Router im Browser ausführt (also auch offline rechnet),
+   Zwei-Wege-Abgleich mit Drei-Wege-Vergleich, automatisches Zusammenführen
+   verschiedener Felder mit Protokoll, Konfliktauflösung Feld für Feld unter
+   `/abgleich`, Belege offline ansehen und erfassen. Dazu ein optionales
+   Caddy-Profil für HTTPS im Heimnetz — ohne secure context lassen Browser
+   keine Service Worker zu.
 
 Darüber hinaus auf Nutzerwunsch umgesetzt: Locale-bewusste Zahlenformate,
 eigene Kontotypen, Bank & IBAN, Inline-Kategorie-Anlage, überarbeitete
@@ -290,11 +297,15 @@ Aufwand nicht:
 - **Multi-Tenant-Betrieb für fremde Haushalte** auf einer Instanz — jede
   Installation bleibt ein Haushalt.
 - **Bank-Aggregation über Drittanbieter-APIs**, die Zugangsdaten extern
-  speichern, und jede Form von Pflicht-Cloud-Synchronisierung.
+  speichern, und jede Form von Pflicht-Cloud-Synchronisierung. *(Der
+  Offline-Abgleich seit Phase 7 ist kein Widerspruch: Er läuft ausschließlich
+  zwischen dem eigenen Heimserver und den eigenen Geräten — kein fremder
+  Server, kein Konto, keine Pflicht.)*
 
 ## 5. Nächste Schritte
 
-Alle sechs Phasen sind umgesetzt. Als Nächstes stehen Kandidaten aus dem
+Alle sechs Phasen sind umgesetzt, dazu der Offline-Betrieb (Abschnitt 2,
+Punkt 9). Als Nächstes stehen Kandidaten aus dem
 Backlog (Abschnitt 3) zur Bewertung an — naheliegend: Massenbearbeitung,
 CSV-Import mit Kategorie-Mapping-Regeln, Sparziele in der
 Netto-Vermögensreihe.

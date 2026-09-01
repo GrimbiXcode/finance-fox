@@ -19,7 +19,8 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 - **Vorsorge (privat pro Benutzer)** — Schweizer 3-Säulen-Prinzip: Lohn & Abzüge (fix oder monatlich variabel), **AHV mit echter Rentenberechnung** (Rentenformel nach Art. 34 AHVG, Beitragsjahre aus dem IK-Auszug, Rentenskala und Beitragslücken, Erziehungs- und Betreuungsgutschriften, flexibler Rentenbezug mit Vorbezug/Aufschub/Teilrente im Variantenvergleich, 13. Altersrente, Plafonierung für Ehepaare und Einkommensteilung nach beidseitiger Verknüpfung), Pensionskasse, Säule 3a mit Dokument-Anhängen, Änderungshistorie und Altersprognose (Kapitalentwicklung, Rente, Ersatzrate); optional mit Konten verknüpfbar, Nettolohn per Klick als Dauerbuchung
 - **Bericht (Export)** — Konten und ihre Verwendung als Dokument zum Mitnehmen ins Bank- oder Beratungsgespräch: frei wählbare Abschnitte (Konten, Sparziele, Hypotheken, Vorsorge, Versicherungen, Cashflow der letzten 12 Monate, Fixkosten, Nettovermögens-Prognose) als **PDF-Bericht** oder als **Excel-Mappe** mit einem Blatt je Abschnitt und Beträgen als echten Zahlen. Beide Formate entstehen serverseitig ohne zusätzliche Abhängigkeit
 - **Benutzer & Login** — Ersteinrichtungs-Wizard, E-Mail/Passwort-Login, optionale 2FA (TOTP), Einladungslinks, Admin-Verwaltung, Aktivitäts-Log
-- **Rundherum** — Benachrichtigungen (opt-in, ntfy/Webhook), Backup/Restore, Dark Mode, PWA, Zahlen- und Datumsformate nach Systemregion, 20 Währungen
+- **Offline auf dem Handy** — die App lässt sich zum Home-Bildschirm hinzufügen und funktioniert **auch ohne Verbindung zum Heimserver vollständig**: Buchungen erfassen und bearbeiten, Budgets, Sparziele, Prognosen, Vorsorge, Hypotheken, Versicherungen und Belege. Im Heimnetz holt sie sich die neueste Version und gleicht alle Daten in beide Richtungen ab. Ändert dieselbe Buchung jemand zuhause und du unterwegs, führt die App verschiedene Felder selbst zusammen (nachvollziehbar protokolliert) und fragt nur bei echten Kollisionen — Feld für Feld, unter „Abgleich". Voraussetzung: HTTPS im Heimnetz (siehe unten)
+- **Rundherum** — Benachrichtigungen (opt-in, ntfy/Webhook), Backup/Restore, Dark Mode, Zahlen- und Datumsformate nach Systemregion, 20 Währungen
 
 ## Screenshots
 
@@ -47,6 +48,11 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 - **Backend**: Hono + tRPC (End-to-end typisiert), Sessions via signiertem HttpOnly-Cookie
 - **Datenbank**: SQLite über sql.js (WebAssembly, Drizzle ORM) — eine Datei,
   ideal fürs Self-Hosting; keine nativen Module, kein Compile-Step beim Installieren
+- **Offline**: Ein Service Worker führt dieselbe SQLite-Datenbank als Kopie im
+  Browser und beantwortet die API von dort — mit demselben Code, der auf dem
+  Server läuft. Deshalb rechnet die App unterwegs weiter, statt nur
+  gespeicherte Antworten zu zeigen. Der Abgleich läuft zeilenweise mit
+  Drei-Wege-Vergleich; jedes Gerät vergibt IDs aus einem eigenen Zahlenraum
 - **Hintergrundjobs**: node-cron (tägliche Verbuchung wiederkehrender Transaktionen)
 - Alle Geldbeträge werden intern in Cent (Integer) gespeichert.
 

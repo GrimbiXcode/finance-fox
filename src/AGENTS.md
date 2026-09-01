@@ -33,7 +33,11 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   `utils.ts` (cn), `moneyflow.ts`, `recurring.ts`, `insurance.ts`
   (`buildComparison` — Zeilen der Policen-Vergleichstabelle),
   `download.ts` (`saveBlobAsFile`/`filenameFromResponse` — **jeder**
-  Dateidownload läuft darüber, siehe „Downloads").
+  Dateidownload läuft darüber, siehe „Downloads"), `serviceWorker.ts`
+  (Registrierung und Nachrichtenbrücke zum Offline-Teil), `syncLabels.ts`
+  und `syncTime.ts` (Beschriftungen der Abgleich-Seite).
+- `sw/` und `offline/` — der Offline-Teil; eigenes tsconfig-Projekt
+  (`tsconfig.sw.json`, WebWorker- statt DOM-lib). Siehe „Offline-Betrieb".
 
 ## Navigation (Layout.tsx)
 
@@ -352,11 +356,51 @@ Karten-Überlappung zählt vierfach, Fallback ist die Position mit der
 geringsten Überlappung. `edgeGeometry` (Pfad, Punkt, Tangente) liegt in
 `lib/moneyflow.ts` und wird vom Chart importiert.
 
-## Dark Mode & PWA
+## Dark Mode
 
-- **Dark Mode**: Umschalter im Layout-Header, via next-themes
-  (`ThemeProvider` in `main.tsx`, `attribute="class"`, System-Default); die
-  `.dark`-Variablen stehen in `index.css`.
-- **PWA**: Grundgerüst ohne Service Worker —
-  `public/manifest.webmanifest` plus Icons in `public/icons/` (Quell-SVG
-  `icon.svg`, PNGs daraus gerendert), eingebunden in `index.html`.
+Umschalter im Layout-Header, via next-themes (`ThemeProvider` in `main.tsx`,
+`attribute="class"`, System-Default); die `.dark`-Variablen stehen in
+`index.css`.
+
+## Offline-Betrieb (PWA)
+
+Die App läuft **lokal zuerst**: Ein Service Worker beantwortet `/api/trpc`
+aus einer SQLite-Replik im Browser — mit demselben tRPC-Router, der sonst auf
+dem Heimserver läuft. Für die 19 Seiten ändert sich dadurch nichts; sie
+sprechen wie bisher `trpc.*` und merken vom Umschalten nichts. Die
+Server-Seite steht in `api/AGENTS.md` unter „Abgleich".
+
+- `src/sw/index.ts` — der Worker: Precache der App-Shell (HashRouter, also
+  genau ein echter Pfad), Update-Fluss, Abfangen von `/api/*`, Anstoß des
+  Abgleichs. Gebaut mit esbuild nach `dist/public/sw.js`
+  (`scripts/build-sw.mjs`), **nicht** von Vite — Precache-Liste und
+  Build-Kennung kommen per `define` herein und gehören damit untrennbar zu
+  genau dieser Worker-Version.
+- `src/offline/` — alles, was nur im Worker läuft: `db/connection.ts`
+  (sql.js über IndexedDB, Zwilling von `api/queries/connection.ts` mit
+  Compile-Time-Check auf gleiche Signatur), `shims/` (Browser-Ersatz für die
+  drei Node-gebundenen Module), `localApi.ts` (lokaler Router + Anhang-Routen),
+  `sync/` (Abgleich, Konflikte, Anhang-Dateien), `state.ts` (Identität,
+  Geräte-Anmeldung, Abgleichstand in IndexedDB).
+- `src/providers/trpc.tsx` — `splitLink`: Prozeduren aus
+  `ONLINE_ONLY_PROCEDURES` (`contracts/offline.ts`) gehen an
+  `/api/trpc/live`, alles andere an `/api/trpc`.
+- `src/providers/offline.tsx` — Identität an den Worker melden (er kann das
+  HttpOnly-Cookie nicht lesen), Abgleich anstoßen (Start, Fokus, Intervall)
+  und nach einem Abgleich die Queries neu laden.
+- `src/components/SyncStatus.tsx` (Kopfzeile) und `src/pages/Sync.tsx`
+  (`/abgleich`): Status, Konflikte feldweise entscheiden, Merge-Protokoll.
+  Die deutschen Beschriftungen für Tabellen, Spalten und Werte stehen in
+  `src/lib/syncLabels.ts` — ohne sie stünden dort Datenbanknamen.
+- `src/components/OfflineCard.tsx` in den Einstellungen: erklärt einen
+  unsicheren Kontext (der häufigste Grund, warum Offline nicht geht — Browser
+  erlauben Service Worker nur über HTTPS oder localhost), Speicher-Budget für
+  Belege, Notbremse „Offline-Daten zurücksetzen".
+
+**Beim Entwickeln**: Der Worker wird nur im Produktions-Build registriert
+(`import.meta.env.PROD`) — im Dev-Server kollidierte sein Precache mit dem
+Hot-Reload. Offline prüfen heißt deshalb `npm run build && npm start` und
+`http://localhost:3000` (localhost ist ein secure context).
+
+- **Manifest**: `public/manifest.webmanifest` plus Icons in `public/icons/`
+  (Quell-SVG `icon.svg`, PNGs daraus gerendert), eingebunden in `index.html`.

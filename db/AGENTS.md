@@ -52,3 +52,25 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
   drizzle-kit es auflöst) wirkt rein typseitig. Ein neues Intervall braucht
   daher keine Migration, wohl aber einen Zweig in `advanceDate`
   (`api/lib/recurringSchedule.ts`).
+- **Abgleich (Offline-Betrieb).** Die Tabellen `sync_log`, `sync_guard`,
+  `sync_base`, `sync_conflicts`, `sync_merges`, `sync_blobs` und
+  `sync_devices` gehören zur Synchronisierung zwischen Heimserver und den
+  lokalen Repliken auf den Geräten. Sie werden selbst **nicht** abgeglichen
+  (`NEVER_SYNCED` in `api/lib/sync/tables.ts`) und je nach Seite verschieden
+  benutzt: `sync_log` ist auf dem Server der fortlaufende Feed für `pull`,
+  in der Replik die Liste der noch nicht übertragenen Änderungen;
+  `sync_devices` nur serverseitig, `sync_base`/`sync_conflicts`/
+  `sync_merges`/`sync_blobs` nur in der Replik.
+- **Änderungs-Trigger.** `ensureSchema` legt am Ende für jede abgeglichene
+  Tabelle drei Trigger an (`api/lib/sync/triggers.ts`, erzeugt aus der
+  Registry). Sie stehen bewusst ganz am Schluss: Ein Tabellen-Rebuild
+  verwirft die Trigger seiner Tabelle, und auf einer erst per `ALTER TABLE`
+  ergänzten Spalte ließe sich vorher keiner anlegen. **Eine neue Tabelle in
+  `schema.ts` gehört auch in `api/lib/sync/tables.ts`** — sonst wird sie
+  schlicht nicht synchronisiert.
+- **Primärschlüssel.** IDs vergibt nicht mehr SQLites AUTOINCREMENT, sondern
+  `db/idSpace.ts` über den sql.js-Proxy: Server und jedes Gerät haben einen
+  eigenen Zahlenraum. Grund und Mechanik stehen dort im Kopfkommentar — kurz:
+  `max(rowid) + 1` richtet sich nach eingespielten fremden Zeilen und ließe
+  zwei Geräte dieselbe ID vergeben. Für neue Tabellen ist nichts zu tun,
+  solange der Primärschlüssel `id` heißt.

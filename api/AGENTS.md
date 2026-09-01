@@ -725,3 +725,55 @@ Haushaltsweite Währung in `app_settings` (Key `currency`, ISO-4217-Code,
 Default `EUR`); Änderung nur durch Admins (`finance.setCurrency`). Die 20
 unterstützten Währungen stehen in `contracts/types.ts` (`CURRENCIES`).
 Tests: `api/appSettings.test.ts`.
+
+## Abgleich (Offline-Betrieb)
+
+Die App läuft auf Geräten **lokal zuerst**: Ein Service Worker beantwortet
+`/api/trpc` aus einer SQLite-Replik im Browser — mit genau diesem Router.
+Der Abgleich zwischen Heimserver und Repliken läuft über `syncRouter.ts`;
+die Frontend-Seite steht in `src/AGENTS.md`.
+
+- **Zwei Leitungen, ein Router.** `boot.ts` montiert `appRouter` zusätzlich
+  unter `/api/trpc/live`. Alles Fachliche geht über `/api/trpc` (lokal
+  beantwortbar), Anmeldung/Verwaltung/Backup/Abgleich über `live` (immer
+  ans Netz). Die Liste steht in `contracts/offline.ts`
+  (`ONLINE_ONLY_PROCEDURES`) und wird von Client **und** Worker benutzt.
+  **Neue Prozeduren, die Server-Geheimnisse, die Server-Datei oder einen
+  ausgehenden Netzzugriff brauchen, gehören dort hinein.**
+- **Registry** `lib/sync/tables.ts`: welche Tabelle abgeglichen wird und wer
+  welche Zeile sehen darf (`household` / `accounts` / `account` /
+  `accountPair` / `transaction` / `user` / `parent` / `users`). Ausgewertet
+  in `lib/sync/visibility.ts` — dieselben Regeln wie `lib/accountAccess.ts`,
+  nur auf Zeilenebene. `users` reist ohne `password_hash`/`totp_secret`,
+  `auth_tokens` gar nicht.
+- **Der Push ist Zeilen-Replikation, keine zweite Fachlogik.** Kaskaden,
+  Diff-Zeilen (`transaction_changes`) und Audit-Einträge sind bereits auf
+  dem schreibenden Gerät entstanden und liegen als eigene Zeilenänderungen
+  im selben Changeset — der Server ruft die Router **nicht** erneut auf.
+  Deshalb prüft er die Rechte hier ein zweites Mal je Zeile
+  (`checkRowWrite`) und serialisiert Pushes, damit der Drei-Wege-Vergleich
+  nicht zwei parallelen Ständen begegnet.
+- **Konflikte** entscheidet `lib/sync/merge.ts` (reine Funktionen, Tests in
+  `syncMerge.test.ts`): verschiedene Felder → automatisch zusammenführen,
+  dasselbe Feld mit verschiedenen Werten → Konflikt. Dazu die Sonderfälle
+  „gelöscht" und „keine Berechtigung". Die vier Prozeduren
+  `sync.listConflicts` / `resolveConflict` / `listMerges` / `clearMerges`
+  stehen bewusst **nicht** in `ONLINE_ONLY_PROCEDURES` — Konflikte entstehen
+  auf dem Gerät und werden dort entschieden; auf dem Server sind die
+  Tabellen leer.
+- **Vollständiger statt inkrementeller Abgleich** ist nötig bei
+  Ersteinrichtung, nach einem Backup-Restore (neue `sync_epoch`), wenn
+  Protokolleinträge bereits aufgeräumt wurden — und wenn sich die sichtbare
+  Kontenmenge geändert hat: Wird ein Konto privat gestellt oder freigegeben,
+  ändern sich seine Buchungen nicht und tauchen deshalb in keinem
+  Änderungsprotokoll auf.
+- **Anhänge**: Die binären Routen stehen in `attachmentRoutes.ts` und laufen
+  in beiden Umgebungen (die zwei plattformabhängigen Zutaten kommen als
+  Parameter herein). Die Dateien selbst reisen über `syncBlobRoutes.ts`,
+  adressiert über den `stored_name`.
+- **Nur auf dem Server**: der Dauerbuchungs-Cron. `finance.runRecurringNow`
+  ist online-only, damit nicht zwei Seiten dieselben Buchungen erzeugen.
+- **`isReplica()`** aus `queries/connection.ts` ist die einzige Stelle, an
+  der Fachlogik weiß, wo sie läuft — gebraucht in `lib/pension/ahvLoad.ts`,
+  weil die Vorsorgedaten der verknüpften Person das Heimnetz nie verlassen
+  und die AHV-Rechnung sonst stillschweigend zu hoch ausfiele.

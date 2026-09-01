@@ -12,9 +12,10 @@ jeweiligen Dateien automatisch relevant:
   (PDF- und XLSX-Writer ohne Abhängigkeit),
   Benachrichtigungen, Audit-Log, Beleg-Anhänge
 - `src/AGENTS.md` — Frontend: Seiten/Komponenten, Helfer, Auswahlfelder,
-  Dialog-Layouts, Geldfluss-Visualisierung, Dark Mode/PWA
+  Dialog-Layouts, Geldfluss-Visualisierung, Dark Mode, Offline-Betrieb (PWA)
 - `db/AGENTS.md` — Schema-Regeln: `db/schema.ts` ↔ `api/lib/migrate.ts`
-  (ensureSchema) synchron halten, guardierte Migrationen
+  (ensureSchema) synchron halten, guardierte Migrationen, Abgleich-Tabellen
+  und ID-Vergabe
 
 ## Projektüberblick
 
@@ -30,6 +31,8 @@ Belehnung/Tragbarkeit, Nettovermögen), haushaltsweites Versicherungs-Modul
 Berichts-Export als PDF und Excel (modulübergreifende Übersicht mit frei
 wählbaren Abschnitten, gedacht als Gesprächsgrundlage bei einer Bank),
 Benutzerverwaltung mit Ersteinrichtungs-Wizard und Einladungslinks.
+Auf Geräten läuft die App **offline weiter** (PWA mit lokaler SQLite-Replik
+und Zwei-Wege-Abgleich, siehe unten).
 
 UI-Texte, Kommentare und Doku sind auf **Deutsch** — neue Kommentare,
 Fehlermeldungen und UI-Strings ebenfalls auf Deutsch verfassen.
@@ -49,6 +52,8 @@ Fehlermeldungen und UI-Strings ebenfalls auf Deutsch verfassen.
   HttpOnly-Cookie `hh_session` (30 Tage, `api/lib/session.ts`) — kein JWT-Paket.
 - **Hintergrundjobs**: node-cron (täglich 03:00 Uhr + einmalig beim Start:
   Verbuchung fälliger wiederkehrender Transaktionen, `api/lib/recurringJob.ts`)
+- **Offline**: Service Worker mit lokaler SQLite-Replik (dieselbe sql.js-DB im
+  Browser) und Zwei-Wege-Abgleich — siehe „Offline-Betrieb" weiter unten
 - **Node.js 26** (Docker-Basisimage `node:26-bookworm-slim`; lokal via `.nvmrc` —
   bei nvm/FNM/volta o.ä. automatisch, sonst `nvm use` ausführen)
 
@@ -59,11 +64,12 @@ npm install
 npm run db:push      # Schema via drizzle-kit in die DB-Datei schreiben (dev)
 npm run dev          # Vite-Dev-Server, http://localhost:3000 (Frontend + API mit HMR)
 npm run dev:agent    # wie dev, aber mit passwortlosem Login (siehe unten)
-npm run check        # Type-Check: tsc -b (alle drei tsconfig-Projekte)
+npm run check        # Type-Check: tsc -b (alle vier tsconfig-Projekte)
 npm run lint         # ESLint
 npm run format       # Prettier --write .
 npm run test         # vitest run (api/**/*.test.ts)
-npm run build        # Frontend (dist/public) + Server-Bundle (dist/boot.js via esbuild)
+npm run build        # Frontend (dist/public) + Service Worker (dist/public/sw.js)
+                     # + Server-Bundle (dist/boot.js via esbuild)
 npm start            # NODE_ENV=production node dist/boot.js (Port: $PORT, Default 3000)
 ```
 
@@ -128,6 +134,10 @@ db/             schema.ts (Drizzle-Tabellen, Quelle der Wahrheit), relations.ts,
                 seed.ts, migrations/ (drizzle-kit), stubs/ (better-sqlite3-Stub
                 fürs Bundle) — Details: db/AGENTS.md
 src/            Frontend (React) — Details: src/AGENTS.md
+                darin src/sw/ + src/offline/: der Offline-Teil (eigenes
+                tsconfig-Projekt tsconfig.sw.json)
+scripts/        build-sw.mjs (Service-Worker-Build) und offlineBundle.mjs
+                (die Modul-Tauschliste für den Browser-Build)
 ```
 
 ## Übergreifende Konventionen
@@ -149,6 +159,11 @@ src/            Frontend (React) — Details: src/AGENTS.md
 - Der Frontend-Client importiert den Typ `AppRouter` direkt aus
   `api/router.ts` (`src/providers/trpc.tsx`) — Typänderungen im Router wirken
   sich sofort auf den Client aus.
+- **Neue tRPC-Prozeduren**, die Server-Geheimnisse, die Server-Datei oder
+  einen ausgehenden Netzzugriff brauchen, gehören in
+  `ONLINE_ONLY_PROCEDURES` (`contracts/offline.ts`) — sonst versucht der
+  Service Worker, sie offline zu beantworten. Alles Fachliche bleibt
+  außerhalb der Liste und läuft dann auch offline.
 - Alle fachlichen Endpunkte nutzen `authedQuery` (Login erforderlich);
   Admin-only über `adminQuery`. Deutsche `TRPCError`-Meldungen.
 - Konto-Zugriffsrechte (`view`/`edit`, Gemeinschaftskonto vs. privat) werden
@@ -166,12 +181,45 @@ src/            Frontend (React) — Details: src/AGENTS.md
   bereits erledigt), danach synchron via `getDb()`.
 - Schema-Quelle der Wahrheit ist `db/schema.ts`; `api/lib/migrate.ts`
   (`ensureSchema`) enthält dasselbe Schema und läuft bei jedem Serverstart —
-  bei Schemaänderungen **beide Stellen** aktualisieren. Details: `db/AGENTS.md`.
+  bei Schemaänderungen **beide Stellen** aktualisieren. Neue Tabellen gehören
+  zusätzlich in die Abgleich-Registry `api/lib/sync/tables.ts`.
+  Details: `db/AGENTS.md`.
+- Primärschlüssel vergibt `db/idSpace.ts` über den sql.js-Proxy, nicht
+  SQLites AUTOINCREMENT — nur so können Server und Geräte gleichzeitig
+  schreiben, ohne dieselbe ID zu vergeben.
+
+## Offline-Betrieb
+
+Die App ist eine installierbare PWA, die **offline vollwertig** funktioniert:
+Ein Service Worker beantwortet `/api/trpc` aus einer SQLite-Replik im Browser
+— mit demselben tRPC-Router, der sonst auf dem Server läuft. Damit rechnet die
+App auch unterwegs (Prognosen, AHV, Hypotheken, Versicherungs-Lückenanalyse),
+statt nur zwischengespeicherte Antworten zu zeigen. Ein Abgleich in beide
+Richtungen bringt Änderungen zurück, sobald der Heimserver erreichbar ist;
+Konflikte entscheidet der Benutzer unter `/abgleich`.
+
+Ausführlich: `src/AGENTS.md` („Offline-Betrieb"), `api/AGENTS.md`
+(„Abgleich"), `db/AGENTS.md`. Drei Dinge, die man dabei wissen muss:
+
+- **Service Worker laufen nur in einem secure context** (https:// oder
+  localhost). Die Standardinstallation `http://192.168.x.x:8080` genügt
+  nicht — dafür gibt es das optionale `tls`-Profil in `docker-compose.yml`
+  (Caddy mit interner CA) und einen README-Abschnitt.
+- **Im Dev-Server ist der Worker abgeschaltet.** Offline prüfen heißt
+  `npm run build && npm start` auf `http://localhost:3000`.
+- **`scripts/offlineBundle.mjs`** tauscht beim Browser-Build genau drei
+  Module gegen ihre Zwillinge (Datenbank-Verbindung, Anhang-Speicher,
+  Umgebungsvariablen) plus `node:crypto`/`node:zlib`. Wer im Backend ein
+  neues Node-gebundenes Modul einführt, das die Router erreichen, muss es
+  dort ergänzen — sonst scheitert der Worker-Build.
 
 ## Testing
 
 - Vitest (`npm run test`), Umgebung `node`, Include-Pattern
   `api/**/*.test.ts` / `api/**/*.spec.ts` (siehe `vitest.config.ts`).
+  Die Abgleich-Logik liegt bewusst unter `api/lib/sync/` statt im Frontend —
+  nur so ist sie mit diesem Setup prüfbar (`syncMerge.test.ts`,
+  `syncRouter.test.ts`, `syncIdSpace.test.ts`).
   Bestehende Tests (z. B. `api/appSettings.test.ts`, `api/accountAccess.test.ts`)
   dienen als Muster für neue Tests im `api/`-Verzeichnis. Aliase `@/`, `@contracts/`, `@assets/` sind
   konfiguriert; `DATABASE_URL=file::memory:` für isolierte DB-Tests nutzen.
@@ -183,19 +231,25 @@ src/            Frontend (React) — Details: src/AGENTS.md
 - Prettier (`.prettierrc`): Semikolons, doppelte Anführungszeichen, 2 Spaces,
   printWidth 80, `arrowParens: "avoid"`, LF.
 - TypeScript strict, ES-Modules (`"type": "module"`), Target ES2022.
-- Drei tsconfig-Projekte: `tsconfig.app.json` (src), `tsconfig.server.json`
-  (api/contracts/db), `tsconfig.node.json` (Config-Dateien); `npm run check`
-  baut alle per Project-References.
+- Vier tsconfig-Projekte: `tsconfig.app.json` (src ohne den Offline-Teil),
+  `tsconfig.server.json` (api/contracts/db), `tsconfig.sw.json`
+  (`src/sw` + `src/offline`, WebWorker- statt DOM-lib), `tsconfig.node.json`
+  (Config-Dateien); `npm run check` baut alle per Project-References.
 
 ## Deployment
 
 - **Docker (empfohlen)**: `docker compose up -d --build` → App auf Port 8080
-  (Container-intern 3000). Multi-Stage-Build: `npm ci` + `npm run build`,
-  Runtime kopiert nur `node_modules`, `dist/`, `package.json`.
+  (Container-intern 3000). Multi-Stage-Build: `npm ci` + `npm run build`
+  (Frontend, Service Worker und Server-Bundle), Runtime kopiert nur
+  `node_modules`, `dist/`, `package.json`.
   Datenbank im Volume `finance-fox-data` (`/app/data`).
   Hinweis: Im Container sind npm-Install-Skripte blockiert — das funktioniert,
   weil sql.js keine nativen Module braucht.
 - **Ohne Docker**: `npm ci && npm run build && JWT_SECRET=... PUBLIC_URL=... npm start`.
+- **HTTPS im Heimnetz** (nur für den Offline-Betrieb nötig): optionales
+  Compose-Profil `tls` mit Caddy und interner CA —
+  `FF_PUBLIC_HOST=192.168.1.10 docker compose --profile tls up -d`.
+  Anleitung inklusive Zertifikat aufs iPhone: `README.md`.
 
 ## Security Considerations
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CloudOff, RefreshCw, WifiOff } from "lucide-react";
+import { CloudOff, HardDrive, RefreshCw, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -10,10 +10,11 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  offlineUnsupportedReason,
-  type OfflineUnsupportedReason,
-} from "@/lib/serviceWorker";
+import { Label } from "@/components/ui/label";
+import { useOffline } from "@/providers/offline";
+import { askWorker, offlineUnsupportedReason } from "@/lib/serviceWorker";
+import type { OfflineUnsupportedReason } from "@/lib/serviceWorker";
+import { formatBytes } from "@/lib/finance";
 
 /**
  * Karte „Offline-Betrieb" in den Einstellungen.
@@ -50,13 +51,26 @@ const UNSUPPORTED_TEXTS: Record<
   },
 };
 
+/** Auswahl für das Speicher-Budget der Beleg-Dateien */
+const BUDGETS = [
+  { bytes: 0, label: "Keine Belege vorhalten" },
+  { bytes: 100 * 1024 * 1024, label: "100 MB" },
+  { bytes: 200 * 1024 * 1024, label: "200 MB" },
+  { bytes: 500 * 1024 * 1024, label: "500 MB" },
+  { bytes: 2 * 1024 * 1024 * 1024, label: "2 GB" },
+];
+
 export default function OfflineCard() {
   const reason = offlineUnsupportedReason();
+  const { status } = useOffline();
   const [resetting, setResetting] = useState(false);
 
   async function resetOffline() {
     setResetting(true);
     try {
+      // Erst den Worker aufräumen lassen und auf seine Bestätigung warten —
+      // danach ist er abgemeldet und könnte es nicht mehr.
+      await askWorker({ type: "ff:reset" });
       const registrations =
         (await navigator.serviceWorker?.getRegistrations()) ?? [];
       await Promise.all(registrations.map(r => r.unregister()));
@@ -105,8 +119,47 @@ export default function OfflineCard() {
           <div className="flex gap-3 rounded-md border p-3">
             <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <p className="min-w-0 text-sm text-muted-foreground">
-              Die App ist auf diesem Gerät gespeichert und startet auch ohne
-              Verbindung zum Heimserver.
+              Die App und alle Daten liegen auf diesem Gerät. Sie startet und
+              rechnet auch ohne Verbindung zum Heimserver; Änderungen gehen
+              raus, sobald er wieder erreichbar ist.
+            </p>
+          </div>
+        )}
+
+        {reason === null && status && (
+          <div className="space-y-2">
+            <Label htmlFor="blob-budget" className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-muted-foreground" />
+              Belege auf diesem Gerät
+            </Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                id="blob-budget"
+                className="h-9 min-w-0 rounded-md border bg-background px-3 text-sm"
+                value={String(status.storage.budget)}
+                onChange={e =>
+                  void askWorker({
+                    type: "ff:blob-budget",
+                    bytes: Number(e.target.value),
+                  })
+                }
+              >
+                {BUDGETS.map(option => (
+                  <option key={option.bytes} value={String(option.bytes)}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <span className="text-sm text-muted-foreground">
+                {status.storage.files === 0
+                  ? "noch keine Belege gespeichert"
+                  : `${status.storage.files} Dateien · ${formatBytes(status.storage.bytes)}`}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Belege (Fotos und PDFs) werden im Heimnetz auf das Gerät geladen,
+              bis das Budget erreicht ist — neueste zuerst. Offline erfasste
+              Belege gehen unabhängig davon immer raus.
             </p>
           </div>
         )}
@@ -122,9 +175,10 @@ export default function OfflineCard() {
             Offline-Daten zurücksetzen
           </Button>
           <p className="text-xs text-muted-foreground">
-            Verwirft die auf diesem Gerät gespeicherte App und lädt sie beim
-            nächsten Start neu vom Heimserver. Die Daten auf dem Server bleiben
-            unberührt.
+            Verwirft die auf diesem Gerät gespeicherte App samt lokaler Kopie
+            und lädt beim nächsten Start alles neu vom Heimserver. Die Daten auf
+            dem Server bleiben unberührt — noch nicht abgeglichene Änderungen
+            gehen dabei allerdings verloren.
           </p>
         </div>
       </CardContent>

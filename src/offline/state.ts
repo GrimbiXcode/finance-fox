@@ -95,3 +95,20 @@ export function saveLastSync(at: number): Promise<void> {
 export async function loadLastSync(): Promise<number | null> {
   return (await idbGet<number>("state", "lastSyncAt")) ?? null;
 }
+
+/**
+ * Wie viel Platz die Anhang-Dateien auf diesem Gerät belegen dürfen.
+ * 0 heißt: Belege werden nicht auf Vorrat geladen (sie bleiben im Heimnetz
+ * abrufbar). Default 200 MB — genug für die Belege mehrerer Jahre, ohne ein
+ * Telefon vollzuschreiben.
+ */
+export const DEFAULT_BLOB_BUDGET = 200 * 1024 * 1024;
+
+export async function loadBlobBudget(): Promise<number> {
+  const stored = await idbGet<number>("state", "blobBudget");
+  return typeof stored === "number" ? stored : DEFAULT_BLOB_BUDGET;
+}
+
+export function saveBlobBudget(bytes: number): Promise<void> {
+  return idbSet("state", "blobBudget", bytes);
+}

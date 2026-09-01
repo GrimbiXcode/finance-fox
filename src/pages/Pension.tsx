@@ -1908,6 +1908,15 @@ function PartnerLink() {
             verknüpfen.
           </span>
         )}
+        {detail.data?.partnerUnavailable && (
+          <span className="text-xs text-amber-600 dark:text-amber-500">
+            Die Vorsorgedaten der verknüpften Person bleiben im Heimnetz — sie
+            sind privat und werden nicht auf Geräte übertragen. Ohne sie
+            rechnet die AHV hier ohne Plafonierung und ohne Einkommensteilung;
+            der angezeigte Betrag ist deshalb zu hoch. Die vollständige
+            Berechnung siehst du, sobald du wieder im Heimnetz bist.
+          </span>
+        )}
         {detail.data?.partnerLinked && (
           <span className="text-xs text-emerald-600">
             Beidseitig bestätigt — Renten werden plafoniert.

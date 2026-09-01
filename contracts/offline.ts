@@ -93,6 +93,8 @@ export type PageToWorkerMessage =
   | { type: "ff:status?" }
   /** Wartenden Service Worker sofort aktivieren (Update-Toast) */
   | { type: "ff:skip-waiting" }
+  /** Speicher-Budget für Beleg-Dateien setzen (0 = keine Belege vorhalten) */
+  | { type: "ff:blob-budget"; bytes: number }
   /** Lokale Daten verwerfen (Notbremse in den Einstellungen) */
   | { type: "ff:reset" };
 
@@ -130,6 +132,8 @@ export type SyncStatus = {
   conflicts: number;
   /** Letzter Fehler in Klartext (deutsch), sonst null */
   error: string | null;
+  /** Belegte und erlaubte Größe der Anhang-Dateien auf diesem Gerät */
+  storage: { files: number; bytes: number; budget: number };
 };
 
 /* ────────────────────────── Abgleich: Datenformen ────────────────────────── */

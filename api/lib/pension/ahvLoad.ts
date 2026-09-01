@@ -21,7 +21,7 @@ import {
   pensionProfiles,
   users,
 } from "@db/schema";
-import type { Db } from "../../queries/connection";
+import { isReplica, type Db } from "../../queries/connection";
 import {
   computeAhv,
   type AhvComputeInput,
@@ -44,6 +44,8 @@ export interface LoadedAhv {
   partnerLinked: boolean;
   /** Verweis gesetzt, aber (noch) nicht erwidert */
   partnerPending: boolean;
+  /** Verknüpft, aber die Daten der anderen Person liegen nicht auf diesem Gerät */
+  partnerUnavailable: boolean;
 }
 
 /** Jahreszeilen einer Person in die Engine-Form bringen */
@@ -74,12 +76,25 @@ function storedWithdrawal(ahv: AhvRow | undefined): AhvWithdrawalInput {
  * Wirksamer Ehepartner: gegenseitiger Verweis **und** aktiver Benutzer.
  * Liefert zusätzlich `pending`, damit das UI „Verknüpfung noch nicht
  * bestätigt" anzeigen kann, statt stillschweigend nichts zu tun.
+ *
+ * In der Offline-Replik gibt es die Vorsorgedaten der anderen Person nicht —
+ * sie sind privat und werden bewusst nicht auf fremde Geräte übertragen. Das
+ * sieht von hier aus genauso aus wie eine unbestätigte Verknüpfung, ist aber
+ * etwas völlig anderes: Die Rechnung bliebe ohne Plafonierung und ohne
+ * Einkommensteilung und läge damit zu hoch. Deshalb wird der Fall als
+ * `unavailable` unterschieden und bis in die Oberfläche durchgereicht.
  */
 async function resolvePartner(
   db: Db,
   profile: ProfileRow
-): Promise<{ profile: ProfileRow | null; pending: boolean }> {
-  if (profile.partnerUserId === null) return { profile: null, pending: false };
+): Promise<{
+  profile: ProfileRow | null;
+  pending: boolean;
+  unavailable: boolean;
+}> {
+  if (profile.partnerUserId === null) {
+    return { profile: null, pending: false, unavailable: false };
+  }
   const [partnerProfile, partnerUser] = await Promise.all([
     db.query.pensionProfiles.findFirst({
       where: eq(pensionProfiles.userId, profile.partnerUserId),
@@ -88,9 +103,10 @@ async function resolvePartner(
   ]);
   const mutual = partnerProfile?.partnerUserId === profile.userId;
   if (!partnerProfile || !partnerUser?.active || !mutual) {
-    return { profile: null, pending: true };
+    const offline = isReplica() && !partnerProfile;
+    return { profile: null, pending: !offline, unavailable: offline };
   }
-  return { profile: partnerProfile, pending: false };
+  return { profile: partnerProfile, pending: false, unavailable: false };
 }
 
 /**
@@ -113,10 +129,11 @@ export async function loadAhvInput(
     db.select().from(pensionAhvYears).where(eq(pensionAhvYears.userId, userId)),
   ]);
 
-  const { profile: partnerProfile, pending } = await resolvePartner(
-    db,
-    profile
-  );
+  const {
+    profile: partnerProfile,
+    pending,
+    unavailable,
+  } = await resolvePartner(db, profile);
 
   let splitting: AhvComputeInput["splitting"] = null;
   let partnerPensionMonthly: number | null = null;
@@ -179,6 +196,7 @@ export async function loadAhvInput(
     },
     partnerLinked: partnerProfile !== null,
     partnerPending: pending,
+    partnerUnavailable: unavailable,
   };
 }
 

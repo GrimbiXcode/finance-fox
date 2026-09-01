@@ -159,6 +159,7 @@ export const NEVER_SYNCED = [
   "sync_merges",
   "sync_devices",
   "sync_guard",
+  "sync_blobs",
 ];
 
 const byName = new Map(SYNC_TABLES.map(table => [table.name, table]));

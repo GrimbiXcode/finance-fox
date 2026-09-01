@@ -27,7 +27,7 @@ import {
   requestSync,
   resetReplica,
 } from "../offline/sync/engine";
-import { saveIdentity } from "../offline/state";
+import { saveBlobBudget, saveIdentity } from "../offline/state";
 import { idbClearAll } from "../offline/db/idb";
 
 declare const self: ServiceWorkerGlobalScope;
@@ -236,6 +236,16 @@ self.addEventListener("message", event => {
         currentStatus().then(status =>
           reply(event, { type: "ff:status", status })
         )
+      );
+      return;
+
+    case "ff:blob-budget":
+      event.waitUntil(
+        (async () => {
+          await saveBlobBudget(Math.max(0, message.bytes));
+          await runSync("manual");
+          await broadcastStatus();
+        })()
       );
       return;
 

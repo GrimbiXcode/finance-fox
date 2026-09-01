@@ -1,6 +1,8 @@
+import { Hono } from "hono";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { eq } from "drizzle-orm";
 import { appRouter } from "../../api/router";
+import { registerAttachmentRoutes } from "../../api/attachmentRoutes";
 import { users } from "@db/schema";
 import type { SessionUser, TrpcContext } from "../../api/context";
 import {
@@ -9,7 +11,10 @@ import {
   isOnlineOnlyProcedure,
 } from "@contracts/offline";
 import { flushDatabase, getDb } from "./db/connection";
-import { flushAttachmentWrites } from "./shims/attachmentStore";
+import {
+  flushAttachmentWrites,
+  readAttachmentBlob,
+} from "./shims/attachmentStore";
 import { isBootstrapped, loadIdentity } from "./state";
 
 /**
@@ -26,6 +31,28 @@ import { isBootstrapped, loadIdentity } from "./state";
  */
 
 /**
+ * Die binären Anhang-Routen, gebaut aus demselben Code wie auf dem Server
+ * (`api/attachmentRoutes.ts`) — nur mit lokaler Identität und den Dateien aus
+ * IndexedDB. Damit sind Belege offline ansehbar, und offline hochgeladene
+ * warten in der Warteschlange auf das Heimnetz.
+ */
+const attachmentApp = new Hono();
+registerAttachmentRoutes(attachmentApp, {
+  resolveUser: async () => {
+    const identity = await loadIdentity();
+    return identity ? await resolveUser(identity) : undefined;
+  },
+  readFile: readAttachmentBlob,
+});
+
+/** Pfade, die der lokale Anhang-Router beantwortet */
+const ATTACHMENT_PREFIXES = [
+  "/api/attachments",
+  "/api/pension-attachments",
+  "/api/insurance-attachments",
+];
+
+/**
  * Beantwortet die Anfrage lokal — oder liefert `null`, wenn sie ans Netz
  * gehört. Ans Netz gehen: die `live`-Leitung, alles, was nur im Heimnetz
  * funktioniert, und alles vor dem ersten vollständigen Abgleich.
@@ -34,8 +61,13 @@ export async function handleApiRequest(
   request: Request
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  if (!url.pathname.startsWith(`${TRPC_LOCAL_PATH}/`)) return null;
-  if (url.pathname.startsWith(`${TRPC_LIVE_PATH}/`)) return null;
+  const isAttachment = ATTACHMENT_PREFIXES.some(
+    prefix => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`)
+  );
+  if (!isAttachment) {
+    if (!url.pathname.startsWith(`${TRPC_LOCAL_PATH}/`)) return null;
+    if (url.pathname.startsWith(`${TRPC_LIVE_PATH}/`)) return null;
+  }
 
   // Vor dem ersten Abgleich ist die Replik leer. Würde sie jetzt antworten,
   // schlösse die App aus der leeren Benutzertabelle auf eine nötige
@@ -44,6 +76,15 @@ export async function handleApiRequest(
 
   const identity = await loadIdentity();
   if (!identity) return null;
+
+  if (isAttachment) {
+    const response = await attachmentApp.fetch(request);
+    if (request.method !== "GET") {
+      await flushAttachmentWrites();
+      await flushDatabase();
+    }
+    return withNoStore(response);
+  }
 
   // Sicherheitsnetz: Prozeduren aus der Heimnetz-Liste beantwortet der Worker
   // nie. Die App schickt sie ohnehin über /api/trpc/live — käme eine doch
@@ -70,6 +111,11 @@ export async function handleApiRequest(
     await flushDatabase();
   }
 
+  return withNoStore(response);
+}
+
+/** Lokale Antworten gehören nie in den HTTP-Cache des Browsers */
+function withNoStore(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "no-store");
   return new Response(response.body, {

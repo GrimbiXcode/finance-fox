@@ -1,4 +1,6 @@
 import { idbDelete, idbGet, idbSet } from "../db/idb";
+import { getDb } from "../db/connection";
+import { rawClient } from "../../../api/lib/sync/store";
 
 /**
  * Ersatz für `api/lib/attachmentStore.ts` in der lokalen Replik: Statt
@@ -30,6 +32,44 @@ function enqueue(task: () => Promise<unknown>) {
 /** Auf alle ausstehenden Anhang-Schreibvorgänge warten */
 export async function flushAttachmentWrites(): Promise<void> {
   await pending;
+}
+
+/**
+ * Zustand einer Datei vermerken. `pending-upload` heißt: Sie ist hier
+ * entstanden und muss beim nächsten Abgleich zum Heimserver; `present` heißt:
+ * Sie liegt hier **und** dort. Ohne diesen Vermerk wüsste der Abgleich nicht,
+ * welche Dateien noch fehlen — die Metadaten-Zeile sagt darüber nichts.
+ */
+function noteBlob(
+  storedName: string,
+  state: "pending-upload" | "present",
+  sizeBytes: number
+) {
+  try {
+    rawClient(getDb())
+      .prepare(
+        `INSERT INTO sync_blobs (stored_name, state, size_bytes, touched_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (stored_name) DO UPDATE SET
+           state = excluded.state, size_bytes = excluded.size_bytes,
+           touched_at = excluded.touched_at`
+      )
+      .run(storedName, state, sizeBytes, Date.now());
+  } catch (err) {
+    console.error("[Finance Fox] Anhang-Zustand nicht vermerkt:", err);
+  }
+}
+
+/** Datei vom Heimserver übernehmen (kein Upload nötig) */
+export function storeSyncedBlob(storedName: string, bytes: Uint8Array) {
+  memory.set(storedName, bytes);
+  enqueue(() => idbSet("blobs", storedName, bytes));
+  noteBlob(storedName, "present", bytes.byteLength);
+}
+
+/** Datei ist beim Heimserver angekommen */
+export function markBlobUploaded(storedName: string, sizeBytes: number) {
+  noteBlob(storedName, "present", sizeBytes);
 }
 
 /** Bytes eines Anhangs — erst aus dem Speicher, sonst aus IndexedDB */
@@ -69,11 +109,20 @@ export function readAttachmentFile(storedName: string): Uint8Array | null {
 export function writeAttachmentFile(storedName: string, bytes: Uint8Array) {
   memory.set(storedName, bytes);
   enqueue(() => idbSet("blobs", storedName, bytes));
+  // Hier entstanden — muss beim nächsten Abgleich zum Heimserver.
+  noteBlob(storedName, "pending-upload", bytes.byteLength);
 }
 
 export function deleteAttachmentFile(storedName: string) {
   memory.delete(storedName);
   enqueue(() => idbDelete("blobs", storedName));
+  try {
+    rawClient(getDb())
+      .prepare("DELETE FROM sync_blobs WHERE stored_name = ?")
+      .run(storedName);
+  } catch {
+    // Datenbank noch nicht bereit — der Vermerk ist dann ohnehin keiner.
+  }
 }
 
 const __surfaceCheck: typeof import("../../../api/lib/attachmentStore") = {

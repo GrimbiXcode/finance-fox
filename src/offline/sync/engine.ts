@@ -23,12 +23,15 @@ import {
   loadCursor,
   loadDevice,
   loadIdentity,
+  loadBlobBudget,
   loadLastSync,
   markBootstrapped,
   saveCursor,
+  saveIdentity,
   saveDevice,
   saveLastSync,
 } from "../state";
+import { blobBytesStored, blobCount, syncBlobs } from "./blobs";
 import {
   applyRemoteRow,
   changedAfter,
@@ -86,10 +89,14 @@ export async function currentStatus(): Promise<SyncStatus> {
   const identity = await loadIdentity();
   let pending = 0;
   let conflicts = 0;
+  let files = 0;
+  let bytes = 0;
   if (dbReady) {
     await dbReady;
     pending = pendingCount();
     conflicts = conflictCount();
+    files = blobCount();
+    bytes = blobBytesStored();
   }
   return {
     offline: !identity
@@ -103,6 +110,7 @@ export async function currentStatus(): Promise<SyncStatus> {
     pending,
     conflicts,
     error: lastError,
+    storage: { files, bytes, budget: await loadBlobBudget() },
   };
 }
 
@@ -149,12 +157,25 @@ async function runSync(reason: SyncReason): Promise<boolean> {
     const device = await registerDevice();
     const pushedSomething = await pushLocalChanges(device.deviceId);
     const pulledSomething = await pullRemoteChanges(device.deviceId);
+    // Erst danach die Dateien: Ein Beleg braucht seine Metadaten-Zeile auf der
+    // Gegenseite, sonst weiß sie nicht, wohin damit.
+    const blobsChanged = await syncBlobs();
     await flushDatabase();
     await saveLastSync(Date.now());
     lastError = null;
     reachable = true;
-    return pushedSomething || pulledSomething;
+    return pushedSomething || pulledSomething || blobsChanged;
   } catch (err) {
+    // Der Server hat geantwortet, aber die Sitzung gilt nicht mehr: Dann ist
+    // auch die lokal gespeicherte Identität hinfällig — die App führt zur
+    // Anmeldung. Ein bloßes „nicht erreichbar" darf das nie auslösen,
+    // sonst spülte ein Funkloch die Offline-Daten weg.
+    if (isUnauthorized(err)) {
+      await saveIdentity(null);
+      lastError =
+        "Die Anmeldung ist abgelaufen — bitte im Heimnetz neu anmelden.";
+      return false;
+    }
     reachable = false;
     lastError = errorText(err);
     // Im Alltag ist „nicht erreichbar" der Normalfall unterwegs — das ist
@@ -162,6 +183,11 @@ async function runSync(reason: SyncReason): Promise<boolean> {
     if (reason === "manual") console.warn("[Finance Fox] Abgleich:", err);
     return false;
   }
+}
+
+function isUnauthorized(err: unknown): boolean {
+  const code = (err as { data?: { code?: string } })?.data?.code;
+  return code === "UNAUTHORIZED";
 }
 
 function errorText(err: unknown): string {

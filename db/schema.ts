@@ -1036,6 +1036,18 @@ export const syncConflicts = sqliteTable(
   t => [uniqueIndex("sync_conflicts_row_idx").on(t.entity, t.rowId)]
 );
 
+/**
+ * Nur in der Replik: Zustand der Anhang-Dateien auf diesem Gerät.
+ * `pending-upload` = offline hochgeladen und noch nicht beim Heimserver,
+ * `present` = Datei liegt lokal vor und ist auch dort bekannt.
+ */
+export const syncBlobs = sqliteTable("sync_blobs", {
+  storedName: text("stored_name").primaryKey(),
+  state: text("state", { enum: ["pending-upload", "present"] }).notNull(),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  touchedAt: integer("touched_at").notNull().default(0),
+});
+
 /** Nur in der Replik: Protokoll der automatisch zusammengeführten Datensätze */
 export const syncMerges = sqliteTable("sync_merges", {
   id: integer("id").primaryKey({ autoIncrement: true }),

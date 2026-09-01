@@ -548,6 +548,14 @@ export function ensureSchema() {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS sync_conflicts_row_idx
        ON sync_conflicts (entity, row_id)`,
+    // Nur in der Replik: welche Anhang-Dateien liegen auf diesem Gerät und
+    // welche warten noch darauf, zum Heimserver hochgeladen zu werden.
+    `CREATE TABLE IF NOT EXISTS sync_blobs (
+      stored_name TEXT PRIMARY KEY,
+      state TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      touched_at INTEGER NOT NULL DEFAULT 0
+    )`,
     `CREATE TABLE IF NOT EXISTS sync_merges (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entity TEXT NOT NULL,
@@ -691,7 +699,10 @@ export function ensureSchema() {
     .raw()
     .all();
   for (const [col, ddl] of [
-    ["first_ik_year", "ALTER TABLE pension_ahv ADD COLUMN first_ik_year INTEGER"],
+    [
+      "first_ik_year",
+      "ALTER TABLE pension_ahv ADD COLUMN first_ik_year INTEGER",
+    ],
     ["gender", "ALTER TABLE pension_ahv ADD COLUMN gender TEXT"],
     [
       "civil_status",

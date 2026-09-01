@@ -114,6 +114,11 @@ export function getDb(): Db {
   return instance;
 }
 
+/** Hier ja — siehe die Begründung im Server-Zwilling. */
+export function isReplica(): boolean {
+  return true;
+}
+
 /** Nach direkten Schreibzugriffen außerhalb von Drizzle (z. B. ensureSchema) */
 export function markDirty() {
   scheduleFlush();
@@ -150,6 +155,11 @@ export function replaceDatabase(bytes: Uint8Array): void {
  */
 const __surfaceCheck: Pick<
   typeof import("../../../api/queries/connection"),
-  "initDb" | "getDb" | "markDirty" | "exportDatabase" | "replaceDatabase"
-> = { initDb, getDb, markDirty, exportDatabase, replaceDatabase };
+  | "initDb"
+  | "getDb"
+  | "markDirty"
+  | "exportDatabase"
+  | "replaceDatabase"
+  | "isReplica"
+> = { initDb, getDb, markDirty, exportDatabase, replaceDatabase, isReplica };
 void __surfaceCheck;

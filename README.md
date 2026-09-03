@@ -83,6 +83,10 @@ für Backups genügt es, dieses Volume (bzw. die `.db`-Datei) zu sichern.
 docker logs finance-fox
 ```
 
+Wer über **Portainer** aufsetzt, kann keine Dateien neben das Compose-File
+legen — dafür gibt es einen eigenen, direkt einfügbaren Stack weiter unten
+unter [Portainer](#portainer-stack-ohne-datei-upload).
+
 ### Ohne Docker
 
 ```bash
@@ -138,6 +142,100 @@ Zertifikat auf „Immer vertrauen" stellen. Unter Android/Windows analog über
 den jeweiligen Zertifikatsspeicher.
 
 Danach die App unter `https://…` aufrufen und zum Home-Bildschirm hinzufügen.
+
+### Portainer (Stack ohne Datei-Upload)
+
+Portainers Stack-Editor nimmt **eine** Compose-Datei entgegen — Dateien
+daneben gibt es dort nicht. Das `docker-compose.yml` aus diesem Repo setzt
+aber zwei davon voraus: `./Caddyfile` (eingehängt in den Caddy-Container) und
+das Build-Verzeichnis hinter `build: .`. Ohne das `Caddyfile` startet Caddy mit
+seiner Standardseite statt als Reverse-Proxy — kein HTTPS, und damit kein
+Offline-Betrieb.
+
+Beides lässt sich auflösen: Die Caddy-Konfiguration wandert über `configs` in
+das Compose-File selbst, `build:` fällt weg. Dieser Stack ist vollständig und
+lässt sich direkt einfügen:
+
+```yaml
+services:
+  finance-fox:
+    image: ghcr.io/grimbixcode/finance-fox:latest
+    container_name: finance-fox
+    ports:
+      - "8080:3000"   # optional, aber praktisch solange dem Zertifikat noch kein Gerät traut
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-please-change-me-to-a-long-random-string}
+      - PUBLIC_URL=${PUBLIC_URL:-https://localhost}
+      - DATABASE_URL=file:/app/data/finance-fox.db
+    volumes:
+      - finance-fox-data:/app/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: finance-fox-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - FF_PUBLIC_HOST=${FF_PUBLIC_HOST:-localhost}
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - finance-fox
+    restart: unless-stopped
+
+configs:
+  caddyfile:
+    content: |
+      {$$FF_PUBLIC_HOST:localhost} {
+        tls internal
+        encode zstd gzip
+        reverse_proxy finance-fox:3000
+      }
+
+volumes:
+  finance-fox-data:
+  caddy-data:
+  caddy-config:
+```
+
+Unter *Environment variables* gehören drei Werte hinein:
+
+| Variable | Beispiel | Wozu |
+|---|---|---|
+| `JWT_SECRET` | `openssl rand -hex 32` | Signatur der Login-Cookies — unbedingt setzen |
+| `FF_PUBLIC_HOST` | `192.168.1.10` | Adresse, für die Caddy das Zertifikat ausstellt |
+| `PUBLIC_URL` | `https://192.168.1.10` | **mit `https://`** — sonst stehen falsche Adressen in den Einladungslinks und das Session-Cookie bekommt kein Secure-Flag |
+
+> **Das doppelte `$` ist kein Tippfehler.** Compose ersetzt `$…` auch
+> *innerhalb* von `content`. Mit einem einfachen `$` verschluckt es Caddys
+> eigenen Platzhalter, und im Container landet eine kaputte Adresse:
+>
+> | im Compose-File | was im Container ankommt |
+> |---|---|
+> | `{$FF_PUBLIC_HOST:localhost}` | `{192.168.1.10:localhost}` ❌ |
+> | `{$$FF_PUBLIC_HOST:localhost}` | `{$FF_PUBLIC_HOST:localhost}` ✅ |
+>
+> `$$` ist die Escape-Schreibweise von Compose; Caddy löst den Platzhalter
+> dann selbst aus seiner Umgebungsvariablen auf.
+
+Danach wie oben beschrieben das Root-Zertifikat der internen CA auf die Geräte
+bringen — der Pfad im Container ist derselbe:
+
+```bash
+docker cp finance-fox-caddy:/data/caddy/pki/authorities/local/root.crt ./finance-fox-ca.crt
+```
+
+`configs` mit `content` gibt es seit **Docker Compose 2.23.1** (November 2023);
+auf dem Heimserver zeigt `docker compose version`, was installiert ist. Ist die
+Portainer-Installation älter, den Stack stattdessen **aus dem Git-Repository**
+anlegen — dann liegt das `Caddyfile` daneben und das normale
+`docker-compose.yml` funktioniert unverändert.
 
 ## Ersteinrichtung
 

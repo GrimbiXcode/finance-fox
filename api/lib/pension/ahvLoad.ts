@@ -12,6 +12,12 @@
  * Gelesen wird zudem nur, was Plafonierung und Einkommensteilung brauchen:
  * Geburtsdatum, Geschlecht, erstes IK-Jahr und die Jahreseinkommen. Niemals
  * AHV-Nummer, Notizen oder Anhänge.
+ *
+ * Damit die Rechnung auch offline stimmt, überträgt der Abgleich genau diese
+ * Spalten auf die Geräte der jeweils anderen Person — Scope `userOrPartner`
+ * in `api/lib/sync/tables.ts`. Die Regel, wann eine Verknüpfung wirksam ist,
+ * steht deshalb hier nur einmal (`mutualPartnerUserId`) und wird von beiden
+ * Seiten benutzt.
  */
 
 import { and, eq } from "drizzle-orm";
@@ -74,23 +80,67 @@ function storedWithdrawal(ahv: AhvRow | undefined): AhvWithdrawalInput {
  * Wirksamer Ehepartner: gegenseitiger Verweis **und** aktiver Benutzer.
  * Liefert zusätzlich `pending`, damit das UI „Verknüpfung noch nicht
  * bestätigt" anzeigen kann, statt stillschweigend nichts zu tun.
+ *
+ * Läuft in der Replik genauso: Der Abgleich überträgt das Profil der anderen
+ * Person nur bei wirksamer Verknüpfung, ihr Fehlen heißt hier also dasselbe
+ * wie auf dem Server — nicht (oder noch nicht) beidseitig bestätigt.
  */
 async function resolvePartner(
   db: Db,
   profile: ProfileRow
 ): Promise<{ profile: ProfileRow | null; pending: boolean }> {
-  if (profile.partnerUserId === null) return { profile: null, pending: false };
-  const [partnerProfile, partnerUser] = await Promise.all([
-    db.query.pensionProfiles.findFirst({
-      where: eq(pensionProfiles.userId, profile.partnerUserId),
-    }),
-    db.query.users.findFirst({ where: eq(users.id, profile.partnerUserId) }),
-  ]);
-  const mutual = partnerProfile?.partnerUserId === profile.userId;
-  if (!partnerProfile || !partnerUser?.active || !mutual) {
+  if (profile.partnerUserId === null) {
+    return { profile: null, pending: false };
+  }
+  const partnerProfile = await db.query.pensionProfiles.findFirst({
+    where: eq(pensionProfiles.userId, profile.partnerUserId),
+  });
+  if (
+    !partnerProfile ||
+    !(await isEffectiveLink(db, profile, partnerProfile))
+  ) {
     return { profile: null, pending: true };
   }
   return { profile: partnerProfile, pending: false };
+}
+
+/** Zeigen beide Profile aufeinander, und ist die andere Person noch aktiv? */
+async function isEffectiveLink(
+  db: Db,
+  profile: ProfileRow,
+  partnerProfile: ProfileRow
+): Promise<boolean> {
+  if (partnerProfile.partnerUserId !== profile.userId) return false;
+  const partnerUser = await db.query.users.findFirst({
+    where: eq(users.id, partnerProfile.userId),
+  });
+  return partnerUser?.active === true;
+}
+
+/**
+ * Die wirksam verknüpfte Person — oder null.
+ *
+ * Dieselbe Regel wie in `resolvePartner`, aber ohne die Profile selbst: Der
+ * Abgleich braucht nur die ID, um zu entscheiden, wessen Zeilen auf das Gerät
+ * dürfen (`api/lib/sync/visibility.ts`). Die Regel darf es nur einmal geben —
+ * zwei Fassungen würden früher oder später auseinanderlaufen, und die eine
+ * entscheidet über Rechenergebnisse, die andere über Datenweitergabe.
+ */
+export async function mutualPartnerUserId(
+  db: Db,
+  userId: number
+): Promise<number | null> {
+  const profile = await db.query.pensionProfiles.findFirst({
+    where: eq(pensionProfiles.userId, userId),
+  });
+  if (!profile?.partnerUserId) return null;
+  const partnerProfile = await db.query.pensionProfiles.findFirst({
+    where: eq(pensionProfiles.userId, profile.partnerUserId),
+  });
+  if (!partnerProfile) return null;
+  return (await isEffectiveLink(db, profile, partnerProfile))
+    ? partnerProfile.userId
+    : null;
 }
 
 /**

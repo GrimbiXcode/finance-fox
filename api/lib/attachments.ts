@@ -1,6 +1,3 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { eq, and, inArray } from "drizzle-orm";
 import {
   insuranceAttachments,
@@ -8,12 +5,19 @@ import {
   transactionAttachments,
 } from "@db/schema";
 import type { Db } from "../queries/connection";
+import {
+  deleteAttachmentFile,
+  writeAttachmentFile,
+} from "./attachmentStore";
 
 /**
- * Beleg-/Foto-Anhänge: Metadaten in der Tabelle transaction_attachments,
- * Dateien als einzelne Dateien mit Zufallsnamen im Attachments-Verzeichnis.
- * Speicherort: Env ATTACHMENTS_DIR, sonst <Verzeichnis der DB-Datei>/attachments
- * (bei In-Memory-DBs ./data/attachments).
+ * Beleg-/Foto-Anhänge: Metadaten in den *_attachments-Tabellen, die Dateien
+ * selbst unter einem Zufallsnamen im Anhang-Speicher (`./attachmentStore.ts`).
+ *
+ * Dieses Modul spricht ausschließlich die Datenbank an — jeder Dateizugriff
+ * läuft über den Speicher daneben. Nur dadurch läuft die komplette
+ * Anhang-Logik inklusive der Lösch-Kaskaden unverändert auch in der lokalen
+ * Replik im Browser.
  */
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -26,46 +30,6 @@ export const ALLOWED_MIME_TYPES: Record<string, string> = {
   "image/gif": ".gif",
   "application/pdf": ".pdf",
 };
-
-/** Auflösung des Speicherorts (lazy, damit Tests ATTACHMENTS_DIR setzen können) */
-export function attachmentsDir(): string {
-  if (process.env.ATTACHMENTS_DIR) {
-    return path.resolve(process.env.ATTACHMENTS_DIR);
-  }
-  const url = process.env.DATABASE_URL || "file:./data/finance-fox.db";
-  const rawPath = url.replace(/^file:/, "");
-  if (rawPath === ":memory:") return path.resolve("./data/attachments");
-  return path.join(path.dirname(path.resolve(rawPath)), "attachments");
-}
-
-/** Verzeichnis beim Serverstart anlegen (idempotent) */
-export function initAttachmentsDir() {
-  fs.mkdirSync(attachmentsDir(), { recursive: true });
-}
-
-/** Absoluter Pfad zu einer gespeicherten Datei */
-export function attachmentFilePath(storedName: string): string {
-  // storedName ist serverseitig generiert; basename schützt zusätzlich vor
-  // Pfad-Manipulation, falls die DB einmal von außen verändert wurde.
-  return path.join(attachmentsDir(), path.basename(storedName));
-}
-
-/** Datei lesen; null, wenn sie auf der Platte fehlt */
-export function readAttachmentFile(storedName: string): Buffer | null {
-  try {
-    return fs.readFileSync(attachmentFilePath(storedName));
-  } catch {
-    return null;
-  }
-}
-
-function unlinkQuiet(storedName: string) {
-  try {
-    fs.unlinkSync(attachmentFilePath(storedName));
-  } catch {
-    // Datei bereits weg — nicht tragisch
-  }
-}
 
 export type AttachmentMeta = {
   id: number;
@@ -84,16 +48,17 @@ function storeAttachmentFile(
   originalName: string,
   mimeType: string
 ): { storedName: string; cleanName: string } {
-  const cleanName = path.basename(originalName).trim() || "beleg";
-  let ext = path
-    .extname(cleanName)
-    .toLowerCase()
-    .replace(/[^a-z0-9.]/g, "");
+  // Bewusst ohne node:path: der Originalname kommt vom Client und ist kein
+  // Pfad, sondern eine Zeichenkette, aus der nur der letzte Abschnitt und die
+  // Endung interessieren. So bleibt das Modul frei von Node-APIs.
+  const cleanName = originalName.split(/[\\/]/).pop()?.trim() || "beleg";
+  const dot = cleanName.lastIndexOf(".");
+  let ext =
+    dot > 0 ? cleanName.slice(dot).toLowerCase().replace(/[^a-z0-9.]/g, "") : "";
   if (!ext || ext.length > 10) ext = ALLOWED_MIME_TYPES[mimeType] ?? "";
   const storedName = `${crypto.randomUUID()}${ext}`;
 
-  fs.mkdirSync(attachmentsDir(), { recursive: true });
-  fs.writeFileSync(attachmentFilePath(storedName), Buffer.from(bytes));
+  writeAttachmentFile(storedName, bytes);
   return { storedName, cleanName };
 }
 
@@ -143,7 +108,7 @@ export async function deleteAttachment(db: Db, id: number): Promise<void> {
   await db
     .delete(transactionAttachments)
     .where(eq(transactionAttachments.id, id));
-  unlinkQuiet(row.storedName);
+  deleteAttachmentFile(row.storedName);
 }
 
 /**
@@ -163,7 +128,7 @@ export async function deleteAttachmentsForTransactions(
   await db
     .delete(transactionAttachments)
     .where(inArray(transactionAttachments.transactionId, txIds));
-  for (const row of rows) unlinkQuiet(row.storedName);
+  for (const row of rows) deleteAttachmentFile(row.storedName);
 }
 
 /* ------------------------- Vorsorge-Anhänge (pension) --------------------- */
@@ -260,7 +225,7 @@ export async function deleteInsuranceAttachment(
   });
   if (!row) return;
   await db.delete(insuranceAttachments).where(eq(insuranceAttachments.id, id));
-  unlinkQuiet(row.storedName);
+  deleteAttachmentFile(row.storedName);
 }
 
 /**
@@ -279,7 +244,7 @@ export async function deleteInsuranceAttachmentsFor(
     .where(where);
   if (rows.length === 0) return;
   await db.delete(insuranceAttachments).where(where);
-  for (const row of rows) unlinkQuiet(row.storedName);
+  for (const row of rows) deleteAttachmentFile(row.storedName);
 }
 
 /** Einzelnen Vorsorge-Anhang löschen (DB-Zeile + Datei) */
@@ -292,7 +257,7 @@ export async function deletePensionAttachment(
   });
   if (!row) return;
   await db.delete(pensionAttachments).where(eq(pensionAttachments.id, id));
-  unlinkQuiet(row.storedName);
+  deleteAttachmentFile(row.storedName);
 }
 
 /**
@@ -315,5 +280,5 @@ export async function deletePensionAttachmentsFor(
     .where(where);
   if (rows.length === 0) return;
   await db.delete(pensionAttachments).where(where);
-  for (const row of rows) unlinkQuiet(row.storedName);
+  for (const row of rows) deleteAttachmentFile(row.storedName);
 }

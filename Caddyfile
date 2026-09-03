@@ -1,0 +1,26 @@
+# Finance Fox — HTTPS im Heimnetz
+#
+# Service Worker (und damit der Offline-Betrieb der App) laufen nur in einem
+# „secure context": https:// oder localhost. Ein Aufruf über http://192.168.x.x
+# reicht dafür nicht — iOS Safari registriert dort keinen Service Worker.
+#
+# Dieser Reverse-Proxy schließt genau diese Lücke. Caddy stellt das Zertifikat
+# mit einer eigenen, lokalen CA aus (`tls internal`) — ohne Internet, ohne
+# Domain, ohne Let's Encrypt. Danach muss das Root-Zertifikat dieser CA einmalig
+# auf jedes Gerät; die Anleitung dazu steht in der README unter
+# „HTTPS im Heimnetz".
+#
+# Start:  FF_PUBLIC_HOST=192.168.1.10 docker compose --profile tls up -d
+# (FF_PUBLIC_HOST ist die Adresse, unter der ihr die App aufruft — IP oder
+#  ein im Heimnetz auflösbarer Name.)
+#
+# Wer bereits Traefik, Nginx Proxy Manager oder eine eigene Caddy-Instanz mit
+# einem echten Zertifikat betreibt, braucht diese Datei nicht.
+
+{$FF_PUBLIC_HOST:localhost} {
+	tls internal
+
+	encode zstd gzip
+
+	reverse_proxy finance-fox:3000
+}

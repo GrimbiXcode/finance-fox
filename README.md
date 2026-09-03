@@ -19,7 +19,8 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 - **Vorsorge (privat pro Benutzer)** — Schweizer 3-Säulen-Prinzip: Lohn & Abzüge (fix oder monatlich variabel), **AHV mit echter Rentenberechnung** (Rentenformel nach Art. 34 AHVG, Beitragsjahre aus dem IK-Auszug, Rentenskala und Beitragslücken, Erziehungs- und Betreuungsgutschriften, flexibler Rentenbezug mit Vorbezug/Aufschub/Teilrente im Variantenvergleich, 13. Altersrente, Plafonierung für Ehepaare und Einkommensteilung nach beidseitiger Verknüpfung), Pensionskasse, Säule 3a mit Dokument-Anhängen, Änderungshistorie und Altersprognose (Kapitalentwicklung, Rente, Ersatzrate); optional mit Konten verknüpfbar, Nettolohn per Klick als Dauerbuchung
 - **Bericht (Export)** — Konten und ihre Verwendung als Dokument zum Mitnehmen ins Bank- oder Beratungsgespräch: frei wählbare Abschnitte (Konten, Sparziele, Hypotheken, Vorsorge, Versicherungen, Cashflow der letzten 12 Monate, Fixkosten, Nettovermögens-Prognose) als **PDF-Bericht** oder als **Excel-Mappe** mit einem Blatt je Abschnitt und Beträgen als echten Zahlen. Beide Formate entstehen serverseitig ohne zusätzliche Abhängigkeit
 - **Benutzer & Login** — Ersteinrichtungs-Wizard, E-Mail/Passwort-Login, optionale 2FA (TOTP), Einladungslinks, Admin-Verwaltung, Aktivitäts-Log
-- **Rundherum** — Benachrichtigungen (opt-in, ntfy/Webhook), Backup/Restore, Dark Mode, PWA, Zahlen- und Datumsformate nach Systemregion, 20 Währungen
+- **Offline auf dem Handy** — die App lässt sich zum Home-Bildschirm hinzufügen und funktioniert **auch ohne Verbindung zum Heimserver vollständig**: Buchungen erfassen und bearbeiten, Budgets, Sparziele, Prognosen, Vorsorge, Hypotheken, Versicherungen und Belege. Im Heimnetz holt sie sich die neueste Version und gleicht alle Daten in beide Richtungen ab. Ändert dieselbe Buchung jemand zuhause und du unterwegs, führt die App verschiedene Felder selbst zusammen (nachvollziehbar protokolliert) und fragt nur bei echten Kollisionen — Feld für Feld, unter „Abgleich". Voraussetzung: HTTPS im Heimnetz (siehe unten)
+- **Rundherum** — Benachrichtigungen (opt-in, ntfy/Webhook), Backup/Restore, Dark Mode, Zahlen- und Datumsformate nach Systemregion, 20 Währungen
 
 ## Screenshots
 
@@ -47,6 +48,11 @@ auf deinem eigenen Server** — nichts verlässt dein Netz.
 - **Backend**: Hono + tRPC (End-to-end typisiert), Sessions via signiertem HttpOnly-Cookie
 - **Datenbank**: SQLite über sql.js (WebAssembly, Drizzle ORM) — eine Datei,
   ideal fürs Self-Hosting; keine nativen Module, kein Compile-Step beim Installieren
+- **Offline**: Ein Service Worker führt dieselbe SQLite-Datenbank als Kopie im
+  Browser und beantwortet die API von dort — mit demselben Code, der auf dem
+  Server läuft. Deshalb rechnet die App unterwegs weiter, statt nur
+  gespeicherte Antworten zu zeigen. Der Abgleich läuft zeilenweise mit
+  Drei-Wege-Vergleich; jedes Gerät vergibt IDs aus einem eigenen Zahlenraum
 - **Hintergrundjobs**: node-cron (tägliche Verbuchung wiederkehrender Transaktionen)
 - Alle Geldbeträge werden intern in Cent (Integer) gespeichert.
 
@@ -84,6 +90,54 @@ npm ci
 npm run build
 JWT_SECRET="langer-zufallsstring" PUBLIC_URL="http://localhost:3000" npm start
 ```
+
+### HTTPS im Heimnetz (für die Offline-App)
+
+Die App lässt sich auf dem iPhone zum Home-Bildschirm hinzufügen und dann auch
+**ohne Verbindung zum Heimserver** benutzen (siehe „Offline-Betrieb"). Dafür
+braucht der Browser einen sogenannten *secure context* — also `https://` oder
+`localhost`. Ein Aufruf über `http://192.168.1.10:8080` genügt **nicht**: dort
+registriert iOS Safari keinen Service Worker, und ohne den gibt es keinen
+Offline-Betrieb. Die App weist im Bereich Einstellungen darauf hin, wenn sie in
+einem unsicheren Kontext läuft.
+
+Wer bereits einen Reverse-Proxy mit gültigem Zertifikat betreibt (Traefik,
+Nginx Proxy Manager, eigene Caddy-Instanz), stellt Finance Fox einfach dahinter
+und ist fertig. Für alle anderen liegt ein fertiges Profil bei:
+
+```bash
+# 192.168.1.10 durch die Adresse ersetzen, unter der ihr die App aufruft
+export FF_PUBLIC_HOST="192.168.1.10"
+export PUBLIC_URL="https://192.168.1.10"
+
+docker compose --profile tls up -d
+```
+
+Caddy stellt das Zertifikat mit einer **eigenen lokalen CA** aus — ohne
+Internet, ohne Domain, ohne Let's Encrypt. Die App läuft danach unter
+`https://192.168.1.10` (Port 443).
+
+Damit die Geräte dem Zertifikat vertrauen, muss das Root-Zertifikat dieser CA
+einmalig auf jedes Gerät:
+
+```bash
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./finance-fox-ca.crt
+```
+
+**Auf dem iPhone** (zwei Schritte — der zweite wird gerne vergessen):
+
+1. `finance-fox-ca.crt` aufs Gerät bringen (AirDrop, Mail an sich selbst oder
+   im Safari herunterladen) und antippen → *Einstellungen* → *Profil geladen* →
+   **Installieren**.
+2. *Einstellungen* → *Allgemein* → *Info* → **Zertifikatsvertrauenseinstellungen**
+   → Finance Fox aktivieren. Ohne diesen Schritt bleibt das Zertifikat
+   installiert, aber ungültig.
+
+Auf macOS: Doppelklick auf die Datei → Schlüsselbundverwaltung → *System* →
+Zertifikat auf „Immer vertrauen" stellen. Unter Android/Windows analog über
+den jeweiligen Zertifikatsspeicher.
+
+Danach die App unter `https://…` aufrufen und zum Home-Bildschirm hinzufügen.
 
 ## Ersteinrichtung
 

@@ -5,6 +5,7 @@ import { forecastRouter } from "./forecastRouter";
 import { insuranceRouter } from "./insuranceRouter";
 import { mortgageRouter } from "./mortgageRouter";
 import { pensionRouter } from "./pensionRouter";
+import { syncRouter } from "./syncRouter";
 
 export const appRouter = createRouter({
   ping: publicQuery.query(() => ({ ok: true, ts: Date.now() })),
@@ -14,6 +15,7 @@ export const appRouter = createRouter({
   insurance: insuranceRouter,
   mortgage: mortgageRouter,
   pension: pensionRouter,
+  sync: syncRouter,
 });
 
 export type AppRouter = typeof appRouter;

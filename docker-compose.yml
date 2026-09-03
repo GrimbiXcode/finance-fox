@@ -24,5 +24,36 @@ services:
       - finance-fox-data:/app/data
     restart: unless-stopped
 
+  # ── Optional: HTTPS im Heimnetz ────────────────────────────────
+  # Nur nötig für den Offline-Betrieb der App: Service Worker laufen
+  # ausschließlich in einem „secure context" (https:// oder localhost) —
+  # http://192.168.x.x:8080 genügt nicht.
+  #
+  #   FF_PUBLIC_HOST=192.168.1.10 docker compose --profile tls up -d
+  #
+  # Danach läuft die App unter https://192.168.1.10 (Port 443). Das
+  # Root-Zertifikat von Caddys interner CA muss einmalig auf jedes Gerät —
+  # siehe README, Abschnitt „HTTPS im Heimnetz". Wer schon einen eigenen
+  # Reverse-Proxy mit gültigem Zertifikat betreibt, lässt dieses Profil aus.
+  caddy:
+    image: caddy:2-alpine
+    container_name: finance-fox-caddy
+    profiles: ["tls"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Adresse, unter der ihr die App aufruft (IP oder Name im Heimnetz)
+      - FF_PUBLIC_HOST=${FF_PUBLIC_HOST:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - finance-fox
+    restart: unless-stopped
+
 volumes:
   finance-fox-data:
+  caddy-data:
+  caddy-config:

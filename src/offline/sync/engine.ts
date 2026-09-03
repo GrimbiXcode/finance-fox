@@ -275,9 +275,16 @@ async function pushLocalChanges(deviceId: string): Promise<boolean> {
         } else if (conflict.kind === "deleted-remote") {
           removeRemoteRow(entity, rowId);
         }
-        // Bei „keine Berechtigung" gibt es keinen Serverstand, der gelten
-        // könnte — die lokale Zeile bleibt unangetastet, bis der Benutzer
-        // entscheidet. Sie hier zu löschen wäre stiller Datenverlust.
+        // `theirs` fehlt genau dann, wenn der Server die Zeile nicht (mehr)
+        // hat — bei „keine Berechtigung" also für eine offline **angelegte**
+        // Zeile. Die bleibt unangetastet, bis der Benutzer entscheidet; sie
+        // hier zu löschen wäre stiller Datenverlust. Bei einer abgelehnten
+        // Änderung an einer bestehenden Zeile gilt dagegen der Serverstand.
+        //
+        // Der kommt projiziert herein (`projectRow` in `api/syncRouter.ts`),
+        // trägt also dieselben Spalten wie im Pull. Sonst wäre ein absichtlich
+        // unerlaubter Push der bequemste Weg, an zurückgehaltene Spalten zu
+        // kommen — sie landeten hier direkt in der Replik.
         continue;
       }
 

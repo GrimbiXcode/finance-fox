@@ -214,7 +214,12 @@ Ersetzen-Semantik, Kaskade beim Löschen der Kasse), `pension_pillar3`
     was Plafonierung und Splitting brauchen (berechnete Rente, Jahres-
     einkommen der Ehejahre) — **nie** AHV-Nummer, Notizen oder Anhänge.
     Setzen und Lösen landen im Audit-Log (`pension.partner.linked` /
-    `.unlinked`).
+    `.unlinked`). Damit die Rechnung auch offline stimmt, überträgt der
+    Abgleich bei wirksamer Verknüpfung genau diese Spalten auf die Geräte
+    der jeweils anderen Person (Scope `userOrPartner`, siehe Abschnitt
+    „Abgleich (Offline-Betrieb)"). Wer `ahvLoad.ts` eine weitere Spalte
+    lesen lässt, muss sie dort mit aufnehmen — sonst rechnet das Gerät still
+    anders als der Server; `api/syncPension.test.ts` fängt das ab.
   - Endpunkte: `listAhvYears`/`upsertAhvYear`/`deleteAhvYear`, `setPartner`,
     `ahvDetail` (Aufschlüsselung, optionaler Was-wäre-wenn-Bezug),
     `ahvVariants` (Vorbezug … Aufschub in einem Aufruf).
@@ -773,7 +778,32 @@ die Frontend-Seite steht in `src/AGENTS.md`.
   adressiert über den `stored_name`.
 - **Nur auf dem Server**: der Dauerbuchungs-Cron. `finance.runRecurringNow`
   ist online-only, damit nicht zwei Seiten dieselben Buchungen erzeugen.
-- **`isReplica()`** aus `queries/connection.ts` ist die einzige Stelle, an
-  der Fachlogik weiß, wo sie läuft — gebraucht in `lib/pension/ahvLoad.ts`,
-  weil die Vorsorgedaten der verknüpften Person das Heimnetz nie verlassen
-  und die AHV-Rechnung sonst stillschweigend zu hoch ausfiele.
+- **Fachlogik weiß nie, wo sie läuft.** Es gibt kein `isReplica()` und keinen
+  Zweig „auf dem Gerät anders" — sonst hätte jede Regel zwei Fassungen, die
+  auseinanderlaufen können. Der einzige Fall, der danach verlangt hätte, ist
+  stattdessen im Abgleich gelöst: Die AHV-Rechnung
+  (`lib/pension/ahvLoad.ts`) liest bei **beidseitiger** Ehepartner-
+  Verknüpfung Daten der anderen Person, deshalb überträgt der Scope
+  `userOrPartner` genau die dafür nötigen Spalten mit
+  (`partnerColumns` in `lib/sync/tables.ts` — Geburtsdatum, Geschlecht,
+  erstes IK-Jahr, Bezugsplan, Jahreszeilen mit Einkommen und Gutschriften).
+  AHV-Nummer, Notizen, Zivilstand, Ehejahre, Pensionierungsalter, amtliche
+  Rentenvorausberechnung, Lohn, Pensionskasse, Säule 3a, Dokumente und
+  Verlauf bleiben im Heimnetz. Regeln dazu:
+  - Die Gegenseitigkeit entscheidet **eine** Funktion —
+    `mutualPartnerUserId` in `lib/pension/ahvLoad.ts`, benutzt von der
+    Rechnung *und* von `lib/sync/visibility.ts`.
+  - Die Zeilen sind auf dem Gerät nur lesbar: `checkRowWrite` lehnt fremde
+    Vorsorgezeilen weiterhin ab, und kein Listen-Endpunkt gibt sie aus.
+  - **Jede** Zeile, die den Server verlässt, geht durch `projectRow` — auch
+    die Serverfassung in einer Konflikt-Antwort (`conflict.theirs`) und die
+    Rückmeldung eines angenommenen Pushs. Ein absichtlich unerlaubter Push
+    wäre sonst der bequemste Weg, an zurückgehaltene Spalten zu kommen: Die
+    Engine schreibt `theirs` direkt in die Replik.
+  - Widerruf: Die Partner-ID steckt im `visibilityFingerprint`, ein Lösen
+    der Verknüpfung erzwingt also einen vollständigen Abgleich, der die
+    Zeilen lokal wieder entfernt.
+  - `api/syncPension.test.ts` sichert beide Richtungen ab: den
+    ausgeschriebenen Spaltensatz (nicht mehr, nicht weniger) und die
+    Gegenprobe, dass die Rechnung mit den projizierten Zeilen dasselbe
+    Ergebnis liefert.

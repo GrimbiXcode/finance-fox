@@ -533,6 +533,20 @@ describe("push", () => {
     });
     expect(result.outcomes[0].status).toBe("conflict");
     expect(serverRow("users", anna.id)?.name).toBe("Anna");
+
+    /*
+     * Die Absage schickt den Serverstand mit, damit das Gerät seine
+     * abgelehnte Fassung korrigieren kann. Er muss dieselbe Behandlung
+     * erfahren wie im Pull: Ein absichtlich unerlaubter Push wäre sonst der
+     * bequemste Weg, an Passwort-Hash und TOTP-Geheimnis eines anderen
+     * Haushaltsmitglieds zu kommen — die Engine schreibt `theirs` obendrein
+     * in die lokale Replik.
+     */
+    const theirs = result.outcomes[0].conflict?.theirs;
+    expect(theirs).toBeTruthy();
+    expect(theirs).not.toHaveProperty("password_hash");
+    expect(theirs).not.toHaveProperty("totp_secret");
+    expect(theirs).toHaveProperty("name", "Anna");
   });
 
   it("nimmt ein offline angelegtes Konto samt Buchung an", async () => {

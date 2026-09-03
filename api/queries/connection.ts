@@ -100,20 +100,6 @@ export function getDb(): Db {
   return instance;
 }
 
-/**
- * Läuft diese Datenbank als Offline-Replik auf einem Gerät?
- *
- * Fachlogik soll das normalerweise nicht wissen müssen — genau eine Stelle
- * braucht es doch: Die AHV-Rechnung greift auf die Vorsorgedaten der
- * verknüpften Person zu, und die bleiben bewusst auf dem Server (sie sind
- * privat, der Abgleich überträgt sie nicht). Ohne diese Unterscheidung sähe
- * das auf dem Gerät aus wie „Verknüpfung noch nicht bestätigt" — und die
- * angezeigte Rente wäre stillschweigend zu hoch.
- */
-export function isReplica(): boolean {
-  return false;
-}
-
 /** Nach direkten Schreibzugriffen außerhalb von Drizzle (z. B. ensureSchema) */
 export function markDirty() {
   scheduleFlush();

@@ -7,8 +7,9 @@ import {
   listVisibleAccounts,
   type AccessLevel,
 } from "../accountAccess";
+import { mutualPartnerUserId } from "../pension/ahvLoad";
 import type { SyncRow } from "./merge";
-import type { SyncTable } from "./tables";
+import { stripSecrets, type SyncTable } from "./tables";
 
 /**
  * Rechte beim Abgleich.
@@ -35,6 +36,12 @@ export type Visibility = {
   transactionIds: Set<number>;
   /** IDs der Eltern-Datensätze je Tabelle (heute: eigene Pensionskassen) */
   parentIds: Map<string, Set<number>>;
+  /**
+   * Die beidseitig bestätigte Ehepartner-Verknüpfung — oder null.
+   * Nur für sie verlassen (Teile der) Vorsorgedaten einer anderen Person
+   * den Server; siehe Scope `userOrPartner` in `./tables.ts`.
+   */
+  partnerUserId: number | null;
 };
 
 /** Alles einmal laden, was für die Zeilenprüfungen eines Abgleichs nötig ist */
@@ -48,7 +55,7 @@ export async function loadVisibility(
     visible.filter(a => a.access === "edit").map(a => a.id)
   );
 
-  const [ownerRows, txRows, fundRows] = await Promise.all([
+  const [ownerRows, txRows, fundRows, partnerUserId] = await Promise.all([
     db.select().from(accountOwners),
     db
       .select({
@@ -61,6 +68,9 @@ export async function loadVisibility(
       .select({ id: pensionFunds.id })
       .from(pensionFunds)
       .where(eq(pensionFunds.userId, user.id)),
+    // Bewusst dieselbe Funktion wie die AHV-Rechnung: Wer die Daten benutzen
+    // darf und wessen Daten übertragen werden dürfen, muss dieselbe Frage sein.
+    mutualPartnerUserId(db, user.id),
   ]);
 
   const ownersByAccount = new Map<number, number[]>();
@@ -87,6 +97,7 @@ export async function loadVisibility(
     ownersByAccount,
     transactionIds,
     parentIds: new Map([["pension_funds", new Set(fundRows.map(f => f.id))]]),
+    partnerUserId,
   };
 }
 
@@ -129,11 +140,56 @@ export function isRowVisible(
     }
     case "user":
       return asNumber(row[scope.column]) === vis.user.id;
+    case "userOrPartner": {
+      // `null === null` wäre hier fatal: Ohne wirksame Verknüpfung ist
+      // `partnerUserId` null, und eine Zeile ohne Eigentümer würde damit für
+      // jeden sichtbar. Heute ist die Spalte überall NOT NULL — aber das ist
+      // die Stelle, die entscheidet, ob fremde Vorsorgedaten das Haus
+      // verlassen, und die darf nicht von einem Schema-Detail abhängen.
+      const owner = asNumber(row[scope.column]);
+      if (owner === null) return false;
+      return owner === vis.user.id || owner === vis.partnerUserId;
+    }
     case "parent": {
       const id = asNumber(row[scope.column]);
       return id !== null && (vis.parentIds.get(scope.table)?.has(id) ?? false);
     }
   }
+}
+
+/**
+ * Eine Zeile so zuschneiden, wie sie das Haus verlassen darf.
+ *
+ * Für eigene Zeilen heißt das nur: Geheimnisse raus (`stripSecrets`). Für die
+ * Zeile einer verknüpften Person bleiben zusätzlich **nur** die Spalten übrig,
+ * die die AHV-Rechnung braucht — AHV-Nummer, Notizen, Zivilstand, Ehejahre und
+ * die amtliche Rentenvorausberechnung sind nicht darunter.
+ *
+ * Das passiert bewusst hier auf dem Server: Was hier wegfällt, existiert auf
+ * dem Gerät nie. Das gilt aber nur, wenn **jeder** Ausgang durch diese
+ * Funktion geht — der Pull, die Rückmeldung eines angenommenen Pushs und
+ * ebenso die Serverfassung in einer Konflikt-Antwort (`conflict.theirs`).
+ * Gerade die ist verführerisch zu übersehen: Ein absichtlich unerlaubter
+ * Push wäre sonst der bequemste Weg an die zurückgehaltenen Spalten, denn
+ * `src/offline/sync/engine.ts` schreibt `theirs` direkt in die Replik.
+ */
+export function projectRow(
+  table: SyncTable,
+  row: SyncRow,
+  vis: Visibility
+): SyncRow {
+  const scope = table.scope;
+  if (
+    scope.kind !== "userOrPartner" ||
+    asNumber(row[scope.column]) === vis.user.id
+  ) {
+    return stripSecrets(table, row) as SyncRow;
+  }
+  const projected: SyncRow = {};
+  for (const column of scope.partnerColumns) {
+    if (column in row) projected[column] = row[column];
+  }
+  return projected;
 }
 
 /**
@@ -228,7 +284,13 @@ export function noteRemoved(
  * folglich nicht im Änderungsprotokoll stehen.
  */
 export function visibilityFingerprint(vis: Visibility): string {
-  return [...vis.accountIds].sort((a, b) => a - b).join(",");
+  const accounts = [...vis.accountIds].sort((a, b) => a - b).join(",");
+  // Die Ehepartner-Verknüpfung gehört dazu: Wird sie gesetzt oder gelöst,
+  // ändern sich die betroffenen Vorsorgezeilen nicht und stehen deshalb in
+  // keinem Änderungsprotokoll. Erst der geänderte Fingerabdruck erzwingt den
+  // vollständigen Abgleich, der sie auf das Gerät bringt — oder von dort
+  // wieder entfernt.
+  return `${accounts}|p${vis.partnerUserId ?? ""}`;
 }
 
 /** Begründung, warum eine Zeile nicht geschrieben werden darf (deutsch) */
@@ -320,7 +382,11 @@ export function checkRowWrite(
       }
       return null;
     }
+    // Auch bei `userOrPartner` nur die eigenen Zeilen: Die Verknüpfung
+    // erlaubt, mit den Daten der anderen Person zu rechnen — nicht, sie zu
+    // ändern. Auf dem Gerät liegen sie ausschließlich lesbar.
     case "user":
+    case "userOrPartner":
       return asNumber(row[scope.column]) === vis.user.id
         ? null
         : { reason: "Fremde Vorsorgedaten lassen sich nicht ändern." };

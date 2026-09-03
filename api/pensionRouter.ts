@@ -1185,7 +1185,6 @@ export const pensionRouter = createRouter({
         ...computeAhv(loaded.input),
         partnerLinked: loaded.partnerLinked,
         partnerPending: loaded.partnerPending,
-        partnerUnavailable: loaded.partnerUnavailable,
       };
     }),
 

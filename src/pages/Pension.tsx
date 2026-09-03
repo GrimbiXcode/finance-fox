@@ -1905,16 +1905,9 @@ function PartnerLink() {
         {detail.data?.partnerPending && (
           <span className="text-xs text-amber-600 dark:text-amber-500">
             Warten auf Bestätigung — die andere Person muss dich ebenfalls
-            verknüpfen.
-          </span>
-        )}
-        {detail.data?.partnerUnavailable && (
-          <span className="text-xs text-amber-600 dark:text-amber-500">
-            Die Vorsorgedaten der verknüpften Person bleiben im Heimnetz — sie
-            sind privat und werden nicht auf Geräte übertragen. Ohne sie
-            rechnet die AHV hier ohne Plafonierung und ohne Einkommensteilung;
-            der angezeigte Betrag ist deshalb zu hoch. Die vollständige
-            Berechnung siehst du, sobald du wieder im Heimnetz bist.
+            verknüpfen. Bis dahin rechnet die AHV hier ohne Plafonierung und
+            ohne Einkommensteilung. Eine Bestätigung, die inzwischen erfolgt
+            ist, siehst du hier erst nach dem nächsten Abgleich.
           </span>
         )}
         {detail.data?.partnerLinked && (
@@ -1927,6 +1920,18 @@ function PartnerLink() {
         Vorsorgedaten sind sonst strikt privat. Erst wenn beide Seiten die
         Verknüpfung setzen, wird die Rente des Partners für die Plafonierung
         herangezogen.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Was das beidseitig bedeutet: Damit die Rechnung auch unterwegs stimmt,
+        liegen dann <strong>Geburtsdatum, Geschlecht, erstes IK-Jahr, der
+        geplante Rentenbezug und die Beitragsjahre mit Einkommen, Status und
+        Gutschriften</strong> der jeweils anderen Person auch auf euren
+        Geräten — mehr braucht die Rentenformel nicht. Im Heimnetz bleiben
+        AHV-Nummer, alle Notizen, Zivilstand und Ehejahre, das
+        Pensionierungsalter, die amtliche Rentenvorausberechnung sowie Lohn,
+        Pensionskasse, Säule 3a, Dokumente und der Verlauf. Löst eine Seite
+        die Verknüpfung, verschwinden die Daten beim nächsten Abgleich wieder
+        von den Geräten.
       </p>
     </div>
   );

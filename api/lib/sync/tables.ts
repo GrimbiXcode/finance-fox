@@ -26,6 +26,23 @@ export type SyncScope =
   | { kind: "transaction"; column: string }
   /** Privat: nur Zeilen des anfragenden Benutzers */
   | { kind: "user"; column: string }
+  /**
+   * Privat, aber zusätzlich die Zeilen der **beidseitig bestätigten**
+   * Ehepartner-Verknüpfung — und davon nur die aufgeführten Spalten.
+   *
+   * Die AHV-Rentenberechnung (`api/lib/pension/ahvLoad.ts`) ist die einzige
+   * Stelle des Vorsorge-Moduls, die Daten einer anderen Person liest: für die
+   * Einkommensteilung während der Ehejahre und die Plafonierung beider
+   * Renten. Ohne diese Zeilen könnte die Replik die Rente offline nicht
+   * richtig rechnen. Die beidseitige Verknüpfung ist die Einwilligung dazu —
+   * sie existiert ausschließlich für diese Rechnung.
+   */
+  | {
+      kind: "userOrPartner";
+      column: string;
+      /** Spalten, die von der verknüpften Person übertragen werden */
+      partnerColumns: string[];
+    }
   /** Privat über den Eltern-Datensatz (z. B. Abstufung einer Pensionskasse) */
   | { kind: "parent"; table: string; column: string }
   /** Benutzerliste — alle Zeilen, aber ohne Geheimnisse */
@@ -104,11 +121,64 @@ export const SYNC_TABLES: SyncTable[] = [
   t("goal_sources", { kind: "account", column: "account_id" }),
 
   // ── Vorsorge (privat je Benutzer) ───────────────────────────────────────
-  t("pension_profiles", { kind: "user", column: "user_id" }),
+  //
+  // Drei Ausnahmen mit `userOrPartner`: Genau diese Tabellen liest
+  // `loadAhvInput` von der beidseitig verknüpften Person. Übertragen wird
+  // davon nur, was in die Rechnung eingeht — AHV-Nummer, Notizen, Zivilstand,
+  // Ehejahre und die amtliche Rentenvorausberechnung bleiben im Heimnetz.
+  //
+  // Achtung: Nicht aufgeführte Spalten tragen in der Replik den
+  // Schema-Default, nicht den echten Wert (Pensionierungsalter 65, Land
+  // „CH", Zivilstand „ledig"). Sie dürfen für eine Partnerzeile deshalb
+  // nirgends gelesen werden. `api/syncPension.test.ts` hält das fest, indem
+  // es die Rechnung einmal mit vollständigen und einmal mit projizierten
+  // Zeilen vergleicht: Wer `ahvLoad.ts` eine weitere Spalte lesen lässt,
+  // sieht dort sofort, dass sie hier fehlt.
+  t("pension_profiles", {
+    kind: "userOrPartner",
+    column: "user_id",
+    partnerColumns: [
+      "id",
+      "user_id",
+      // Für die Gegenseitigkeitsprüfung: Erst wenn beide Seiten aufeinander
+      // zeigen, ist die Verknüpfung wirksam — das muss auch offline gelten.
+      "partner_user_id",
+      "birth_date",
+      // NOT NULL ohne Default — ohne die Spalte ließe sich die Zeile auf dem
+      // Gerät gar nicht anlegen.
+      "created_at",
+    ],
+  }),
   t("pension_salaries", { kind: "user", column: "user_id" }),
   t("pension_deductions", { kind: "user", column: "user_id" }),
-  t("pension_ahv", { kind: "user", column: "user_id" }),
-  t("pension_ahv_years", { kind: "user", column: "user_id" }),
+  t("pension_ahv", {
+    kind: "userOrPartner",
+    column: "user_id",
+    partnerColumns: [
+      "id",
+      "user_id",
+      "gender",
+      "first_ik_year",
+      // Vorbezug/Aufschub der anderen Person verändert deren Rente und damit
+      // die Plafonierung.
+      "withdrawal_mode",
+      "withdrawal_months",
+      "withdrawal_share_pct",
+    ],
+  }),
+  t("pension_ahv_years", {
+    kind: "userOrPartner",
+    column: "user_id",
+    partnerColumns: [
+      "id",
+      "user_id",
+      "year",
+      "income",
+      "status",
+      "parenting_credit",
+      "care_credit",
+    ],
+  }),
   t("pension_funds", { kind: "user", column: "user_id" }),
   t("pension_fund_tiers", {
     kind: "parent",

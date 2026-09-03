@@ -27,6 +27,7 @@ import {
   loadVisibility,
   isRowVisible,
   noteApplied,
+  projectRow,
   noteRemoved,
   visibilityFingerprint,
   WRITABLE_USER_COLUMNS,
@@ -176,7 +177,7 @@ function snapshotFor(vis: Visibility): EntityChanges[] {
     entity: table.name,
     upserts: selectAll(db, table.name, table.pk, table.snapshotLimit)
       .filter(row => isRowVisible(table, row, vis))
-      .map(row => stripSecrets(table, row)),
+      .map(row => projectRow(table, row, vis)),
     removed: [],
   }));
 }
@@ -221,7 +222,7 @@ function deltaFor(vis: Visibility, since: number): EntityChanges[] {
     for (const row of rows) {
       if (!isRowVisible(table, row, vis)) continue;
       visibleIds.add(String(row[table.pk]));
-      upserts.push(stripSecrets(table, row));
+      upserts.push(projectRow(table, row, vis));
     }
     // Zeilen, die es nicht mehr gibt oder die der Benutzer nicht mehr sehen
     // darf, müssen auf dem Gerät verschwinden.
@@ -489,7 +490,7 @@ export const syncRouter = createRouter({
                     [],
                     base,
                     null,
-                    server,
+                    projectRow(table, server, vis),
                     denial.reason
                   ),
                 });
@@ -509,7 +510,7 @@ export const syncRouter = createRouter({
                   changedFields(base, server),
                   base,
                   null,
-                  server
+                  server ? projectRow(table, server, vis) : null
                 ),
               });
               continue;
@@ -566,7 +567,7 @@ export const syncRouter = createRouter({
                 [],
                 base,
                 incoming,
-                server,
+                server ? projectRow(table, server, vis) : null,
                 denial.reason
               ),
             });
@@ -601,7 +602,7 @@ export const syncRouter = createRouter({
               entity: change.entity,
               rowId: change.rowId,
               status: "applied",
-              row: stripSecrets(table, incoming),
+              row: projectRow(table, incoming, vis),
             });
             continue;
           }
@@ -609,8 +610,8 @@ export const syncRouter = createRouter({
           // Der Server-Stand muss für den Vergleich so aussehen, wie ihn das
           // Gerät kennt — sonst gälten Passwort-Hash und TOTP-Geheimnis als
           // Serveränderung, und jede Profiländerung käme als „zusammengeführt"
-          // zurück.
-          const serverForMerge = stripSecrets(table, server) as SyncRow;
+          // zurück. Deshalb dieselbe Projektion wie im Pull.
+          const serverForMerge = projectRow(table, server, vis);
           const outcome = merge3(
             base ?? serverForMerge,
             incoming,
@@ -628,7 +629,7 @@ export const syncRouter = createRouter({
                 outcome.fields,
                 base,
                 incoming,
-                server
+                serverForMerge
               ),
             });
             continue;
@@ -640,7 +641,7 @@ export const syncRouter = createRouter({
             entity: change.entity,
             rowId: change.rowId,
             status: outcome.kind === "merge" ? "merged" : "applied",
-            row: stripSecrets(table, outcome.row),
+            row: projectRow(table, outcome.row, vis),
             mergedMine: outcome.kind === "merge" ? outcome.mine : undefined,
             mergedTheirs: outcome.kind === "merge" ? outcome.theirs : undefined,
           });

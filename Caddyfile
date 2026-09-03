@@ -16,6 +16,11 @@
 #
 # Wer bereits Traefik, Nginx Proxy Manager oder eine eigene Caddy-Instanz mit
 # einem echten Zertifikat betreibt, braucht diese Datei nicht.
+#
+# Diese Datei muss neben dem `docker-compose.yml` liegen. Wo das nicht geht
+# (Portainer-Stack-Editor & Co.), steht in der README unter „Portainer" ein
+# Stack, der denselben Inhalt über `configs` inline führt — Änderungen hier
+# gehören deshalb auch dorthin, `api/deployDocs.test.ts` erinnert daran.
 
 {$FF_PUBLIC_HOST:localhost} {
 	tls internal

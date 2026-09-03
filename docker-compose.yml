@@ -35,6 +35,11 @@ services:
   # Root-Zertifikat von Caddys interner CA muss einmalig auf jedes Gerät —
   # siehe README, Abschnitt „HTTPS im Heimnetz". Wer schon einen eigenen
   # Reverse-Proxy mit gültigem Zertifikat betreibt, lässt dieses Profil aus.
+  #
+  # Achtung Portainer & Co.: Der Bind-Mount unten setzt voraus, dass das
+  # `Caddyfile` neben dieser Datei liegt. Wo nur ein Compose-File eingefügt
+  # werden kann, gibt es in der README unter „Portainer" einen Stack, der die
+  # Konfiguration über `configs` inline führt.
   caddy:
     image: caddy:2-alpine
     container_name: finance-fox-caddy

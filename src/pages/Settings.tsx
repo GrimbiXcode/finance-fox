@@ -644,39 +644,65 @@ export default function Settings() {
           <CardHeader>
             <CardTitle>Passwort ändern</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Aktuelles Passwort</Label>
-              <Input
-                type="password"
-                value={currentPw}
-                onChange={e => setCurrentPw(e.target.value)}
-                autoComplete="current-password"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Neues Passwort (min. 8 Zeichen)</Label>
-              <Input
-                type="password"
-                value={newPw}
-                onChange={e => setNewPw(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-            <Button
-              variant="outline"
-              disabled={
-                changePassword.isPending || !currentPw || newPw.length < 8
-              }
-              onClick={() =>
+          <CardContent>
+            {/* Das <form> ist kein Zierrat: Passwortmanager erkennen zusammen-
+                gehörige Felder über das Formular, und ohne submit-Ereignis
+                bieten iOS und 1Password nicht an, den gespeicherten Eintrag zu
+                aktualisieren. */}
+            <form
+              className="space-y-4"
+              onSubmit={e => {
+                e.preventDefault();
                 changePassword.mutate({
                   currentPassword: currentPw,
                   newPassword: newPw,
-                })
-              }
+                });
+              }}
             >
-              Passwort ändern
-            </Button>
+              {/* Ordnet das Passwort dem Konto zu — ohne ein Feld mit
+                  `autocomplete="username"` rät der Manager den Benutzernamen. */}
+              <input
+                type="text"
+                name="username"
+                autoComplete="username"
+                value={user?.email ?? ""}
+                readOnly
+                hidden
+              />
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Aktuelles Passwort</Label>
+                <Input
+                  id="current-password"
+                  name="current-password"
+                  type="password"
+                  value={currentPw}
+                  onChange={e => setCurrentPw(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">
+                  Neues Passwort (min. 8 Zeichen)
+                </Label>
+                <Input
+                  id="new-password"
+                  name="new-password"
+                  type="password"
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={
+                  changePassword.isPending || !currentPw || newPw.length < 8
+                }
+              >
+                Passwort ändern
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>
@@ -899,6 +925,7 @@ export default function Settings() {
                   <div className="space-y-2">
                     <Label>Aktuelles Passwort</Label>
                     <Input
+                      name="current-password"
                       type="password"
                       autoComplete="current-password"
                       value={disablePw}

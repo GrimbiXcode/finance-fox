@@ -22,6 +22,17 @@
 # Stack, der denselben Inhalt über `configs` inline führt — Änderungen hier
 # gehören deshalb auch dorthin, `api/deployDocs.test.ts` erinnert daran.
 
+{
+	# Unverzichtbar, wenn FF_PUBLIC_HOST eine IP-Adresse ist: Browser senden
+	# für IP-Adressen kein SNI (RFC 6066 lässt dort nur Namen zu). Caddy fällt
+	# dann auf die lokale Adresse der Verbindung zurück — im Container ist das
+	# die Docker-interne IP (172.x.x.x), für die es kein Zertifikat gibt. Der
+	# Handshake bricht mit einem „internal error"-Alert ab, im Firefox als
+	# SSL_ERROR_INTERNAL_ERROR_ALERT. `default_sni` gibt Caddy den Namen vor,
+	# unter dem es ohne SNI nachschlagen soll.
+	default_sni {$FF_PUBLIC_HOST:localhost}
+}
+
 {$FF_PUBLIC_HOST:localhost} {
 	tls internal
 

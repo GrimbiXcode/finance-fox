@@ -130,20 +130,20 @@ export default function Setup() {
             >
               <div className="space-y-2">
                 <Label htmlFor="name">Dein Name</Label>
-                <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Alex" />
+                <Input id="name" name="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Alex" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">E-Mail</Label>
-                <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input id="email" name="username" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="pw">Passwort</Label>
-                  <Input id="pw" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
+                  <Input id="pw" name="new-password" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="pw2">Wiederholen</Label>
-                  <Input id="pw2" type="password" required minLength={8} value={password2} onChange={(e) => setPassword2(e.target.value)} />
+                  <Input id="pw2" name="new-password-confirm" type="password" autoComplete="new-password" required minLength={8} value={password2} onChange={(e) => setPassword2(e.target.value)} />
                 </div>
               </div>
               <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={setup.isPending}>

@@ -35,7 +35,7 @@ export default function SetPassword({ purpose }: { purpose: 'invite' | 'reset' }
           <CardTitle>{purpose === 'invite' ? 'Willkommen im Haushalt' : 'Passwort zurücksetzen'}</CardTitle>
           <CardDescription>
             {info.data
-              ? `${purpose === 'invite' ? 'Lege dein Passwort fest' : 'Neues Passwort'} für ${info.data.name} (${info.data.email})`
+              ? `${purpose === 'invite' ? 'Lege dein Passwort fest' : 'Neues Passwort'} für ${info.data.name}`
               : info.isLoading ? 'Link wird geprüft…' : 'Dieser Link ist ungültig oder abgelaufen.'}
           </CardDescription>
         </CardHeader>
@@ -49,13 +49,22 @@ export default function SetPassword({ purpose }: { purpose: 'invite' | 'reset' }
                 setPw.mutate({ token, purpose, password });
               }}
             >
+              {/* Schreibgeschützt, aber sichtbar und im Formular: Ohne ein Feld
+                  mit `autocomplete="username"` kann ein Passwortmanager das neue
+                  Passwort keinem Konto zuordnen. 1Password und der iOS-Schlüssel-
+                  bund bieten dann entweder gar nicht an zu speichern, oder sie
+                  raten den Benutzernamen aus der Seite zusammen. */}
+              <div className="space-y-2">
+                <Label htmlFor="username">Konto</Label>
+                <Input id="username" name="username" type="email" autoComplete="username" readOnly value={info.data.email} className="text-muted-foreground" />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="pw">Neues Passwort</Label>
-                <Input id="pw" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
+                <Input id="pw" name="new-password" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="pw2">Wiederholen</Label>
-                <Input id="pw2" type="password" required minLength={8} value={password2} onChange={(e) => setPassword2(e.target.value)} />
+                <Input id="pw2" name="new-password-confirm" type="password" autoComplete="new-password" required minLength={8} value={password2} onChange={(e) => setPassword2(e.target.value)} />
               </div>
               <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={setPw.isPending}>
                 Passwort speichern

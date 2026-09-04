@@ -316,46 +316,74 @@ Berichts-Abschnitte unter `ff-report-sections`.
 
 Seite `pages/MoneyFlow.tsx` unter `/geldfluss` (Nav „Geldfluss" nach
 „Konten") stellt Konten als Knoten und Dauerbuchungen als gerichtete Kanten
-dar (rein frontendseitig aus `listAccounts`/`listRecurring`). Die reine
-Funktion `buildMoneyFlow` in `lib/moneyflow.ts` baut den Graphen im
-Sankey-Stil: Spalten-Layout (`layoutColumns` — links Einnahmen-Block, Mitte
-Konten in 1 Spalte bis 6, 2 Spalten ab 7, 3 Spalten ab 15, rechts
-Ausgaben-Block; Y-Positionen gleichmäßig, Container-Höhe wächst mit der
-Kontenzahl und wird als `heightPx` geliefert, die Seite scrollt). Sortierung
-zur Kreuzungsminimierung: Hauptfluss (Einnahmen-Empfänger oben,
-Ausgaben-Zahler unten) plus ein sequenzieller Barycenter-Pass, der
-Transfer-Partner benachbart zieht. Beträge auf Monat normalisiert
-(wöchentlich × 52/12, jährlich ÷ 12, gerundet); Linienstärke kontinuierlich
-proportional zum Betrag (`width`, 2–18 px linear auf das Maximum), pausierte
-Dauerbuchungen gestrichelt. Die Pseudo-Knoten Einnahmen/Ausgaben sind Blöcke
-im Konto-Karten-Format mit den Monatssummen (`incomeTotal`/`expenseTotal`).
+dar (rein frontendseitig aus `listAccounts`/`listRecurring`). Zwei
+Ansichten, Umschalter oben rechts (`ff-moneyflow-view` in localStorage):
+**Diagramm** (`components/MoneyFlowChart.tsx`) und **Liste**
+(`components/MoneyFlowList.tsx`, ein Eintrag pro verbundenem Konto mit
+Monatssummen der Zu-/Abflüsse, aufklappbar zu den einzelnen Strömen).
+Farben/Icons beider Ansichten liegen in `lib/moneyflowStyle.ts`.
 
-Darstellung in `components/MoneyFlowChart.tsx`: SVG-S-Kurven (kubische
-Bezier, Kontrollpunkte auf halbem Weg; Kanten innerhalb einer Spalte weichen
-als Bogen zur Seite aus) mit Arrowhead-Markern und Label-Badges auf der
-Kurve (Position `labelT`: parallele Kanten gleicher Quelle bzw. gleichen
-Ziels werden entlang der Kurve gestaffelt — Quell-Gruppen Richtung Ziel,
-Ziel-Gruppen Richtung Quelle, dicke Kanten zentraler; ab 5 Geschwistern
-kompaktes Badge via `labelCompact`), darüber absolut positionierte
-HTML-Knoten (Positionen in Prozent); Hover auf einen Knoten hebt seine
-Kanten hervor. Konten ohne jede Kante (pausierte Dauerbuchungen zählen als
-Verbindung) fliegen aus dem Diagramm: `buildMoneyFlow` liefert sie als
-`unconnected`, Layout/Höhenformel rechnen nur mit den verbundenen Konten,
-und die Seite zeigt sie in einer abgesetzten Card „Ohne Geldflüsse"
-unterhalb der Grafik (flex-wrap, gleiches Karten-Design via
-`MoneyFlowAccountCard`). Die endgültige Label-Position (`labelX`/`labelY`)
-ermittelt `assignLabelPositions` nach `assignLabelT` als Repulsion-Pass über
-einem Kollisionsmodell aus achsenparallelen Rechtecken in geschätzten
-Pixeln (`nodeRectPx`/`labelRectPx`, angenommene Container-Breite 1000 px):
-Start auf der Kurve bei `labelT`, bei Kollision mit einer Karten- oder
-bereits platzierten Label-Box iterative Verschiebung senkrecht zur
-Kurventangente (plus rein horizontal — Kurvenenden haben waagrechte
-Tangenten) in den freien Raum, beide Seiten (zuerst weg vom näheren
-Endknoten), wachsender Offset, `t` lokal ±0,05, Clamping im Container;
-Karten-Überlappung zählt vierfach, Fallback ist die Position mit der
-geringsten Überlappung. `edgeGeometry` (Pfad, Punkt, Tangente) liegt in
-`lib/moneyflow.ts` und wird vom Chart importiert.
+Die reinen Funktionen in `lib/moneyflow.ts` arbeiten zweistufig:
 
+- `buildMoneyFlow(accounts, recurring)` baut den Graphen: Kanten aus
+  Dauerbuchungen (Beträge auf Monat normalisiert: wöchentlich × 52/12,
+  jährlich ÷ 12, gerundet; pausierte als `paused`, Notiz als `note`),
+  Konten ohne jede Kante als `unconnected` (pausierte zählen als
+  Verbindung; die Seite zeigt sie in der Card „Ohne Geldflüsse" mit
+  `MoneyFlowAccountCard`), Summen `incomeTotal`/`expenseTotal` (nur aktive
+  Flüsse) und `dense` (ab `DENSE_EDGES` = 24 Kanten). `nodeFlows` liefert
+  Zu-/Abflüsse eines Knotens für Detail-Panel und Liste.
+- `layoutMoneyFlow(flow, { widthPx, nodeWidthPx })` legt das Diagramm in
+  **Pixeln** aus — das Chart misst seine Container-Breite per
+  ResizeObserver und layoutet neu. Spaltenzahl nach Kontenzahl
+  (`columnCount`: 1 bis 6, 2 ab 7, 3 ab 15, 4 ab 28), aber nur so viele, wie in die
+  Breite passen (`fitColumns`); wechselt das Layout dadurch auf kompakte
+  Karten (`NODE_W_COMPACT_PX`), wenn das eine Spalte mehr bringt. Passt
+  nicht einmal eine Spalte, wird die Fläche breiter als der Container und
+  scrollt horizontal (`overflow-x-auto`).
+  - **Spaltenzuweisung** (`assignColumns`) als Schichtung entlang der
+    Umbuchungen: längster Umbuchungspfad von einer Quelle = früheste
+    Spalte, längster Pfad zu einer Senke = späteste; im Spielraum werden
+    die Spalten ausgeglichen gefüllt (fest gebundene Konten zuerst,
+    zugewiesene Vorgänger heben die früheste Spalte an). Reihenfolge in
+    der Spalte: Hauptfluss (Einnahmen-Empfänger oben, Ausgaben-Zahler
+    unten), dann Barycenter-Sweeps über die relativen Höhen der
+    Umbuchungs-Partner. Bei einer Spalte greift `orderAccounts`
+    (Hauptfluss + ein Barycenter-Pass).
+  - **Ports**: Kanten docken auf dem Kartenrand an (Seite zum Partner),
+    pro Kartenseite nach Partner-Höhe sortiert und mit Mindestabstand
+    verteilt (`spreadPositions`); die Pseudo-Knoten Einnahmen/Ausgaben
+    sind Balken, die von der obersten bis zur untersten Partner-Karte
+    reichen, ihre Ports liegen auf Höhe des Partners (Kanten annähernd
+    waagrecht). Auf schmalen Flächen (Handy) werden die Balken schlank
+    (`BAR_W_SLIM_PX`, nur Icon; das Chart zeigt die Summen dann in einer
+    Zeile darüber) und das Chart ragt per `-mx-4` etwas in den Kartenrand.
+  - **Kantenführung** (`edgeGeometry`): kubische S-Kurven zwischen
+    Spalten (Kontrollpunkte auf halbem Weg). Innerhalb der einzigen Spalte
+    laufen Umbuchungen orthogonal über senkrechte **Schienen**
+    (`assignLanes`, Feld `via`: eine Schiene pro Quellkonto auf der Seite
+    mit weniger geraden Kanten, Linienstärke gedeckelt); Bögen (`curve`)
+    bleiben nur für seltene Reste in Mehrspalten-Layouts. Linienstärke
+    linear zum Monatsbetrag (`WIDTH_MIN`–`WIDTH_MAX`), pausierte Kanten
+    gestrichelt (Strichlänge mit der Stärke skaliert).
+  - **Labels** (Betrag/Monat): Position auf der Kurve `labelT` (parallele
+    Kanten gleicher Quelle Richtung Ziel, gleichen Ziels Richtung Quelle
+    gestaffelt; ab 5 Geschwistern `labelCompact`), danach
+    `assignLabelPositions` als Repulsion-Pass über achsenparallele
+    Rechtecke (Karten zählen vierfach, Verschiebung senkrecht zur Tangente
+    und horizontal, wachsender Offset, Fallback = geringste Überlappung).
+    Im dichten Modus zählen nur Labels mit gemeinsamem Endknoten als
+    Kollision, weil nie mehr gleichzeitig sichtbar ist.
+
+Interaktion im Chart: Hover hebt die Ströme eines Knotens hervor; ein
+Tipp/Klick (auch Enter/Leertaste, Karten sind `role="button"`) fixiert das
+als **Fokus** — Touch kennt kein Hover. Fokus-Zustand hält die Seite
+(`focusNode`), er ist derselbe wie der aufgeklappte Eintrag der Liste; Klick
+auf die freie Fläche, Escape oder das X im Detail-Panel heben ihn auf. Bei
+Fokus erscheint unter dem Diagramm `MoneyFlowNodeDetails` mit allen Zu- und
+Abflüssen des Knotens. Bei dichten Graphen (`flow.dense`) werden die
+Betrags-Badges nur für den hervorgehobenen Knoten eingeblendet; der Schalter
+„Alle Beträge anzeigen" im Card-Header hebt das auf.
 ## Dark Mode
 
 Umschalter im Layout-Header, via next-themes (`ThemeProvider` in `main.tsx`,

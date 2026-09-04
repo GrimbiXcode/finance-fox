@@ -121,6 +121,16 @@ Caddy stellt das Zertifikat mit einer **eigenen lokalen CA** aus — ohne
 Internet, ohne Domain, ohne Let's Encrypt. Die App läuft danach unter
 `https://192.168.1.10` (Port 443).
 
+> **Warum die Zeile `default_sni` im `Caddyfile` steht.** Für eine IP-Adresse
+> senden Browser kein SNI — RFC 6066 lässt im Feld `HostName` nur Namen zu.
+> Ohne SNI sucht Caddy das passende Zertifikat unter der lokalen Adresse der
+> Verbindung, und das ist im Container die Docker-interne IP (`172.x.x.x`).
+> Dafür gibt es keins, also bricht der Handshake ab: Firefox meldet
+> `SSL_ERROR_INTERNAL_ERROR_ALERT`, Chrome und Safari einen unspezifischen
+> Verbindungsfehler. `default_sni` gibt Caddy den Namen vor, unter dem es in
+> diesem Fall nachschlagen soll. Wer einen im Heimnetz auflösbaren **Namen**
+> statt einer IP verwendet, ist von alldem nicht betroffen.
+
 Damit die Geräte dem Zertifikat vertrauen, muss das Root-Zertifikat dieser CA
 einmalig auf jedes Gerät:
 
@@ -137,9 +147,36 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./finance-fox
    → Finance Fox aktivieren. Ohne diesen Schritt bleibt das Zertifikat
    installiert, aber ungültig.
 
-Auf macOS: Doppelklick auf die Datei → Schlüsselbundverwaltung → *System* →
-Zertifikat auf „Immer vertrauen" stellen. Unter Android/Windows analog über
-den jeweiligen Zertifikatsspeicher.
+**Auf Android** (die Menüpunkte heißen je nach Hersteller leicht anders):
+
+1. Auf dem Gerät muss eine **Bildschirmsperre** eingerichtet sein — PIN, Muster
+   oder Passwort. Ohne sie verweigert Android die Installation.
+2. `finance-fox-ca.crt` aufs Gerät bringen (herunterladen, per Mail schicken,
+   über ein Netzlaufwerk kopieren). Die Endung muss `.crt` bleiben, sonst
+   blendet die Dateiauswahl die Datei aus.
+3. *Einstellungen* → *Sicherheit & Datenschutz* → *Weitere
+   Sicherheitseinstellungen* → *Verschlüsselung & Anmeldedaten* →
+   **Zertifikat installieren** → **CA-Zertifikat** → die Warnung mit
+   *Trotzdem installieren* bestätigen → Datei auswählen.
+   Auf Samsung-Geräten liegt derselbe Punkt unter *Einstellungen* → *Sicherheit
+   und Datenschutz* → *Weitere Sicherheitseinstellungen* → *Anmeldedaten
+   speichern* → *Vom Gerätespeicher installieren* → *CA-Zertifikat*.
+4. Zur Kontrolle: *Vertrauenswürdige Anmeldedaten* → Reiter **Nutzer** — dort
+   steht danach die „Caddy Local Authority".
+
+> **Chrome benutzen, nicht Firefox.** Chrome vertraut den selbst installierten
+> Zertifikaten aus diesem Speicher; Firefox für Android bringt einen eigenen
+> mit und lässt sich auf der Release-Version nicht ohne Weiteres erweitern. Die
+> App also mit Chrome aufrufen und von dort über *⋮* → *Zum Startbildschirm
+> hinzufügen* installieren.
+
+Dass Android anschließend dauerhaft meldet, das Netzwerk werde möglicherweise
+überwacht, ist normal — der Hinweis erscheint bei jedem selbst installierten
+Root-Zertifikat und sagt nichts über dieses hier aus.
+
+**Auf macOS**: Doppelklick auf die Datei → Schlüsselbundverwaltung → *System*
+→ Zertifikat auf „Immer vertrauen" stellen. **Unter Windows** analog über
+`certmgr.msc` → *Vertrauenswürdige Stammzertifizierungsstellen*.
 
 Danach die App unter `https://…` aufrufen und zum Home-Bildschirm hinzufügen.
 
@@ -192,6 +229,10 @@ services:
 configs:
   caddyfile:
     content: |
+      {
+        default_sni {$$FF_PUBLIC_HOST:localhost}
+      }
+
       {$$FF_PUBLIC_HOST:localhost} {
         tls internal
         encode zstd gzip

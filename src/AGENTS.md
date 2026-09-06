@@ -410,6 +410,12 @@ Server-Seite steht in `api/AGENTS.md` unter „Abgleich".
   drei Node-gebundenen Module), `localApi.ts` (lokaler Router + Anhang-Routen),
   `sync/` (Abgleich, Konflikte, Anhang-Dateien), `state.ts` (Identität,
   Geräte-Anmeldung, Abgleichstand in IndexedDB).
+  **Die Replik öffnet `ensureDatabase()` (`sync/engine.ts`) — und zwar auch
+  aus `localApi.ts` heraus, nicht nur im Abgleich:** Der Browser beendet einen
+  untätigen Worker jederzeit, und nach dem nächsten Start ist die erste
+  Anfrage `auth.me`, lange bevor die Seite einen Abgleich anstößt. Ohne
+  diesen Schritt antwortet der Worker mit „Datenbank nicht initialisiert",
+  und die App bleibt beim Ladebildschirm hängen.
 - `src/providers/trpc.tsx` — `splitLink`: Prozeduren aus
   `ONLINE_ONLY_PROCEDURES` (`contracts/offline.ts`) gehen an
   `/api/trpc/live`, alles andere an `/api/trpc`.

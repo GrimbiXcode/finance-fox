@@ -15,6 +15,8 @@ export interface SessionUser {
 interface AuthContextValue {
   user: SessionUser | null | undefined; // undefined = lädt noch
   needsSetup: boolean | undefined;
+  /** Fehler beim Laden der Sitzung (auth.me / setupStatus), sonst null */
+  error: string | null;
   logout: () => void;
   refresh: () => void;
 }
@@ -41,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user: me.data === undefined ? undefined : me.data,
       needsSetup: setup.data?.needsSetup,
+      error: me.error?.message ?? setup.error?.message ?? null,
       logout: () => logoutMutation.mutate(),
       refresh: () => { utils.auth.me.invalidate(); utils.auth.setupStatus.invalidate(); },
     }}>

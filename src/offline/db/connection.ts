@@ -100,7 +100,12 @@ async function init(): Promise<Db> {
 
 /** Async-Init: einmalig awaiten, danach synchron über getDb() */
 export async function initDb(): Promise<Db> {
-  ready ??= init();
+  ready ??= init().catch(err => {
+    // Beim nächsten Aufruf erneut versuchen, statt den Fehler für die
+    // Lebensdauer des Workers festzuhalten.
+    ready = undefined;
+    throw err;
+  });
   return ready;
 }
 

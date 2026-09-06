@@ -77,11 +77,27 @@ let lastError: string | null = null;
 let reachable = false;
 let dbReady: Promise<void> | undefined;
 
-async function ensureDatabase(): Promise<void> {
+/**
+ * Replik öffnen und Schema sicherstellen — einmalig je Worker-Laufzeit.
+ *
+ * Braucht nicht nur der Abgleich, sondern auch der lokale Router
+ * (`localApi.ts`): Der Browser beendet einen untätigen Service Worker
+ * jederzeit, und nach dem nächsten Start ist die erste Anfrage in aller Regel
+ * `auth.me` — lange bevor die Seite einen Abgleich anstößt. Ohne diesen
+ * Schritt liefe sie in „Datenbank nicht initialisiert", und die App bliebe
+ * beim Ladebildschirm hängen.
+ */
+export async function ensureDatabase(): Promise<void> {
   dbReady ??= (async () => {
     await initDb();
     ensureSchema();
-  })();
+  })().catch(err => {
+    // Nächster Aufruf beginnt von vorn — sonst bliebe ein einmaliger Fehler
+    // (etwa eine gerade nicht ladbare WASM-Datei) für die Lebensdauer des
+    // Workers kleben.
+    dbReady = undefined;
+    throw err;
+  });
   return dbReady;
 }
 

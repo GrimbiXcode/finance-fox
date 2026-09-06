@@ -24,6 +24,7 @@ import UsersPage from '@/pages/Users'
 import Login from '@/pages/Login'
 import Setup from '@/pages/Setup'
 import SetPassword from '@/pages/SetPassword'
+import { Button } from '@/components/ui/button'
 import { PiggyBank } from 'lucide-react'
 
 function Loading() {
@@ -37,15 +38,39 @@ function Loading() {
   )
 }
 
+/**
+ * Die Sitzung ließ sich nicht laden (Server nicht erreichbar, Fehler in der
+ * lokalen Replik, …). Ohne diesen Bildschirm bliebe die App stumm beim
+ * Ladebildschirm stehen — die beiden Abfragen werden nicht wiederholt.
+ */
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center text-muted-foreground">
+        <PiggyBank className="h-10 w-10 text-emerald-600" />
+        <span className="text-sm font-medium text-foreground">
+          Finance Fox konnte nicht geladen werden
+        </span>
+        <span className="text-sm">{message}</span>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Erneut versuchen
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function Root() {
-  const { user, needsSetup } = useAuth()
+  const { user, needsSetup, error, refresh } = useAuth()
   const hash = window.location.hash
 
   // Einladungs-/Reset-Links sind immer erreichbar
   if (hash.startsWith('#/einladung/')) return <SetPassword purpose="invite" />
   if (hash.startsWith('#/reset/')) return <SetPassword purpose="reset" />
 
-  if (user === undefined || needsSetup === undefined) return <Loading />
+  if (user === undefined || needsSetup === undefined) {
+    return error ? <LoadError message={error} onRetry={refresh} /> : <Loading />
+  }
   if (needsSetup) return <Setup />
   if (!user) return <Login />
 

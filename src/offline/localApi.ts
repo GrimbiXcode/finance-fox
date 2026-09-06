@@ -16,6 +16,7 @@ import {
   readAttachmentBlob,
 } from "./shims/attachmentStore";
 import { isBootstrapped, loadIdentity } from "./state";
+import { ensureDatabase } from "./sync/engine";
 
 /**
  * Die lokale API: derselbe tRPC-Router wie auf dem Heimserver, nur gegen die
@@ -76,6 +77,13 @@ export async function handleApiRequest(
 
   const identity = await loadIdentity();
   if (!identity) return null;
+
+  // Erst jetzt die Replik öffnen — und zwar hier, nicht erst im Abgleich: Der
+  // Browser beendet einen untätigen Worker jederzeit, und nach dem nächsten
+  // Start kommt `auth.me` an, bevor die Seite überhaupt einen Abgleich
+  // anstoßen kann (sie wartet ja auf genau diese Antwort). Schlägt das Öffnen
+  // fehl, geht die Anfrage ans Netz (siehe `handleApi` in `sw/index.ts`).
+  await ensureDatabase();
 
   if (isAttachment) {
     const response = await attachmentApp.fetch(request);

@@ -91,8 +91,10 @@ export type PageToWorkerMessage =
   | { type: "ff:sync"; reason: SyncReason }
   /** Statusabfrage — beantwortet mit `ff:status` */
   | { type: "ff:status?" }
-  /** Wartenden Service Worker sofort aktivieren (Update-Toast) */
+  /** Wartenden Service Worker sofort aktivieren (Update-Fluss) */
   | { type: "ff:skip-waiting" }
+  /** Build-Kennung des Workers erfragen — beantwortet mit `ff:version` */
+  | { type: "ff:version?" }
   /** Speicher-Budget für Beleg-Dateien setzen (0 = keine Belege vorhalten) */
   | { type: "ff:blob-budget"; bytes: number }
   /** Lokale Daten verwerfen (Notbremse in den Einstellungen) */
@@ -103,7 +105,14 @@ export type WorkerToPageMessage =
   /** Aktueller Zustand des Offline-Teils */
   | { type: "ff:status"; status: SyncStatus }
   /** Der Abgleich hat lokale Daten verändert — Queries neu laden */
-  | { type: "ff:data-changed" };
+  | { type: "ff:data-changed" }
+  /**
+   * Build-Kennung des antwortenden Workers (`__FF_BUILD_ID__`). Die Seite
+   * erkennt daran, ob ein frisch installierter Worker wirklich eine neue
+   * Version ist — der Browser allein ist dafür kein verlässlicher Zeuge
+   * (siehe `src/lib/serviceWorker.ts`).
+   */
+  | { type: "ff:version"; buildId: string };
 
 /** Identität, mit der der lokale Router arbeitet (Spiegel von SessionUser) */
 export type OfflineIdentity = {

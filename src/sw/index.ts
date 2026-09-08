@@ -222,6 +222,10 @@ self.addEventListener("message", event => {
       void self.skipWaiting();
       return;
 
+    case "ff:version?":
+      reply(event, { type: "ff:version", buildId: __FF_BUILD_ID__ });
+      return;
+
     case "ff:identity":
       event.waitUntil(
         (async () => {

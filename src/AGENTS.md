@@ -422,6 +422,16 @@ Server-Seite steht in `api/AGENTS.md` unter „Abgleich".
 - `src/providers/offline.tsx` — Identität an den Worker melden (er kann das
   HttpOnly-Cookie nicht lesen), Abgleich anstoßen (Start, Fokus, Intervall)
   und nach einem Abgleich die Queries neu laden.
+- **Update-Fluss** (`src/lib/serviceWorker.ts`): Ein frisch installierter
+  Worker gilt nur dann als neue Version, wenn seine Build-Kennung
+  (`ff:version?` → `__FF_BUILD_ID__`) von der des laufenden Workers abweicht.
+  Der Browser allein ist kein verlässlicher Zeuge: Safari/iOS vergleicht beim
+  Update-Check neben den Bytes von `sw.js` auch die TLS-Zertifikatskette und
+  installiert den Worker nach jedem Zertifikatswechsel neu — mit Caddys
+  interner CA (Profil `tls`) alle paar Stunden. Gleicher Build: still
+  übernehmen lassen, kein Hinweis, kein Neuladen. Neue Version: Toast „Neue
+  Version verfügbar" mit „Jetzt laden"; nach der Übernahme lädt die Seite neu
+  (`controllerchange`), damit sie zu den frisch gecachten Dateien passt.
 - `src/components/SyncStatus.tsx` (Kopfzeile) und `src/pages/Sync.tsx`
   (`/abgleich`): Status, Konflikte feldweise entscheiden, Merge-Protokoll.
   Die deutschen Beschriftungen für Tabellen, Spalten und Werte stehen in

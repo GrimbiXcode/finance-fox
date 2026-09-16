@@ -58,6 +58,7 @@ import { setAppCurrency, getUserLocale } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/providers/trpc";
 import { toast } from "sonner";
+import { CHART } from "@/lib/chartColors";
 
 const CAT_COLORS = [
   "#f43f5e",
@@ -306,7 +307,6 @@ function CategoryEditDialog({
           Abbrechen
         </Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={updateCategory.isPending}
         >
@@ -585,9 +585,9 @@ export default function Settings() {
         </p>
       </div>
 
-      <Card className="border-emerald-600/30 bg-emerald-600/5">
+      <Card className="border-positive/30 bg-positive/5">
         <CardContent className="flex items-start gap-3 py-4">
-          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-positive" />
           <div className="text-sm">
             <span className="font-semibold">Datenschutz:</span> Alle Daten
             liegen in einer SQLite-Datenbank auf deinem eigenen Server — nichts
@@ -1405,7 +1405,7 @@ export default function Settings() {
                 <span className="flex shrink-0 items-center gap-1.5 font-medium">
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: e.userColor ?? "#94a3b8" }}
+                    style={{ backgroundColor: e.userColor ?? CHART.muted }}
                   />
                   {e.userName ?? "System"}
                 </span>

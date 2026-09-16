@@ -123,9 +123,9 @@ function RecurringForm({
     <>
       <div className="grid gap-4 py-2">
         <div className="grid grid-cols-3 gap-2">
-          {typeButton('expense', 'Ausgabe', 'bg-rose-600 hover:bg-rose-700')}
-          {typeButton('income', 'Einnahme', 'bg-emerald-600 hover:bg-emerald-700')}
-          {typeButton('transfer', 'Umbuchung', 'bg-sky-600 hover:bg-sky-700')}
+          {typeButton('expense', 'Ausgabe', 'bg-negative hover:bg-negative/90')}
+          {typeButton('income', 'Einnahme', 'bg-positive hover:bg-positive/90')}
+          {typeButton('transfer', 'Umbuchung', 'bg-pencil-1 hover:bg-pencil-1/90')}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
@@ -215,7 +215,7 @@ function RecurringForm({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>Abbrechen</Button>
-        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSubmit(values)} disabled={isPending}>
+        <Button onClick={() => onSubmit(values)} disabled={isPending}>
           {submitLabel}
         </Button>
       </DialogFooter>
@@ -392,7 +392,7 @@ export default function Recurring() {
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
+              <Button><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader><DialogTitle>Neue wiederkehrende Buchung</DialogTitle></DialogHeader>
@@ -523,7 +523,7 @@ export default function Recurring() {
                         )}
                       </CardDescription>
                     </div>
-                    <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-emerald-600' : ''}>
+                    <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-positive' : ''}>
                       {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                     </Badge>
                   </div>
@@ -532,8 +532,8 @@ export default function Recurring() {
                   <div className="flex items-baseline justify-between">
                     <span className={cn(
                       'text-xl font-bold',
-                      r.type === 'income' && 'text-emerald-600',
-                      r.type === 'expense' && 'text-rose-500',
+                      r.type === 'income' && 'text-positive',
+                      r.type === 'expense' && 'text-negative',
                     )}>
                       {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
                     </span>
@@ -623,15 +623,15 @@ export default function Recurring() {
                     </TableCell>
                     <TableCell className={cn(
                       'text-right font-bold',
-                      r.type === 'income' && 'text-emerald-600',
-                      r.type === 'expense' && 'text-rose-500',
+                      r.type === 'income' && 'text-positive',
+                      r.type === 'expense' && 'text-negative',
                     )}>
                       {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
                     </TableCell>
                     <TableCell>{intervalLabel[r.interval]}</TableCell>
                     <TableCell>{formatDate(r.nextDate)}</TableCell>
                     <TableCell>
-                      <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-emerald-600' : ''}>
+                      <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-positive' : ''}>
                         {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                       </Badge>
                     </TableCell>

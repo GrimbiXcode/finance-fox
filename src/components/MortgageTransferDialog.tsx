@@ -121,7 +121,7 @@ function TransferForm(
             />
           </div>
         )}
-        <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+        <p className="rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs text-muted-foreground">
           Es wird eine Kopie angelegt, kein laufender Abgleich: Ändert sich
           später der Zinssatz oder die Rate, muss die Dauerbuchung von Hand
           angepasst werden. Bereits von Hand erfasste Buchungen werden nicht
@@ -131,7 +131,6 @@ function TransferForm(
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={transferInterest.isPending || transferAmortization.isPending}
         >

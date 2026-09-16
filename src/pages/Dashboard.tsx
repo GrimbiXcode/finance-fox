@@ -12,6 +12,7 @@ import {
 import TransactionDialog from '@/components/TransactionDialog';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
+import { CHART } from '@/lib/chartColors';
 
 const PIE_COLORS = ['#f43f5e', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#94a3b8', '#10b981'];
 
@@ -41,7 +42,7 @@ export default function Dashboard() {
   const categoryData = [...expensesByRootCategory(transactions, month, categories).entries()]
     .map(([catId, amount]) => {
       const cat = categories.find((c) => c.id === catId);
-      return { name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? '#94a3b8' };
+      return { name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? CHART.muted };
     })
     .sort((a, b) => b.value - a.value);
 
@@ -80,20 +81,20 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Einnahmen (Monat)</CardTitle>
-            <TrendingUp className="h-4 w-4 text-emerald-600" />
+            <TrendingUp className="h-4 w-4 text-positive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-emerald-600">{formatCents(totals.income)}</div>
+            <div className="text-2xl font-bold text-positive">{formatCents(totals.income)}</div>
             <p className="text-xs text-muted-foreground">{formatMonth(month)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Ausgaben (Monat)</CardTitle>
-            <TrendingDown className="h-4 w-4 text-rose-500" />
+            <TrendingDown className="h-4 w-4 text-negative" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-rose-500">{formatCents(totals.expense)}</div>
+            <div className="text-2xl font-bold text-negative">{formatCents(totals.expense)}</div>
             <p className="text-xs text-muted-foreground">{formatMonth(month)}</p>
           </CardContent>
         </Card>
@@ -103,7 +104,7 @@ export default function Dashboard() {
             <Scale className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={cn('text-2xl font-bold', savings >= 0 ? 'text-emerald-600' : 'text-rose-500')}>
+            <div className={cn('text-2xl font-bold', savings >= 0 ? 'text-positive' : 'text-negative')}>
               {formatCents(savings)}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -124,20 +125,20 @@ export default function Dashboard() {
               <AreaChart data={cashflow} margin={{ left: 0, right: 8, top: 8 }}>
                 <defs>
                   <linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                    <stop offset="0%" stopColor={CHART.positive} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={CHART.positive} stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#f43f5e" stopOpacity={0} />
+                    <stop offset="0%" stopColor={CHART.negative} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={CHART.negative} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} />
                 <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v} ${currencySymbol()}`} width={70} />
                 <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
-                <Area type="monotone" dataKey="Einnahmen" stroke="#10b981" fill="url(#gIn)" strokeWidth={2} />
-                <Area type="monotone" dataKey="Ausgaben" stroke="#f43f5e" fill="url(#gOut)" strokeWidth={2} />
+                <Area type="monotone" dataKey="Einnahmen" stroke={CHART.positive} fill="url(#gIn)" strokeWidth={2} />
+                <Area type="monotone" dataKey="Ausgaben" stroke={CHART.negative} fill="url(#gOut)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -185,7 +186,7 @@ export default function Dashboard() {
                 return (
                   <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? '#64748b' }} />
+                      <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? CHART.muted }} />
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{t.note || cat?.name || 'Umbuchung'}</div>
                         <div className="text-xs text-muted-foreground">
@@ -195,7 +196,7 @@ export default function Dashboard() {
                     </div>
                     <div className={cn(
                       'shrink-0 text-sm font-semibold',
-                      t.type === 'income' ? 'text-emerald-600' : t.type === 'expense' ? 'text-rose-500' : 'text-muted-foreground',
+                      t.type === 'income' ? 'text-positive' : t.type === 'expense' ? 'text-negative' : 'text-muted-foreground',
                     )}>
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
                     </div>
@@ -223,7 +224,7 @@ export default function Dashboard() {
                       </div>
                       <span className="truncate text-sm font-medium" title={u.name}>{u.name}</span>
                     </div>
-                    <span className={cn('shrink-0 text-sm font-semibold', bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-500' : 'text-muted-foreground')}>
+                    <span className={cn('shrink-0 text-sm font-semibold', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
                       {bal > 0 ? '+' : ''}{formatCents(bal)}
                     </span>
                   </div>

@@ -95,7 +95,7 @@ export function ForecastTable({ scenario }: ForecastTableProps) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
-              <TableProperties className="h-5 w-5 text-indigo-500" />
+              <TableProperties className="h-5 w-5 text-muted-foreground" />
               Prognose-Tabelle
             </CardTitle>
             <CardDescription>
@@ -154,7 +154,7 @@ export function ForecastTable({ scenario }: ForecastTableProps) {
           </label>
         </div>
         {(data?.mortgageMissingRecurring ?? 0) > 0 && (
-          <p className="pt-1 text-xs text-amber-600 dark:text-amber-400">
+          <p className="pt-1 text-xs text-warning">
             {data!.mortgageMissingRecurring} Hypotheken-Posten ohne Dauerbuchung
             — deren Zahlungen fehlen in der Prognose, das Nettovermögen fällt
             dadurch zu optimistisch aus.
@@ -249,7 +249,7 @@ export function ForecastTable({ scenario }: ForecastTableProps) {
                 {data.flows.income.map((v, i) => (
                   <TableCell
                     key={i}
-                    className="text-right tabular-nums text-emerald-600"
+                    className="text-right tabular-nums text-positive"
                   >
                     +{formatCents(v)}
                   </TableCell>
@@ -263,7 +263,7 @@ export function ForecastTable({ scenario }: ForecastTableProps) {
                 {data.flows.expense.map((v, i) => (
                   <TableCell
                     key={i}
-                    className="text-right tabular-nums text-rose-500"
+                    className="text-right tabular-nums text-negative"
                   >
                     −{formatCents(v)}
                   </TableCell>
@@ -406,11 +406,11 @@ function GoalCell({
     <TableCell
       className={cn(
         "text-right",
-        reached && "bg-emerald-50 dark:bg-emerald-950/40"
+        reached && "bg-positive/10"
       )}
     >
       <span className="flex items-center justify-end gap-1 tabular-nums">
-        {reached && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+        {reached && <Check className="h-3.5 w-3.5 text-positive" />}
         {formatCents(value)}
       </span>
       {percent !== null && (

@@ -322,7 +322,7 @@ function GoalCard({ goal, accounts, banks, forecast }: {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setLinkOpen(false)}>Abbrechen</Button>
-                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submitLink} disabled={addSource.isPending || linkableAccounts.length === 0}>Verknüpfen</Button>
+                  <Button onClick={submitLink} disabled={addSource.isPending || linkableAccounts.length === 0}>Verknüpfen</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -348,7 +348,7 @@ export default function Goals() {
         </div>
         <GoalDialog
           trigger={
-            <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neues Ziel</Button>
+            <Button><Plus className="mr-2 h-4 w-4" /> Neues Ziel</Button>
           }
         />
       </div>

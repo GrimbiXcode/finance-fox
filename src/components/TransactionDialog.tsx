@@ -376,7 +376,7 @@ export default function TransactionDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger ?? (
-          <Button className="bg-emerald-600 hover:bg-emerald-700">
+          <Button>
             <Plus className="mr-2 h-4 w-4" /> Neue Buchung
           </Button>
         )}
@@ -402,8 +402,8 @@ export default function TransactionDialog({
                   'rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
                   'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground',
                   type === value && 'bg-background text-foreground shadow-sm',
-                  type === value && value === 'expense' && 'text-rose-600 dark:text-rose-400',
-                  type === value && value === 'income' && 'text-emerald-600 dark:text-emerald-400',
+                  type === value && value === 'expense' && 'text-negative',
+                  type === value && value === 'income' && 'text-positive',
                 )}
                 onClick={() => changeType(value)}
               >
@@ -514,7 +514,7 @@ export default function TransactionDialog({
                 ) : (
                   <button
                     type="button"
-                    className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                    className="flex items-center gap-1 text-xs text-stamp hover:underline"
                     onClick={() => setNewCatOpen(true)}
                   >
                     <Plus className="h-3 w-3" /> Neue Kategorie
@@ -593,7 +593,7 @@ export default function TransactionDialog({
                   ) : (
                     <button
                       type="button"
-                      className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                      className="flex items-center gap-1 text-xs text-stamp hover:underline"
                       onClick={() => setSaveTplOpen(true)}
                     >
                       <Plus className="h-3 w-3" /> Als Vorlage speichern
@@ -617,7 +617,7 @@ export default function TransactionDialog({
             <CollapsibleContent className="pt-3">
               <div className="grid gap-4 sm:grid-cols-2">
                 {isEdit && transaction.recurringId !== null && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 sm:col-span-2 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning sm:col-span-2">
                     Diese Buchung stammt aus einer Dauerbuchung — die Änderung betrifft nur diese Buchung, nicht die Dauerbuchung.
                   </p>
                 )}
@@ -661,7 +661,7 @@ export default function TransactionDialog({
                             className={cn(
                               'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors',
                               active
-                                ? 'border-transparent bg-emerald-600 text-white'
+                                ? 'border-transparent bg-stamp text-stamp-foreground'
                                 : 'bg-muted/40 text-muted-foreground hover:text-foreground',
                             )}
                           >
@@ -692,7 +692,7 @@ export default function TransactionDialog({
                   ) : (
                     <button
                       type="button"
-                      className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                      className="flex items-center gap-1 text-xs text-stamp hover:underline"
                       onClick={() => setNewTagOpen(true)}
                     >
                       <Plus className="h-3 w-3" /> Neuer Tag
@@ -763,7 +763,6 @@ export default function TransactionDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
           <Button
-            className="bg-emerald-600 hover:bg-emerald-700"
             onClick={submit}
             disabled={saving}
           >

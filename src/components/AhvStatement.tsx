@@ -178,7 +178,7 @@ function AhvStatementContent() {
                 className="flex items-start gap-2 rounded-lg border p-2 text-sm"
               >
                 {isAhvAlert(w) ? (
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 ) : (
                   <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 )}
@@ -293,7 +293,7 @@ function VariantsTable({
               <TableCell
                 className={cn(
                   'text-right tabular-nums',
-                  cumulative(v) === best && 'font-semibold text-emerald-600',
+                  cumulative(v) === best && 'font-semibold text-positive',
                 )}
               >
                 {formatCents(cumulative(v))}

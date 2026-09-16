@@ -105,7 +105,7 @@ export default function Setup() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-8">
       <Card className="w-full max-w-lg">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
+          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-stamp text-stamp-foreground">
             <PiggyBank className="h-6 w-6" />
           </div>
           <CardTitle>Einrichtung</CardTitle>
@@ -114,7 +114,7 @@ export default function Setup() {
           </CardDescription>
           <div className="flex gap-1.5 pt-2">
             {[0, 1, 2].map((i) => (
-              <div key={i} className={`h-1.5 w-16 rounded-full ${i <= step ? 'bg-emerald-600' : 'bg-muted'}`} />
+              <div key={i} className={`h-1.5 w-16 rounded-full ${i <= step ? 'bg-stamp' : 'bg-muted'}`} />
             ))}
           </div>
         </CardHeader>
@@ -146,7 +146,7 @@ export default function Setup() {
                   <Input id="pw2" name="new-password-confirm" type="password" autoComplete="new-password" required minLength={8} value={password2} onChange={(e) => setPassword2(e.target.value)} />
                 </div>
               </div>
-              <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={setup.isPending}>
+              <Button type="submit" className="w-full" disabled={setup.isPending}>
                 Konto anlegen & weiter
               </Button>
             </form>
@@ -196,7 +196,7 @@ export default function Setup() {
               ))}
               <div className="flex justify-between pt-2">
                 <Button variant="ghost" onClick={() => setStep(2)}>Überspringen</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setStep(2)}>
+                <Button onClick={() => setStep(2)}>
                   <Users className="mr-2 h-4 w-4" /> Weiter
                 </Button>
               </div>
@@ -218,8 +218,8 @@ export default function Setup() {
               )}
               {localData && !importDone && (
                 <>
-                  <div className="rounded-lg border border-emerald-600/30 bg-emerald-600/5 p-3 text-sm">
-                    <CheckCircle2 className="mr-1.5 inline h-4 w-4 text-emerald-600" />
+                  <div className="rounded-lg border border-positive/30 bg-positive/5 p-3 text-sm">
+                    <CheckCircle2 className="mr-1.5 inline h-4 w-4 text-positive" />
                     {(localData.transactions as unknown[]).length} Buchungen,{' '}
                     {(localData.accounts as unknown[]).length} Konten gefunden.
                   </div>
@@ -238,7 +238,7 @@ export default function Setup() {
                     </div>
                   )}
                   <Button
-                    className="w-full bg-emerald-600 hover:bg-emerald-700"
+                    className="w-full"
                     disabled={importLocal.isPending || localMembers.some((m) => !memberMap[m.id])}
                     onClick={doImport}
                   >
@@ -247,7 +247,7 @@ export default function Setup() {
                 </>
               )}
               {importDone && (
-                <div className="rounded-lg border border-emerald-600/30 bg-emerald-600/5 p-3 text-sm text-emerald-700 dark:text-emerald-400">
+                <div className="rounded-lg border border-positive/30 bg-positive/5 p-3 text-sm text-positive">
                   <CheckCircle2 className="mr-1.5 inline h-4 w-4" />
                   Import abgeschlossen.
                 </div>

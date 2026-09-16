@@ -254,9 +254,23 @@ steht es hier.
   `ui/` anzufassen). Abweichung vom Entwurf: Die Körnung ist ein
   Hintergrundbild des `body` statt einer festen Ebene mit Blend-Modus – das
   kostet beim Scrollen nichts und braucht keine Einstellung.
-- Phasen 2 bis 5 stehen aus. Bis dahin bleiben Einnahmen/Ausgaben, Logo und
-  primäre Knöpfe in den bisherigen Emerald-/Rose-Tönen – sie funktionieren
-  auf Papier, sind aber heller als die Tinten des Entwurfs.
+- **Phase 2 ist umgesetzt** (Farbe nur mit Bedeutung): Keine Tailwind-
+  Palettenklasse (`emerald`, `rose`, `amber`, `sky`, `indigo`, `violet`) mehr
+  in `src/`. Einnahmen, Erfolg und „erreicht“ stehen in `text-positive`,
+  Ausgaben in `text-negative`, Fristen und Budgets ab 80 % in `text-warning`;
+  Marke, Fokus, Link-Aktionen, „hat Belege/Tags“ und die aktive Navigation
+  in `stamp`. Primäre Knöpfe tragen keine eigene Farbe mehr und sind damit
+  Tinte (Button-Default). Dekorative Abschnitts-Icons in Kartentiteln sind
+  `text-muted-foreground`. Die aktive Navigation ist ein Register-Reiter
+  (`bg-card border-border shadow-xs`, Icon in Stempelgrün). Diagramm-
+  Serien mit Vorzeichen (Ist/Saldo/Eigenkapital, Restschuld, Ablauf-Bänder,
+  Vorjahr) beziehen ihre Farbe aus `src/lib/chartColors.ts`
+  (`CHART.positive` usw. = `hsl(var(--…))`, funktioniert in SVG-Attributen);
+  Serien ohne Vorzeichen (Prognose, Säule 2/3a, Stufen) nutzen
+  `CHART.pencil(n)`. Nicht Teil von Phase 2: die Farb-Paletten zur Auswahl
+  (Kategorien, Tags, Projekte, Personen, `PIE_COLORS`, `SOURCE_COLORS`) –
+  sie kommen in Phase 5.
+- Phasen 3 bis 5 stehen aus.
 
 ## Umsetzung in Phasen
 

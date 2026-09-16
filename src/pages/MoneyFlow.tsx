@@ -95,7 +95,7 @@ export default function MoneyFlow() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <GitBranch className="h-4 w-4 text-emerald-600" />
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
               Wiederkehrende Ströme
             </CardTitle>
             <CardDescription>
@@ -138,13 +138,13 @@ export default function MoneyFlow() {
             )}
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="inline-block h-0.5 w-6 rounded bg-emerald-600" /> Einnahme
+                <span className="inline-block h-0.5 w-6 rounded bg-positive" /> Einnahme
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="inline-block h-0.5 w-6 rounded bg-rose-500" /> Ausgabe
+                <span className="inline-block h-0.5 w-6 rounded bg-negative" /> Ausgabe
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="inline-block h-0.5 w-6 rounded bg-sky-600" /> Umbuchung
+                <span className="inline-block h-0.5 w-6 rounded bg-pencil-1" /> Umbuchung
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-6 border-t-2 border-dashed border-muted-foreground" />{' '}
@@ -160,7 +160,7 @@ export default function MoneyFlow() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <ListIcon className="h-4 w-4 text-emerald-600" />
+              <ListIcon className="h-4 w-4 text-muted-foreground" />
               Wiederkehrende Ströme
             </CardTitle>
             <CardDescription>

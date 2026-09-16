@@ -73,7 +73,7 @@ export default function UsersPage() {
         {user?.role === 'admin' && (
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setInviteLink(''); setName(''); setEmail(''); } }}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Person hinzufügen</Button>
+              <Button><Plus className="mr-2 h-4 w-4" /> Person hinzufügen</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -123,11 +123,11 @@ export default function UsersPage() {
               )}
               <DialogFooter>
                 {inviteLink ? (
-                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setOpen(false)}>Fertig</Button>
+                  <Button onClick={() => setOpen(false)}>Fertig</Button>
                 ) : (
                   <>
                     <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={createUser.isPending}>
+                    <Button onClick={submit} disabled={createUser.isPending}>
                       Einladung erzeugen
                     </Button>
                   </>
@@ -151,7 +151,7 @@ export default function UsersPage() {
                   <CardDescription className="text-xs">{u.email}</CardDescription>
                 </div>
               </div>
-              <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className={u.role === 'admin' ? 'bg-emerald-600' : ''}>
+              <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className={u.role === 'admin' ? 'bg-positive' : ''}>
                 {u.role === 'admin' ? 'Admin' : 'Mitglied'}
               </Badge>
             </CardHeader>

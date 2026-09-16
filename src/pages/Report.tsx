@@ -167,7 +167,7 @@ export default function Report() {
                   htmlFor={`section-${section}`}
                   className={cn(
                     'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors',
-                    checked ? 'border-emerald-600/40 bg-emerald-600/5' : 'hover:bg-muted/50',
+                    checked ? 'border-positive/40 bg-positive/5' : 'hover:bg-muted/50',
                   )}
                 >
                   <Checkbox

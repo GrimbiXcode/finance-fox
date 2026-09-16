@@ -208,7 +208,6 @@ function Pillar3DialogForm({ pillar, close }: { pillar?: DialogPillar3; close: (
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={addPillar3.isPending || updatePillar3.isPending}
         >

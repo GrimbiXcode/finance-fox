@@ -104,8 +104,8 @@ export default function OfflineCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         {reason !== null ? (
-          <div className="flex gap-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
-            <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex gap-3 rounded-md border border-warning/40 bg-warning/5 p-3">
+            <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0 space-y-1">
               <p className="text-sm font-medium">
                 {UNSUPPORTED_TEXTS[reason].title}

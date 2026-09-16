@@ -101,7 +101,7 @@ export default function Layout() {
     <div className="flex min-h-screen">
       <aside className={cn('hidden flex-col border-r transition-all md:sticky md:top-0 md:flex md:h-screen', collapsed ? 'w-16' : 'w-64')}>
         <div className={cn('flex items-center gap-2 border-b py-5', collapsed ? 'justify-center px-2' : 'px-6')}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stamp text-stamp-foreground">
             <PiggyBank className="h-5 w-5" />
           </div>
           {!collapsed && (
@@ -128,10 +128,10 @@ export default function Layout() {
                   end={item.to === '/'}
                   title={collapsed ? item.label : undefined}
                   className={({ isActive }) => cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-medium transition-colors',
                     collapsed && 'justify-center px-0',
                     isActive
-                      ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                      ? 'border-border bg-card text-foreground shadow-xs [&>svg]:text-stamp'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                   )}
                 >
@@ -146,7 +146,7 @@ export default function Layout() {
           <div className="border-t px-6 py-4">
             <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
             <div className={cn('text-lg font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-stamp">
               <ShieldCheck className="h-3.5 w-3.5" />
               Daten bleiben auf deinem Server
             </div>
@@ -167,7 +167,7 @@ export default function Layout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           <div className="flex min-w-0 items-center gap-2 md:hidden">
-            <PiggyBank className="h-5 w-5 shrink-0 text-emerald-600" />
+            <PiggyBank className="h-5 w-5 shrink-0 text-stamp" />
             <span className="truncate font-semibold">Finance Fox</span>
           </div>
           <div className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">
@@ -221,7 +221,7 @@ export default function Layout() {
               end={item.to === '/'}
               className={({ isActive }) => cn(
                 'flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-1 text-[10px]',
-                isActive ? 'text-emerald-600' : 'text-muted-foreground',
+                isActive ? 'text-stamp' : 'text-muted-foreground',
               )}
             >
               <item.icon className="h-5 w-5 shrink-0" />
@@ -234,7 +234,7 @@ export default function Layout() {
                 type="button"
                 className={cn(
                   'flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-1 text-[10px]',
-                  moreOpen ? 'text-emerald-600' : 'text-muted-foreground',
+                  moreOpen ? 'text-stamp' : 'text-muted-foreground',
                 )}
               >
                 <Menu className="h-5 w-5 shrink-0" />
@@ -259,9 +259,9 @@ export default function Layout() {
                           end={item.to === '/'}
                           onClick={() => setMoreOpen(false)}
                           className={({ isActive }) => cn(
-                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                            'flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium transition-colors',
                             isActive
-                              ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                              ? 'border-border bg-card text-foreground shadow-xs [&>svg]:text-stamp'
                               : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                           )}
                         >

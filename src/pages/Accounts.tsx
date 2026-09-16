@@ -13,6 +13,7 @@ import { useFinanceData } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
 import { currencySymbol, formatCents, formatDate, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
+import { CHART } from '@/lib/chartColors';
 
 /** Icons für die Builtin-Typen; eigene Typen bekommen das Fallback-Icon */
 const typeIcons: Record<string, typeof CreditCard> = {
@@ -115,8 +116,8 @@ function BalanceHistory({ accountId }: { accountId: number }) {
             <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+                  <stop offset="0%" stopColor={CHART.positive} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={CHART.positive} stopOpacity={0.05} />
                 </linearGradient>
               </defs>
               <XAxis
@@ -134,13 +135,13 @@ function BalanceHistory({ accountId }: { accountId: number }) {
                   `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`}
               />
               <Area
-                type="monotone" dataKey="saldo" stroke="#10b981"
+                type="monotone" dataKey="saldo" stroke={CHART.positive}
                 fill={`url(#${gradientId})`} strokeWidth={2}
                 connectNulls={false}
               />
               {showForecast && (
                 <Area
-                  type="monotone" dataKey="prognose" stroke="#6366f1"
+                  type="monotone" dataKey="prognose" stroke={CHART.pencil(7)}
                   fill="none" strokeWidth={2} strokeDasharray="6 4"
                   dot={false} connectNulls={false}
                 />
@@ -221,7 +222,7 @@ export default function Accounts() {
         </div>
         <AccountDialog
           trigger={
-            <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neues Konto</Button>
+            <Button><Plus className="mr-2 h-4 w-4" /> Neues Konto</Button>
           }
         />
       </div>
@@ -296,7 +297,7 @@ export default function Accounts() {
             <Card key={a.id}>
               <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-positive/10 text-positive">
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
@@ -371,7 +372,7 @@ export default function Accounts() {
                 <TableRow key={a.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-positive/10 text-positive">
                         <Icon className="h-4 w-4" />
                       </div>
                       <div>

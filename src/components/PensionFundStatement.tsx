@@ -15,15 +15,16 @@ import type { DialogFund } from '@/components/PensionFundDialog';
 import {
   currencySymbol, formatBp, formatCents, formatDate, getUserLocale, todayISO,
 } from '@/lib/finance';
+import { CHART } from '@/lib/chartColors';
 
 /** Prognose-Daten einer einzelnen Kasse, wie sie pension.forecast liefert */
 type ForecastFund = inferRouterOutputs<AppRouter>['pension']['forecast']['funds'][number];
 type FundSeriesPoint = { year: number; capital: number };
 
 /** Abgestufte Farben für den Stufen-Balken */
-const TIER_COLORS = ['bg-emerald-500', 'bg-sky-500', 'bg-indigo-500', 'bg-violet-500'];
+const TIER_COLORS = ['bg-pencil-3', 'bg-pencil-1', 'bg-pencil-7', 'bg-pencil-5'];
 /** Dezente, abwechselnde Füllfarben für die Phasen-Bänder im Projektions-Chart */
-const PHASE_FILLS = ['#10b981', '#0ea5e9', '#6366f1', '#8b5cf6'];
+const PHASE_FILLS = [CHART.pencil(3), CHART.pencil(1), CHART.pencil(7), CHART.pencil(5)];
 
 /** Ein Kennzahlen-Kästchen im Ausweis-Grid */
 function Stat({ label, value }: { label: string; value: string }) {
@@ -175,11 +176,11 @@ export default function PensionFundStatement({
                 <div className="grid gap-3 text-sm sm:grid-cols-2">
                   <div>
                     <span className="text-muted-foreground">Altersguthaben mit Pensionierung: </span>
-                    <span className="font-semibold text-emerald-600">{formatCents(forecastFund.capital)}</span>
+                    <span className="font-semibold text-positive">{formatCents(forecastFund.capital)}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Monatsrente: </span>
-                    <span className="font-semibold text-emerald-600">{formatCents(forecastFund.monthlyPension)}</span>
+                    <span className="font-semibold text-positive">{formatCents(forecastFund.monthlyPension)}</span>
                   </div>
                 </div>
               )}
@@ -221,11 +222,11 @@ export default function PensionFundStatement({
                           value: `${formatBp(p.rateBp)} %`,
                           position: 'insideTop',
                           fontSize: 10,
-                          fill: '#64748b',
+                          fill: CHART.muted,
                         }}
                       />
                     ))}
-                    <Area type="monotone" dataKey="Kapital" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
+                    <Area type="monotone" dataKey="Kapital" stroke={CHART.pencil(7)} fill={CHART.pencil(7)} fillOpacity={0.4} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

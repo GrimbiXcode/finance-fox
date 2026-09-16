@@ -61,7 +61,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
+          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-stamp text-stamp-foreground">
             <PiggyBank className="h-6 w-6" />
           </div>
           <CardTitle>Finance Fox</CardTitle>
@@ -116,7 +116,7 @@ export default function Login() {
             )}
             <Button
               type="submit"
-              className="w-full bg-emerald-600 hover:bg-emerald-700"
+              className="w-full"
               disabled={
                 login.isPending || requestReset.isPending || verifyTotp.isPending ||
                 (totpToken !== null && totpCode.length !== 6)

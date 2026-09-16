@@ -29,7 +29,7 @@ export default function SetPassword({ purpose }: { purpose: 'invite' | 'reset' }
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
+          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-stamp text-stamp-foreground">
             <KeyRound className="h-6 w-6" />
           </div>
           <CardTitle>{purpose === 'invite' ? 'Willkommen im Haushalt' : 'Passwort zurücksetzen'}</CardTitle>
@@ -66,7 +66,7 @@ export default function SetPassword({ purpose }: { purpose: 'invite' | 'reset' }
                 <Label htmlFor="pw2">Wiederholen</Label>
                 <Input id="pw2" name="new-password-confirm" type="password" autoComplete="new-password" required minLength={8} value={password2} onChange={(e) => setPassword2(e.target.value)} />
               </div>
-              <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={setPw.isPending}>
+              <Button type="submit" className="w-full" disabled={setPw.isPending}>
                 Passwort speichern
               </Button>
             </form>

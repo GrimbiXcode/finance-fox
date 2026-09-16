@@ -32,11 +32,11 @@ export default function SyncStatus() {
   const icon = status.syncing ? (
     <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
   ) : conflicts > 0 ? (
-    <AlertTriangle className="h-4 w-4 text-amber-600" />
+    <AlertTriangle className="h-4 w-4 text-warning" />
   ) : pending > 0 ? (
     <UploadCloud className="h-4 w-4 text-muted-foreground" />
   ) : status.reachable ? (
-    <Check className="h-4 w-4 text-emerald-600" />
+    <Check className="h-4 w-4 text-positive" />
   ) : (
     <CloudOff className="h-4 w-4 text-muted-foreground" />
   );
@@ -59,7 +59,7 @@ export default function SyncStatus() {
           {(conflicts > 0 || pending > 0) && (
             <span
               className={`absolute right-1 top-1 h-2 w-2 rounded-full ${
-                conflicts > 0 ? "bg-amber-500" : "bg-sky-500"
+                conflicts > 0 ? "bg-warning" : "bg-pencil-1"
               }`}
             />
           )}
@@ -83,9 +83,9 @@ export default function SyncStatus() {
         {conflicts > 0 && (
           <Link
             to="/abgleich"
-            className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-sm"
+            className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/5 p-2 text-sm"
           >
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+            <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
             <span className="min-w-0">
               {conflicts === 1 ? "Ein Datensatz" : `${conflicts} Datensätze`}{" "}
               wurde{conflicts === 1 ? "" : "n"} doppelt geändert — jetzt

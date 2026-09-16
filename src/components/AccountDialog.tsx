@@ -252,7 +252,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
             ) : (
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                className="flex items-center gap-1 text-xs text-stamp hover:underline"
                 onClick={() => setNewTypeOpen(true)}
               >
                 <Plus className="h-3 w-3" /> Neuer Typ
@@ -297,7 +297,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
             ) : (
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                className="flex items-center gap-1 text-xs text-stamp hover:underline"
                 onClick={() => setNewBankOpen(true)}
               >
                 <Plus className="h-3 w-3" /> Neue Bank
@@ -425,7 +425,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
                 <span className="text-muted-foreground">Differenz</span>
                 <span className={cn(
                   'font-medium',
-                  difference > 0 ? 'text-emerald-600' : difference < 0 ? 'text-rose-500' : 'text-muted-foreground',
+                  difference > 0 ? 'text-positive' : difference < 0 ? 'text-negative' : 'text-muted-foreground',
                 )}>
                   {difference > 0 ? '+' : ''}{formatCents(difference)}
                 </span>
@@ -466,7 +466,6 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={createAccount.isPending || updateAccount.isPending}
         >

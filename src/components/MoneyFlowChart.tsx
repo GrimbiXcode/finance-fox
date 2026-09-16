@@ -71,7 +71,7 @@ export function MoneyFlowAccountCard({
       className={cn(
         'w-32 rounded-lg border bg-card p-2.5 shadow-sm transition-[opacity,box-shadow] sm:w-40',
         onClick && 'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active && 'ring-2 ring-emerald-600/50',
+        active && 'ring-2 ring-stamp/50',
         dimmed && 'opacity-40',
         className
       )}
@@ -86,7 +86,7 @@ export function MoneyFlowAccountCard({
       onKeyDown={activateOnKey(onClick)}
     >
       <div className="flex items-center gap-2">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-600/10 text-emerald-600">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-positive/10 text-positive">
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0">
@@ -193,14 +193,14 @@ export default function MoneyFlowChart({
         // schlanke Balken tragen keine Summen — die stehen hier
         <div className="mb-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+            <TrendingUp className="h-3.5 w-3.5 text-positive" />
             Einnahmen
             <span className="font-semibold tabular-nums text-foreground">
               {formatCents(flow.incomeTotal)}/Monat
             </span>
           </span>
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <TrendingDown className="h-3.5 w-3.5 text-rose-500" />
+            <TrendingDown className="h-3.5 w-3.5 text-negative" />
             Ausgaben
             <span className="font-semibold tabular-nums text-foreground">
               {formatCents(flow.expenseTotal)}/Monat
@@ -294,7 +294,7 @@ export default function MoneyFlowChart({
                     title={`${label}: ${formatCents(income ? flow.incomeTotal : flow.expenseTotal)}/Monat`}
                     className={cn(
                       'absolute flex cursor-pointer flex-col items-center rounded-lg border bg-card p-1.5 shadow-sm outline-none transition-[opacity,box-shadow] focus-visible:ring-2 focus-visible:ring-ring',
-                      isActive && 'ring-2 ring-emerald-600/50',
+                      isActive && 'ring-2 ring-stamp/50',
                       dimmed && 'opacity-40'
                     )}
                     style={{
@@ -312,8 +312,8 @@ export default function MoneyFlowChart({
                       className={cn(
                         'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
                         income
-                          ? 'bg-emerald-600/10 text-emerald-600'
-                          : 'bg-rose-500/10 text-rose-500'
+                          ? 'bg-positive/10 text-positive'
+                          : 'bg-negative/10 text-negative'
                       )}
                     >
                       <Icon className="h-4 w-4" />
@@ -321,7 +321,7 @@ export default function MoneyFlowChart({
                     <div
                       className={cn(
                         'mt-1.5 w-1 flex-1 rounded-full',
-                        income ? 'bg-emerald-600/30' : 'bg-rose-500/30'
+                        income ? 'bg-positive/30' : 'bg-negative/30'
                       )}
                     />
                   </div>
@@ -335,7 +335,7 @@ export default function MoneyFlowChart({
                   aria-pressed={focusNode === n.id}
                   className={cn(
                     'absolute cursor-pointer rounded-lg border bg-card shadow-sm outline-none transition-[opacity,box-shadow] focus-visible:ring-2 focus-visible:ring-ring',
-                    isActive && 'ring-2 ring-emerald-600/50',
+                    isActive && 'ring-2 ring-stamp/50',
                     dimmed && 'opacity-40'
                   )}
                   style={{
@@ -355,8 +355,8 @@ export default function MoneyFlowChart({
                         className={cn(
                           'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
                           income
-                            ? 'bg-emerald-600/10 text-emerald-600'
-                            : 'bg-rose-500/10 text-rose-500'
+                            ? 'bg-positive/10 text-positive'
+                            : 'bg-negative/10 text-negative'
                         )}
                       >
                         <Icon className="h-4 w-4" />
@@ -379,7 +379,7 @@ export default function MoneyFlowChart({
                     <div
                       className={cn(
                         'absolute bottom-3 w-1 rounded-full',
-                        income ? 'right-1 bg-emerald-600/30' : 'left-1 bg-rose-500/30'
+                        income ? 'right-1 bg-positive/30' : 'left-1 bg-negative/30'
                       )}
                       style={{ top: NODE_H_PX - 8 }}
                     />

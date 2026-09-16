@@ -122,7 +122,7 @@ export default function Splitting() {
               className={cn(
                 'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                 projectFilter === value
-                  ? 'border-emerald-600 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                  ? 'border-stamp bg-stamp/10 text-stamp'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -137,7 +137,7 @@ export default function Splitting() {
               className={cn(
                 'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                 projectFilter === p.id
-                  ? 'border-emerald-600 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                  ? 'border-stamp bg-stamp/10 text-stamp'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -165,7 +165,7 @@ export default function Splitting() {
                     </div>
                     <span className="truncate font-medium" title={u.name}>{u.name}</span>
                   </div>
-                  <span className={cn('shrink-0 text-lg font-bold', bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-500' : 'text-muted-foreground')}>
+                  <span className={cn('shrink-0 text-lg font-bold', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
                     {bal > 0 ? '+' : ''}{formatCents(bal)}
                   </span>
                 </div>
@@ -181,7 +181,7 @@ export default function Splitting() {
           </CardHeader>
           <CardContent className="space-y-3">
             {settlements.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-lg border border-emerald-600/30 bg-emerald-600/5 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+              <div className="flex items-center gap-2 rounded-lg border border-positive/30 bg-positive/5 px-4 py-3 text-sm text-positive">
                 <CheckCircle2 className="h-4 w-4" />
                 Alles ausgeglichen — niemand schuldet jemandem etwas.
               </div>
@@ -268,7 +268,7 @@ export default function Splitting() {
                       );
                     })}
                   </div>
-                  <span className="font-semibold text-rose-500">−{formatCents(t.amount)}</span>
+                  <span className="font-semibold text-negative">−{formatCents(t.amount)}</span>
                 </div>
               </div>
             );

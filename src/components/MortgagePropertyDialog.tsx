@@ -277,7 +277,6 @@ function PropertyForm({ property, close }: { property?: DialogProperty; close: (
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={addProperty.isPending || updateProperty.isPending}
         >

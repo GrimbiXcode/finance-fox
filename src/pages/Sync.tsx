@@ -150,7 +150,7 @@ export default function Sync() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-600" />
+            <AlertTriangle className="h-5 w-5 text-warning" />
             Konflikte
             {open.length > 0 && <Badge variant="outline">{open.length}</Badge>}
           </CardTitle>
@@ -164,7 +164,7 @@ export default function Sync() {
         <CardContent className="space-y-4">
           {open.length === 0 && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Check className="h-4 w-4 text-emerald-600" />
+              <Check className="h-4 w-4 text-positive" />
               Keine offenen Konflikte.
             </p>
           )}
@@ -292,7 +292,7 @@ function ConflictCard({
 
   if (conflict.kind === "forbidden") {
     return (
-      <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+      <div className="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-4">
         <div>
           <p className="font-medium">{title}</p>
           <p className="text-sm text-muted-foreground">
@@ -454,13 +454,13 @@ function ValueCell({
         onClick={onPick}
         className={cn(
           "flex w-full items-center gap-2 px-4 py-2 text-left transition-colors",
-          active ? "bg-emerald-600/10 font-medium" : "hover:bg-muted/60"
+          active ? "bg-positive/10 font-medium" : "hover:bg-muted/60"
         )}
       >
         <span
           className={cn(
             "h-2 w-2 shrink-0 rounded-full",
-            active ? "bg-emerald-600" : "bg-muted-foreground/30"
+            active ? "bg-stamp" : "bg-muted-foreground/30"
           )}
         />
         <span className="min-w-0 break-words">{value}</span>

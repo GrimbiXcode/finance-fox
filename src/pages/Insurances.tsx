@@ -173,7 +173,7 @@ function SetupCard() {
     <Card className="mx-auto max-w-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Umbrella className="h-5 w-5 text-emerald-600" />
+          <Umbrella className="h-5 w-5 text-muted-foreground" />
           Versicherungen erfassen
         </CardTitle>
         <CardDescription>
@@ -185,7 +185,7 @@ function SetupCard() {
       <CardContent>
         <InsurancePolicyDialog
           trigger={
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
+            <Button className="w-full">
               <Plus className="mr-2 h-4 w-4" /> Police anlegen
             </Button>
           }
@@ -266,9 +266,9 @@ function GapRow({
   return (
     <div className="flex items-start gap-3 border-b py-2 last:border-0">
       {gap.severity === "warn" ? (
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-negative" />
       ) : (
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
       )}
       <div className="min-w-0 flex-1">
         <p
@@ -354,7 +354,7 @@ function GapCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-emerald-600" />
+          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
           Deckungs-Check
         </CardTitle>
         <CardDescription>
@@ -367,7 +367,7 @@ function GapCard() {
           <p className="text-sm text-muted-foreground">Prüfe Deckungen…</p>
         ) : gaps.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 text-positive" />
             Keine Lücken gefunden.
           </p>
         ) : (
@@ -437,7 +437,7 @@ function ComparisonCard({
       <span
         className={cn(
           value === null && "text-muted-foreground",
-          isBest && "font-semibold text-emerald-600"
+          isBest && "font-semibold text-positive"
         )}
       >
         {value ?? "—"}
@@ -537,10 +537,10 @@ function ComparisonCard({
 /* ------------------------------- Policen-Karte ---------------------------- */
 
 const STATUS_BADGE: Record<InsuranceStatus, string> = {
-  active: "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400",
-  cancelled: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  active: "border-positive/40 bg-positive/10 text-positive",
+  cancelled: "border-warning/40 bg-warning/10 text-warning",
   expired: "border-muted bg-muted text-muted-foreground",
-  quote: "border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
+  quote: "border-pencil-7/40 bg-pencil-7/10 text-pencil-7",
 };
 
 function DetailRow({
@@ -558,7 +558,7 @@ function DetailRow({
       <span
         className={cn(
           "shrink-0 font-medium",
-          tone === "warn" && "text-amber-600 dark:text-amber-400",
+          tone === "warn" && "text-warning",
           tone === "danger" && "text-destructive"
         )}
       >
@@ -1005,7 +1005,7 @@ export default function Insurances() {
         </div>
         <InsurancePolicyDialog
           trigger={
-            <Button className="bg-emerald-600 hover:bg-emerald-700">
+            <Button>
               <Plus className="mr-2 h-4 w-4" /> Neue Police
             </Button>
           }

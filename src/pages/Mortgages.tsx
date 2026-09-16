@@ -58,6 +58,7 @@ import {
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { trpc } from "@/providers/trpc";
 import { cn } from "@/lib/utils";
+import { CHART } from "@/lib/chartColors";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
 type Schedule = inferRouterOutputs<AppRouter>["mortgage"]["forecast"];
@@ -146,7 +147,7 @@ function SetupCard() {
     <Card className="mx-auto max-w-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <House className="h-5 w-5 text-emerald-600" />
+          <House className="h-5 w-5 text-muted-foreground" />
           Wohneigentum erfassen
         </CardTitle>
         <CardDescription>
@@ -159,7 +160,7 @@ function SetupCard() {
       <CardContent>
         <MortgagePropertyDialog
           trigger={
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
+            <Button className="w-full">
               <Plus className="mr-2 h-4 w-4" /> Liegenschaft anlegen
             </Button>
           }
@@ -264,7 +265,7 @@ function OverviewSection({
           label="Monatliche Belastung"
           value={formatCents(totals.monthlyBurden)}
           hint={`davon ${formatCents(totals.monthlyInterest)} Zins`}
-          icon={<TrendingDown className="h-4 w-4 text-rose-500" />}
+          icon={<TrendingDown className="h-4 w-4 text-negative" />}
         />
         <Kpi
           label="Belehnung"
@@ -285,7 +286,7 @@ function OverviewSection({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <PiggyBank className="h-5 w-5 text-emerald-600" />
+              <PiggyBank className="h-5 w-5 text-muted-foreground" />
               Nettovermögen
             </CardTitle>
             <CardDescription>
@@ -306,7 +307,7 @@ function OverviewSection({
             </div>
             <div className="flex justify-between gap-2">
               <span className="min-w-0 text-muted-foreground">Restschuld</span>
-              <span className="shrink-0 font-medium text-rose-500">
+              <span className="shrink-0 font-medium text-negative">
                 −{formatCents(totals.debt)}
               </span>
             </div>
@@ -323,7 +324,7 @@ function OverviewSection({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Scale className="h-5 w-5 text-indigo-500" />
+              <Scale className="h-5 w-5 text-muted-foreground" />
               Tragbarkeit
             </CardTitle>
             <CardDescription>
@@ -387,10 +388,10 @@ function OverviewSection({
       </div>
 
       {schedule.warnings.length > 0 && (
-        <Card className="border-amber-500/50">
+        <Card className="border-warning/50">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              <AlertTriangle className="h-5 w-5 text-warning" />
               Hinweise
             </CardTitle>
           </CardHeader>
@@ -454,30 +455,30 @@ function OverviewSection({
                       key={`${b.name}-${b.year}`}
                       x1={b.year}
                       x2={b.year}
-                      stroke="#f59e0b"
+                      stroke={CHART.warning}
                       strokeOpacity={0.6}
-                      fill="#f59e0b"
+                      fill={CHART.warning}
                       fillOpacity={0.08}
                       label={{
                         value: `Ablauf ${b.name}`,
                         position: "insideTop",
                         fontSize: 10,
-                        fill: "#64748b",
+                        fill: CHART.muted,
                       }}
                     />
                   ))}
                   <Area
                     type="monotone"
                     dataKey="Restschuld"
-                    stroke="#f43f5e"
-                    fill="#f43f5e"
+                    stroke={CHART.negative}
+                    fill={CHART.negative}
                     fillOpacity={0.3}
                   />
                   <Area
                     type="monotone"
                     dataKey="Eigenkapital"
-                    stroke="#10b981"
-                    fill="#10b981"
+                    stroke={CHART.positive}
+                    fill={CHART.positive}
                     fillOpacity={0.3}
                   />
                 </AreaChart>
@@ -505,7 +506,7 @@ function TranchesSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <Landmark className="h-5 w-5 text-indigo-500" />
+          <Landmark className="h-5 w-5 text-muted-foreground" />
           Tranchen
         </h2>
         <MortgageTrancheDialog
@@ -546,7 +547,7 @@ function TranchesSection({
                       </Badge>
                     )}
                     {expiring && (
-                      <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                      <Badge className="bg-warning/15 text-warning">
                         Ablauf nah
                       </Badge>
                     )}
@@ -619,7 +620,7 @@ function TranchesSection({
                     <span
                       className={cn(
                         "shrink-0 font-medium",
-                        expiring && "text-amber-600 dark:text-amber-400"
+                        expiring && "text-warning"
                       )}
                     >
                       {formatDate(t.maturityDate)}
@@ -659,7 +660,7 @@ function AmortizationSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <Banknote className="h-5 w-5 text-emerald-600" />
+          <Banknote className="h-5 w-5 text-muted-foreground" />
           Amortisation
         </h2>
         <MortgageAmortizationDialog

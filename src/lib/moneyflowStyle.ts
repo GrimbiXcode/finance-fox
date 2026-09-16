@@ -6,12 +6,13 @@
 
 import { Banknote, CreditCard, PiggyBank, Wallet, type LucideIcon } from 'lucide-react';
 import type { MoneyFlowEdgeKind } from '@/lib/moneyflow';
+import { CHART } from '@/lib/chartColors';
 
-/** Farben der Kanten nach Art (Tailwind-Palette, hell- und dunkeltauglich) */
+/** Farben der Kanten nach Art – Papier-Tokens, folgen dem Hell-/Dunkel-Modus */
 export const EDGE_COLORS: Record<MoneyFlowEdgeKind, string> = {
-  income: '#059669', // emerald-600
-  expense: '#f43f5e', // rose-500
-  transfer: '#0284c7', // sky-600
+  income: CHART.positive,
+  expense: CHART.negative,
+  transfer: CHART.pencil(1),
 };
 
 export const EDGE_LABELS: Record<MoneyFlowEdgeKind, string> = {

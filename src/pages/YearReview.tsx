@@ -11,6 +11,7 @@ import {
 import { trpc } from '@/providers/trpc';
 import { currencySymbol, formatCents, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
+import { CHART } from '@/lib/chartColors';
 
 /** Differenz Jahr vs. Vorjahr: mehr Ausgaben = negativ (rot), weniger = positiv (grün) */
 function DiffCell({ current, previous }: { current: number; previous: number }) {
@@ -19,7 +20,7 @@ function DiffCell({ current, previous }: { current: number; previous: number }) 
   return (
     <span className={cn(
       'font-medium',
-      diff > 0 ? 'text-rose-500' : diff < 0 ? 'text-emerald-600' : 'text-muted-foreground',
+      diff > 0 ? 'text-negative' : diff < 0 ? 'text-positive' : 'text-muted-foreground',
     )}>
       {diff > 0 ? '+' : ''}{formatCents(diff)}
       {pct !== null && <span className="ml-1 text-xs">({pct > 0 ? '+' : ''}{pct} %)</span>}
@@ -152,8 +153,8 @@ export default function YearReview() {
                     `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`}
                 />
                 <Legend />
-                <Bar dataKey={String(year - 1)} fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                <Bar dataKey={String(year)} fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey={String(year - 1)} fill={CHART.muted} radius={[4, 4, 0, 0]} />
+                <Bar dataKey={String(year)} fill={CHART.positive} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

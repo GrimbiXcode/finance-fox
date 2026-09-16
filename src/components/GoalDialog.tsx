@@ -176,7 +176,6 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={createGoal.isPending || updateGoal.isPending}
         >

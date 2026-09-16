@@ -397,7 +397,13 @@ Code steht:
   (Marke, Fokus), `--note` (Notizzettel) und `--pencil-1…8` (Buntstifte für
   Kategorien). In `tailwind.config.js` als `text-positive`, `bg-stamp`,
   `bg-pencil-3` usw. registriert – neue Farben dort ergänzen, nicht als
-  Tailwind-Palette (`emerald-600`) hartkodieren.
+  Tailwind-Palette (`emerald-600`) hartkodieren. Regel: `positive`/`negative`
+  für Beträge und Zustände, `warning` für Fristen und Budgets ab 80 %,
+  `stamp` für Marke, Fokus, Link-Aktionen und die aktive Navigation
+  (Register-Reiter in `Layout.tsx`), `muted-foreground` für dekorative
+  Icons; primäre Knöpfe ohne eigene Farbe (Tinte). Für recharts und SVG
+  gibt es `lib/chartColors.ts` (`CHART.positive`, `CHART.pencil(n)` … als
+  `hsl(var(--…))`-Strings) – keine Hex-Werte in Chart-Props.
 - **Schriften** in `fonts.css` (vor `index.css` importiert): Newsreader
   (`font-serif`, Titel und Kennzahlen), IBM Plex Sans (`font-sans`,
   Bedienung), IBM Plex Mono (`font-mono`, Beträge/Daten/IBAN). Gebündelt aus

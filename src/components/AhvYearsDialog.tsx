@@ -141,7 +141,7 @@ function AhvYearsForm() {
             {rows.map((row) => (
               <TableRow
                 key={row.year}
-                className={cn(row.status === 'gap' && 'bg-amber-500/10')}
+                className={cn(row.status === 'gap' && 'bg-warning/10')}
               >
                 <TableCell className="font-medium">{row.year}</TableCell>
                 <TableCell className="text-right">
@@ -215,7 +215,7 @@ function Stat({
       <div
         className={cn(
           'mt-1 font-semibold',
-          tone === 'warn' && 'text-amber-600 dark:text-amber-500',
+          tone === 'warn' && 'text-warning',
         )}
       >
         {value}

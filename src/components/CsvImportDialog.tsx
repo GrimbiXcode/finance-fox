@@ -131,12 +131,11 @@ function CsvImportForm({ close }: { close: () => void }) {
       )}
       <DialogFooter>
         {result ? (
-          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={close}>Schließen</Button>
+          <Button onClick={close}>Schließen</Button>
         ) : (
           <>
             <Button variant="outline" onClick={close}>Abbrechen</Button>
             <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
               onClick={submit}
               disabled={importCsv.isPending || !file || !accountId}
             >

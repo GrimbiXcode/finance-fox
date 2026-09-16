@@ -199,7 +199,7 @@ function CoverageForm({
                   key={s}
                   type="button"
                   onClick={() => setLabel(s)}
-                  className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition hover:border-emerald-600 hover:text-emerald-700 dark:hover:text-emerald-400"
+                  className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition hover:border-stamp hover:text-positive"
                 >
                   {s}
                 </button>
@@ -294,7 +294,6 @@ function CoverageForm({
           Abbrechen
         </Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={addCoverage.isPending || updateCoverage.isPending}
         >

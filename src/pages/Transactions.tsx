@@ -292,7 +292,7 @@ export default function Transactions() {
                     </TableCell>
                     <TableCell className={cn(
                       'whitespace-nowrap text-right font-semibold',
-                      t.type === 'income' ? 'text-emerald-600' : t.type === 'expense' ? 'text-rose-500' : 'text-muted-foreground',
+                      t.type === 'income' ? 'text-positive' : t.type === 'expense' ? 'text-negative' : 'text-muted-foreground',
                     )}>
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
                     </TableCell>
@@ -317,7 +317,7 @@ export default function Transactions() {
                             <Button variant="ghost" size="icon" title="Tags bearbeiten">
                               <Tag className={cn(
                                 'h-4 w-4',
-                                t.tags.length > 0 ? 'text-emerald-600' : 'text-muted-foreground',
+                                t.tags.length > 0 ? 'text-stamp' : 'text-muted-foreground',
                               )} />
                             </Button>
                           </PopoverTrigger>
@@ -340,7 +340,7 @@ export default function Transactions() {
                                     >
                                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
                                       <span className="flex-1 text-left">{tag.name}</span>
-                                      {active && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                                      {active && <Check className="h-3.5 w-3.5 text-positive" />}
                                     </button>
                                   );
                                 })}
@@ -356,10 +356,10 @@ export default function Transactions() {
                             <Button variant="ghost" size="icon" className="relative" title="Belege">
                               <Paperclip className={cn(
                                 'h-4 w-4',
-                                t.attachments.length > 0 ? 'text-emerald-600' : 'text-muted-foreground',
+                                t.attachments.length > 0 ? 'text-stamp' : 'text-muted-foreground',
                               )} />
                               {t.attachments.length > 0 && (
-                                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-semibold text-white">
+                                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-stamp px-1 text-[10px] font-semibold text-stamp-foreground">
                                   {t.attachments.length}
                                 </span>
                               )}

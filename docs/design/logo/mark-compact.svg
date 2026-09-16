@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Finance Fox – Kompaktstufe (20 bis 40 px): kräftigerer Strich,
+       nur die Summenlinie mit Doppelstrich. -->
+  <g fill="#2F6B4F">
+    <path d="M19 9 L40 32 C44 28 56 28 60 32 L81 9 C82 22 78 34 77 42 C74 54 66 66 64 72 L36 72 C34 66 26 54 23 42 C22 34 18 22 19 9 Z"/>
+  </g>
+  <g fill="#FBF9F3">
+    <ellipse cx="37" cy="44.5" rx="3.3" ry="4.3" transform="rotate(-14 37 44.5)"/>
+    <ellipse cx="63" cy="44.5" rx="3.3" ry="4.3" transform="rotate(14 63 44.5)"/>
+  </g>
+  <path d="M14 50 H72 L86 64 V88 H14 Z" fill="#FBF9F3" stroke="#2F6B4F" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M72 50 V64 H86" fill="none" stroke="#2F6B4F" stroke-width="5" stroke-linejoin="round"/>
+  <g stroke="#2F6B4F" stroke-width="3.2" stroke-linecap="round">
+    <line x1="25" y1="73" x2="75" y2="73"/><line x1="25" y1="79" x2="75" y2="79"/>
+  </g>
+</svg>

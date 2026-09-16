@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Finance Fox – Favicon-Stufe (bis 20 px): Ohren, Augen, Blatt, ein Strich. -->
+  <g fill="#2F6B4F">
+    <path d="M16 4 L40 30 C44 26 56 26 60 30 L84 4 C86 20 80 34 78 44 C76 56 68 66 66 76 L34 76 C32 66 24 56 22 44 C20 34 14 20 16 4 Z"/>
+  </g>
+  <g fill="#FBF9F3"><circle cx="36" cy="43" r="5"/><circle cx="64" cy="43" r="5"/></g>
+  <path d="M10 50 H70 L90 70 V92 H10 Z" fill="#FBF9F3" stroke="#2F6B4F" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M70 50 V70 H90" fill="none" stroke="#2F6B4F" stroke-width="7" stroke-linejoin="round"/>
+  <line x1="26" y1="78" x2="74" y2="78" stroke="#2F6B4F" stroke-width="6" stroke-linecap="round"/>
+</svg>

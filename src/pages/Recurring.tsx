@@ -381,7 +381,7 @@ export default function Recurring() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Wiederkehrende Buchungen</h1>
+          <h1 className="text-2xl font-semibold">Wiederkehrende Buchungen</h1>
           <p className="text-sm text-muted-foreground">
             Der Server verbucht fällige Dauerbuchungen automatisch täglich (03:00 Uhr) und bei jedem Start.
           </p>

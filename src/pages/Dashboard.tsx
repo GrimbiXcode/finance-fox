@@ -55,7 +55,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Überblick für {formatMonth(month)}</p>
         </div>
         <TransactionDialog />
@@ -64,7 +64,7 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Gesamtvermögen</CardTitle>
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Gesamtvermögen</CardTitle>
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -79,7 +79,7 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Einnahmen (Monat)</CardTitle>
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Einnahmen (Monat)</CardTitle>
             <TrendingUp className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent>
@@ -89,7 +89,7 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Ausgaben (Monat)</CardTitle>
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Ausgaben (Monat)</CardTitle>
             <TrendingDown className="h-4 w-4 text-rose-500" />
           </CardHeader>
           <CardContent>
@@ -99,7 +99,7 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Sparrate (Monat)</CardTitle>
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Sparrate (Monat)</CardTitle>
             <Scale className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>

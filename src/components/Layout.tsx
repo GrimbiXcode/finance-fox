@@ -98,8 +98,8 @@ export default function Layout() {
   }, [appSettings.data?.currency]);
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className={cn('hidden flex-col border-r bg-card transition-all md:sticky md:top-0 md:flex md:h-screen', collapsed ? 'w-16' : 'w-64')}>
+    <div className="flex min-h-screen">
+      <aside className={cn('hidden flex-col border-r transition-all md:sticky md:top-0 md:flex md:h-screen', collapsed ? 'w-16' : 'w-64')}>
         <div className={cn('flex items-center gap-2 border-b py-5', collapsed ? 'justify-center px-2' : 'px-6')}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
             <PiggyBank className="h-5 w-5" />

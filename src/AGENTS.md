@@ -384,6 +384,35 @@ Fokus erscheint unter dem Diagramm `MoneyFlowNodeDetails` mit allen Zu- und
 Abflüssen des Knotens. Bei dichten Graphen (`flow.dense`) werden die
 Betrags-Badges nur für den hervorgehobenen Knoten eingeblendet; der Schalter
 „Alle Beträge anzeigen" im Card-Header hebt das auf.
+## Papier-Design (Tokens, Schriften)
+
+Die Oberfläche folgt dem Papier-Entwurf in `docs/design/paper-like/`
+(README mit Leitidee, Tokens und den ausstehenden Phasen). Was davon im
+Code steht:
+
+- **Tokens** in `index.css` (`:root`/`.dark`, shadcn-HSL-Format): Unterlage
+  (`--background`) und Blatt (`--card`), drei Tintenstufen, Hairline
+  (`--border`) und kräftige Linie (`--input`, `--rule-strong`), dazu
+  `--positive`/`--negative`/`--warning` (Bedeutungsfarben), `--stamp`
+  (Marke, Fokus), `--note` (Notizzettel) und `--pencil-1…8` (Buntstifte für
+  Kategorien). In `tailwind.config.js` als `text-positive`, `bg-stamp`,
+  `bg-pencil-3` usw. registriert – neue Farben dort ergänzen, nicht als
+  Tailwind-Palette (`emerald-600`) hartkodieren.
+- **Schriften** in `fonts.css` (vor `index.css` importiert): Newsreader
+  (`font-serif`, Titel und Kennzahlen), IBM Plex Sans (`font-sans`,
+  Bedienung), IBM Plex Mono (`font-mono`, Beträge/Daten/IBAN). Gebündelt aus
+  den fontsource-Paketen, bewusst nur latin + latin-ext als woff2 – der
+  Service Worker nimmt sie in den Precache. Keine Schriften von Google laden.
+- `h1`, `h2` sowie `CardTitle`/`DialogTitle`/`SheetTitle`/`AlertDialogTitle`
+  sind über `data-slot`-Selektoren in `index.css` serif; Utility-Klassen
+  gewinnen (`font-sans text-sm` für Feldbezeichner in KPI-Karten).
+- Ecken: `--radius` 0.25rem; `rounded-xl`/`lg` = 4 px (Blätter, Dialoge),
+  `md` = 3 px (Knöpfe, Felder), `sm` = 2 px. Schatten: `shadow-sm` =
+  aufliegendes Blatt, `shadow-md`/`lg` = abgehobenes Blatt (Popover, Dialog).
+- Körnung: `body { background-image: var(--grain) }`; die Unterlage
+  (`Layout.tsx`: Wurzel-`div` und Seitenleiste ohne eigenen Hintergrund)
+  zeigt sie, Blätter (`bg-card`) decken sie ab.
+
 ## Dark Mode
 
 Umschalter im Layout-Header, via next-themes (`ThemeProvider` in `main.tsx`,

@@ -242,6 +242,22 @@ steht es hier.
 - `ReferenceArea`-Bänder (Zinsbindung, Phasen) in `--paper-deep` mit
   Hairline statt farbiger Füllung.
 
+## Stand der Umsetzung
+
+- **Phase 1 ist umgesetzt** (Tokens, Schriften, Ecken, Schatten, Körnung):
+  `src/index.css` trägt die Tokens aus `tokens.css`, `src/fonts.css` bündelt
+  Newsreader, IBM Plex Sans und IBM Plex Mono (nur latin + latin-ext, woff2,
+  zusammen rund 400 KB), `tailwind.config.js` kennt `font-serif`/`font-mono`,
+  die Farben `positive`/`negative`/`warning`/`stamp`/`note`/`pencil-*` und
+  die Schatten `sheet`/`lift`. Seitentitel, `h2` und die Titel von Karten,
+  Dialogen und Sheets stehen in Serife (über `data-slot`-Selektoren, ohne
+  `ui/` anzufassen). Abweichung vom Entwurf: Die Körnung ist ein
+  Hintergrundbild des `body` statt einer festen Ebene mit Blend-Modus – das
+  kostet beim Scrollen nichts und braucht keine Einstellung.
+- Phasen 2 bis 5 stehen aus. Bis dahin bleiben Einnahmen/Ausgaben, Logo und
+  primäre Knöpfe in den bisherigen Emerald-/Rose-Tönen – sie funktionieren
+  auf Papier, sind aber heller als die Tinten des Entwurfs.
+
 ## Umsetzung in Phasen
 
 Der Entwurf ist so gebaut, dass Phase 1 allein schon den größten Teil des

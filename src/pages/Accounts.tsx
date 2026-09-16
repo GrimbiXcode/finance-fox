@@ -216,7 +216,7 @@ export default function Accounts() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Konten</h1>
+          <h1 className="text-2xl font-semibold">Konten</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} von {accounts.length} Konten im Haushalt</p>
         </div>
         <AccountDialog

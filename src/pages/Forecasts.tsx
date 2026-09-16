@@ -100,7 +100,7 @@ export default function Forecasts() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Prognosen</h1>
+          <h1 className="text-2xl font-semibold">Prognosen</h1>
           <p className="text-sm text-muted-foreground">
             Hochrechnungen auf Basis deiner Buchungen und Dauerbuchungen
           </p>

@@ -343,7 +343,7 @@ export default function Goals() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Sparziele</h1>
+          <h1 className="text-2xl font-semibold">Sparziele</h1>
           <p className="text-sm text-muted-foreground">{goals.length} Ziele im Haushalt</p>
         </div>
         <GoalDialog

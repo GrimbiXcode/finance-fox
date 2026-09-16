@@ -2356,7 +2356,7 @@ export default function Pension() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Vorsorge</h1>
+        <h1 className="text-2xl font-semibold">Vorsorge</h1>
         <p className="text-sm text-muted-foreground">
           Deine private Altersvorsorge nach dem 3-Säulen-Prinzip
         </p>

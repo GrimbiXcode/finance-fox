@@ -65,7 +65,7 @@ export default function Budgets() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Budgets</h1>
+          <h1 className="text-2xl font-semibold">Budgets</h1>
           <p className="text-sm text-muted-foreground">
             {formatCents(totalSpent)} von {formatCents(totalBudget)} ausgegeben
           </p>

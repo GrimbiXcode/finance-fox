@@ -40,7 +40,7 @@ export default function MoneyFlow() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold">Geldfluss</h1>
+          <h1 className="text-2xl font-semibold">Geldfluss</h1>
           <p className="text-sm text-muted-foreground">
             Zeigt die wiederkehrenden Geldströme zwischen deinen Konten
           </p>

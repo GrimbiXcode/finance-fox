@@ -579,7 +579,7 @@ export default function Settings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Einstellungen</h1>
+        <h1 className="text-2xl font-semibold">Einstellungen</h1>
         <p className="text-sm text-muted-foreground">
           Profil, Kategorien und Datenverwaltung
         </p>

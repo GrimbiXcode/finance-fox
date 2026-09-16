@@ -119,7 +119,7 @@ export default function Transactions() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Transaktionen</h1>
+          <h1 className="text-2xl font-semibold">Transaktionen</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} Buchungen · Saldo der Auswahl: {formatCents(sum)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

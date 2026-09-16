@@ -50,7 +50,7 @@ export default function YearReview() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Auswertung</h1>
+          <h1 className="text-2xl font-semibold">Auswertung</h1>
           <p className="text-sm text-muted-foreground">
             Ausgaben {year} im Vergleich zu {year - 1} — pro Oberkategorie
           </p>

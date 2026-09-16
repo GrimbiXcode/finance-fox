@@ -187,7 +187,7 @@ function Kpi({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">
           {label}
         </CardTitle>
         {icon}
@@ -904,7 +904,7 @@ export default function Mortgages() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">Hypotheken</h1>
+          <h1 className="text-2xl font-semibold">Hypotheken</h1>
           <p className="text-sm text-muted-foreground">
             Wohneigentum, Tranchen und Amortisation im Überblick
           </p>

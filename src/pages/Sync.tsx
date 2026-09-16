@@ -83,7 +83,7 @@ export default function Sync() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">Abgleich</h1>
+          <h1 className="text-2xl font-semibold">Abgleich</h1>
           <p className="text-sm text-muted-foreground">
             Was zwischen diesem Gerät und dem Heimserver hin- und hergeht
           </p>

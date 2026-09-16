@@ -387,7 +387,7 @@ export default function Recurring() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => runNow.mutate()} disabled={runNow.isPending}>
+          <Button variant="stamp" onClick={() => runNow.mutate()} disabled={runNow.isPending}>
             <Zap className="mr-2 h-4 w-4" /> Jetzt verbuchen
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
@@ -523,7 +523,7 @@ export default function Recurring() {
                         )}
                       </CardDescription>
                     </div>
-                    <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-positive' : ''}>
+                    <Badge variant="stamp" tone={archived ? 'neutral' : r.active ? 'good' : 'warn'}>
                       {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                     </Badge>
                   </div>
@@ -531,7 +531,7 @@ export default function Recurring() {
                 <CardContent className="space-y-3">
                   <div className="flex items-baseline justify-between">
                     <span className={cn(
-                      'text-xl font-bold',
+                      'font-serif text-xl font-semibold',
                       r.type === 'income' && 'text-positive',
                       r.type === 'expense' && 'text-negative',
                     )}>
@@ -589,13 +589,13 @@ export default function Recurring() {
                 return (
                   <TableRow key={r.id} className={cn((!r.active || archived) && 'opacity-60')}>
                     <TableCell>
-                      <Badge variant="outline">{typeLabel[r.type]}</Badge>
+                      <Badge variant="label">{typeLabel[r.type]}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span>{r.note || (r.type === 'transfer' ? 'Umbuchung' : cat?.name) || '—'}</span>
                         {cat && (
-                          <Badge variant="secondary" className="text-[10px]">{cat.name}</Badge>
+                          <Badge variant="label">{cat.name}</Badge>
                         )}
                       </div>
                     </TableCell>
@@ -622,16 +622,16 @@ export default function Recurring() {
                       })()}
                     </TableCell>
                     <TableCell className={cn(
-                      'text-right font-bold',
+                      'text-right font-mono font-medium tabular-nums',
                       r.type === 'income' && 'text-positive',
                       r.type === 'expense' && 'text-negative',
                     )}>
                       {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
                     </TableCell>
                     <TableCell>{intervalLabel[r.interval]}</TableCell>
-                    <TableCell>{formatDate(r.nextDate)}</TableCell>
+                    <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">{formatDate(r.nextDate)}</TableCell>
                     <TableCell>
-                      <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-positive' : ''}>
+                      <Badge variant="stamp" tone={archived ? 'neutral' : r.active ? 'good' : 'warn'}>
                         {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                       </Badge>
                     </TableCell>

@@ -131,6 +131,7 @@ function TransferForm(
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
+          variant="stamp"
           onClick={submit}
           disabled={transferInterest.isPending || transferAmortization.isPending}
         >

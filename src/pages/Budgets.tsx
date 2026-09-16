@@ -168,12 +168,12 @@ export default function Budgets() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex items-baseline justify-between">
-                    <span className={cn('text-xl font-bold', over && 'text-destructive')}>{formatCents(used)}</span>
+                    <span className={cn('font-serif text-xl font-semibold', over && 'text-destructive')}>{formatCents(used)}</span>
                     <span className={cn('text-sm font-medium', over ? 'text-destructive' : pct >= 80 ? 'text-warning' : 'text-muted-foreground')}>
                       {over ? `+${formatCents(used - limit)} überschritten` : `${s.percent} %`}
                     </span>
                   </div>
-                  <Progress value={pct} className={cn('[&>div]:transition-all', over ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-warning' : '[&>div]:bg-positive')} />
+                  <Progress value={pct} className={cn('[&>div]:transition-all', over ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-warning' : '')} />
                   <p className="text-xs text-muted-foreground">
                     {over ? 'Budget überschritten' : `Noch ${formatCents(s.remaining)} verfügbar`}
                     {carryover && ' (inkl. Übertrag aus Vormonaten)'}

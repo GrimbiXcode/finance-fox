@@ -165,7 +165,7 @@ export default function Splitting() {
                     </div>
                     <span className="truncate font-medium" title={u.name}>{u.name}</span>
                   </div>
-                  <span className={cn('shrink-0 text-lg font-bold', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
+                  <span className={cn('shrink-0 font-serif text-lg font-semibold', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
                     {bal > 0 ? '+' : ''}{formatCents(bal)}
                   </span>
                 </div>
@@ -203,10 +203,10 @@ export default function Splitting() {
                       {to?.name}
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <span className="text-lg font-bold">{formatCents(s.amount)}</span>
+                      <span className="font-serif text-lg font-semibold">{formatCents(s.amount)}</span>
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="stamp"
                         disabled={!editAccount || settle.isPending}
                         title={editAccount
                           ? `Ausgleich als Ausgabe auf „${editAccount.name}“ verbuchen`
@@ -248,7 +248,7 @@ export default function Splitting() {
                   <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                     {t.note || 'Ausgabe'}
                     {project && (
-                      <Badge variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${project.color}` }}>
+                      <Badge variant="label" style={{ borderLeft: `3px solid ${project.color}` }}>
                         {project.name}
                       </Badge>
                     )}
@@ -262,7 +262,7 @@ export default function Splitting() {
                     {t.splits.map((s) => {
                       const u = userById(s.userId);
                       return (
-                        <Badge key={s.userId} variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${u?.color ?? '#999'}` }}>
+                        <Badge key={s.userId} variant="label" style={{ borderLeft: `3px solid ${u?.color ?? '#999'}` }}>
                           {u?.name}: {formatCents(s.amount)}
                         </Badge>
                       );

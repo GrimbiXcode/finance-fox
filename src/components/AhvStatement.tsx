@@ -274,7 +274,7 @@ function VariantsTable({
               <TableCell className="whitespace-nowrap font-medium">
                 {label(v)}
                 {v.monthlyPension === reference && (
-                  <Badge variant="secondary" className="ml-2">
+                  <Badge variant="stamp" tone="good" className="ml-2">
                     gewählt
                   </Badge>
                 )}

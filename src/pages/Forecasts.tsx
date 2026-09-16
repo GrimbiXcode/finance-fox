@@ -132,7 +132,7 @@ export default function Forecasts() {
               </CardDescription>
             </div>
             {scenarioActive && (
-              <Badge variant="secondary">Szenario: {scenarioParts.join(', ')}</Badge>
+              <Badge variant="label">Szenario: {scenarioParts.join(', ')}</Badge>
             )}
           </div>
         </CardHeader>
@@ -201,7 +201,7 @@ export default function Forecasts() {
             {endBalance !== undefined && (
               <div className="text-right">
                 <div className="text-xs text-muted-foreground">Voraussichtlich in {months} Monaten</div>
-                <div className={cn('text-xl font-bold', endBalance < 0 ? 'text-destructive' : 'text-positive')}>
+                <div className={cn('font-serif text-xl font-semibold', endBalance < 0 ? 'text-destructive' : 'text-positive')}>
                   {formatCents(endBalance)}
                 </div>
               </div>
@@ -272,12 +272,12 @@ export default function Forecasts() {
                     </span>
                     <span className={cn('font-semibold', b.willExceed ? 'text-destructive' : 'text-muted-foreground')}>
                       {formatCents(b.projected)} / {formatCents(b.budget)}
-                      {b.willExceed && <Badge variant="destructive" className="ml-2 text-[10px]">Überschreitung</Badge>}
+                      {b.willExceed && <Badge variant="stamp" tone="bad" className="ml-2">Überschreitung</Badge>}
                     </span>
                   </div>
                   <Progress
                     value={pct}
-                    className={cn(b.willExceed ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-warning' : '[&>div]:bg-positive')}
+                    className={cn(b.willExceed ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-warning' : '')}
                   />
                   <p className="text-xs text-muted-foreground">
                     Bisher {formatCents(b.spent)} ausgegeben
@@ -314,9 +314,9 @@ export default function Forecasts() {
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <CalendarClock className="h-3.5 w-3.5" />
                       {open
-                        ? <Badge variant="secondary" className="text-[10px]">offenes Ziel</Badge>
+                        ? <Badge variant="stamp">offenes Ziel</Badge>
                         : g.remaining === 0
-                          ? <Badge className="bg-positive text-[10px]">Erreicht</Badge>
+                          ? <Badge variant="stamp" tone="good">Erreicht</Badge>
                           : g.etaMonth
                             ? <span>voraussichtlich <span className="font-medium text-foreground">{formatMonth(g.etaMonth)}</span></span>
                             : <span>mit aktuellen Dauerbuchungen nicht erreichbar</span>}

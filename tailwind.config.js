@@ -95,6 +95,7 @@ module.exports = {
         lg: "var(--shadow-lift)",
         sheet: "var(--shadow-sheet)",
         lift: "var(--shadow-lift)",
+        note: "var(--shadow-note)",
       },
       keyframes: {
         "accordion-down": {

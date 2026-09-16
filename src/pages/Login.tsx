@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { PiggyBank } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -7,6 +6,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import { Label } from '@/components/ui/label';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import BrandMark from '@/components/BrandMark';
 
 export default function Login() {
   const utils = trpc.useUtils();
@@ -61,9 +61,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-stamp text-stamp-foreground">
-            <PiggyBank className="h-6 w-6" />
-          </div>
+          <BrandMark size="lg" className="mb-2" />
           <CardTitle>Finance Fox</CardTitle>
           <CardDescription>
             {totpToken

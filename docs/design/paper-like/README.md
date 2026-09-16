@@ -270,7 +270,28 @@ steht es hier.
   `CHART.pencil(n)`. Nicht Teil von Phase 2: die Farb-Paletten zur Auswahl
   (Kategorien, Tags, Projekte, Personen, `PIE_COLORS`, `SOURCE_COLORS`) –
   sie kommen in Phase 5.
-- Phasen 3 bis 5 stehen aus.
+- **Phase 3 ist umgesetzt** (Papier-Komponenten): `Badge` kennt die Rollen
+  **Stempel** (`variant="stamp"` mit `tone` good/warn/bad/ink/brand –
+  Zustände wie geteilt, Storno, Aktiv/Pausiert/Archiviert, Ablauf nah,
+  Policen-Status, Rollen) und **Etikett** (`variant="label"` – Zuordnungen wie
+  Tags, Projekte, Kategorien, Sparten, Zähler; alle bisherigen `secondary`/
+  `outline`-Badges). `Button` hat die Variante `stamp` (Jetzt verbuchen,
+  Ausgleich verbuchen, die drei „Übernehmen“ der Dauerbuchungs-Dialoge);
+  `destructive` ist ein Rotstift-Umriss, gefüllt nur die Bestätigung in der
+  Gefahrenzone. Tabellen sind Kassenbuch: Kopf in Versalien über kräftiger
+  Linie, Fußzeile mit Doppelstrich, Datum und Beträge in Mono (Transaktionen,
+  Dauerbuchungen, Konten). Kennzahlen (`text-2xl/xl/lg font-bold`) stehen in
+  Serife. `Progress` ist ein Meter (Spur `paper-deep` mit Hairline, Füllung
+  Tinte, ab 80 % Ocker, überzogen Rotstift). Dialog-, Sheet- und Drawer-
+  Overlays sind Tinte zu 30 % statt Schwarz. `components/Note.tsx` ist der
+  Notizzettel (Hypotheken- und Vorsorge-Hinweise), `components/BrandMark.tsx`
+  der Fuchs als Stempel (Seitenleiste, Kopfzeile, Login, Einrichtung,
+  Ladebildschirm); die Haushaltszeile ist der Briefkopf in Serife kursiv.
+  Toasts liegen auf Blattfarbe. Bewusst nicht umgesetzt: die Sparziel-
+  Herkunftsbalken (Phase 5, Buntstifte) und die Deckungs-Check-Liste als
+  Zettel – sie ist eine interaktive Liste mit Ausblenden-Knöpfen und bleibt
+  eine.
+- Phasen 4 und 5 stehen aus.
 
 ## Umsetzung in Phasen
 

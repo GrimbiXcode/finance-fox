@@ -29,7 +29,7 @@ export default function SetPassword({ purpose }: { purpose: 'invite' | 'reset' }
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-stamp text-stamp-foreground">
+          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-md border-2 border-stamp bg-card text-stamp">
             <KeyRound className="h-6 w-6" />
           </div>
           <CardTitle>{purpose === 'invite' ? 'Willkommen im Haushalt' : 'Passwort zurücksetzen'}</CardTitle>

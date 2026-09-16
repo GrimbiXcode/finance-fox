@@ -137,9 +137,9 @@ function GoalCard({ goal, accounts, banks, forecast }: {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-xl font-bold" style={{ color: goal.color }}>{formatCents(total)}</span>
+          <span className="font-serif text-xl font-semibold" style={{ color: goal.color }}>{formatCents(total)}</span>
           {open ? (
-            <Badge variant="secondary">offenes Ziel</Badge>
+            <Badge variant="stamp">offenes Ziel</Badge>
           ) : (
             <span className="text-sm text-muted-foreground">von {formatCents(goal.targetAmount ?? 0)}</span>
           )}

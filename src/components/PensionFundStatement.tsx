@@ -83,7 +83,7 @@ export default function PensionFundStatement({
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle>Versicherungsausweis — {fund.name}</DialogTitle>
-            <Badge variant="secondary">
+            <Badge variant="label">
               {fund.kind === 'pension_fund' ? 'Pensionskasse' : 'Freizügigkeitskonto'}
             </Badge>
           </div>

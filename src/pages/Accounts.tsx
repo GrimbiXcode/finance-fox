@@ -327,11 +327,11 @@ export default function Accounts() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className={cn('text-2xl font-bold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
+                <div className={cn('font-serif text-2xl font-semibold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="secondary">{txCount} Buchungen</Badge>
-                  {a.owners.length > 0 && <Badge variant="outline">Privat</Badge>}
-                  {a.access === 'view' && <Badge variant="outline">nur lesend</Badge>}
+                  <Badge variant="label">{txCount} Buchungen</Badge>
+                  {a.owners.length > 0 && <Badge variant="stamp" tone="ink">Privat</Badge>}
+                  {a.access === 'view' && <Badge variant="stamp">nur lesend</Badge>}
                   <span>Anfangsbestand: {formatCents(a.initialBalance)}</span>
                 </div>
                 {a.owners.length > 0 && (
@@ -378,8 +378,8 @@ export default function Accounts() {
                       <div>
                         <div className="font-medium">{a.name}</div>
                         <div className="flex gap-1">
-                          {a.owners.length > 0 && <Badge variant="outline" className="text-[10px]">Privat</Badge>}
-                          {a.access === 'view' && <Badge variant="outline" className="text-[10px]">nur lesend</Badge>}
+                          {a.owners.length > 0 && <Badge variant="stamp" tone="ink">Privat</Badge>}
+                          {a.access === 'view' && <Badge variant="stamp">nur lesend</Badge>}
                         </div>
                       </div>
                     </div>
@@ -388,8 +388,8 @@ export default function Accounts() {
                   <TableCell>{a.bankId !== null ? (bankName.get(a.bankId) ?? 'Unbekannte Bank') : '—'}</TableCell>
                   <TableCell className="font-mono text-xs">{a.iban ? formatIban(a.iban) : '—'}</TableCell>
                   <TableCell className="text-right">{txCountOf(a.id)}</TableCell>
-                  <TableCell className="text-right">{formatCents(a.initialBalance)}</TableCell>
-                  <TableCell className={cn('text-right font-bold', a.balance < 0 && 'text-destructive')}>
+                  <TableCell className="text-right font-mono tabular-nums">{formatCents(a.initialBalance)}</TableCell>
+                  <TableCell className={cn('text-right font-mono font-medium tabular-nums', a.balance < 0 && 'text-destructive')}>
                     {formatCents(a.balance)}
                   </TableCell>
                   <TableCell>
@@ -433,7 +433,7 @@ export default function Accounts() {
               <TableCell className="text-right">
                 {filtered.reduce((s, a) => s + txCountOf(a.id), 0)}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right font-mono tabular-nums">
                 {formatCents(filtered.reduce((s, a) => s + a.initialBalance, 0))}
               </TableCell>
               <TableCell className={cn(

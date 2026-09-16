@@ -25,13 +25,13 @@ import Login from '@/pages/Login'
 import Setup from '@/pages/Setup'
 import SetPassword from '@/pages/SetPassword'
 import { Button } from '@/components/ui/button'
-import { PiggyBank } from 'lucide-react'
+import BrandMark from '@/components/BrandMark'
 
 function Loading() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40">
       <div className="flex flex-col items-center gap-3 text-muted-foreground">
-        <PiggyBank className="h-10 w-10 animate-pulse text-stamp" />
+        <BrandMark size="lg" className="animate-pulse" />
         <span className="text-sm">Finance Fox wird geladen…</span>
       </div>
     </div>
@@ -47,7 +47,7 @@ function LoadError({ message, onRetry }: { message: string; onRetry: () => void 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <div className="flex max-w-sm flex-col items-center gap-3 text-center text-muted-foreground">
-        <PiggyBank className="h-10 w-10 text-stamp" />
+        <BrandMark size="lg" />
         <span className="text-sm font-medium text-foreground">
           Finance Fox konnte nicht geladen werden
         </span>

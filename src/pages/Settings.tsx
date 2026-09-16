@@ -843,7 +843,7 @@ export default function Settings() {
             <CardTitle className="flex items-center gap-2">
               <Smartphone className="h-5 w-5" /> Zwei-Faktor-Authentifizierung
             </CardTitle>
-            <Badge variant={user?.totpEnabled ? "default" : "secondary"}>
+            <Badge variant="stamp" tone={user?.totpEnabled ? "good" : "neutral"}>
               {user?.totpEnabled ? "Aktiviert" : "Deaktiviert"}
             </Badge>
           </div>
@@ -968,7 +968,7 @@ export default function Settings() {
           <div className="space-y-1.5">
             {catRoots.map(root => (
               <div key={root.id} className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1">
+                <Badge variant="label" className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1">
                   <span
                     className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: root.color }}
@@ -994,7 +994,7 @@ export default function Settings() {
                 {catChildrenOf(root.id).map(child => (
                   <Badge
                     key={child.id}
-                    variant="secondary"
+                    variant="label"
                     className="ml-4 max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                   >
                     <span className="text-muted-foreground">└</span>
@@ -1120,7 +1120,7 @@ export default function Settings() {
             {tags.map(tag => (
               <Badge
                 key={tag.id}
-                variant="secondary"
+                variant="label"
                 className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
               >
                 <span
@@ -1184,12 +1184,12 @@ export default function Settings() {
               {accountTypes.map(t => (
                 <Badge
                   key={t.id}
-                  variant="secondary"
+                  variant="label"
                   className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                 >
                   {t.name}
                   {t.builtin && (
-                    <Badge variant="outline" className="ml-1 text-[10px]">
+                    <Badge variant="label" className="ml-1">
                       Standard
                     </Badge>
                   )}
@@ -1218,7 +1218,7 @@ export default function Settings() {
               {banks.map(b => (
                 <Badge
                   key={b.id}
-                  variant="secondary"
+                  variant="label"
                   className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                 >
                   {b.name}

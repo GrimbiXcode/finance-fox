@@ -69,7 +69,7 @@ export default function Dashboard() {
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={cn('text-2xl font-bold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
+            <div className={cn('font-serif text-2xl font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
             <p className="text-xs text-muted-foreground">{accounts.length} Konten</p>
             {mortgage && mortgage.count > 0 && (
               <p className="text-xs text-muted-foreground" title="Kontosalden plus Verkehrswert der Liegenschaften minus Restschuld">
@@ -84,7 +84,7 @@ export default function Dashboard() {
             <TrendingUp className="h-4 w-4 text-positive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-positive">{formatCents(totals.income)}</div>
+            <div className="font-serif text-2xl font-semibold text-positive">{formatCents(totals.income)}</div>
             <p className="text-xs text-muted-foreground">{formatMonth(month)}</p>
           </CardContent>
         </Card>
@@ -94,7 +94,7 @@ export default function Dashboard() {
             <TrendingDown className="h-4 w-4 text-negative" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-negative">{formatCents(totals.expense)}</div>
+            <div className="font-serif text-2xl font-semibold text-negative">{formatCents(totals.expense)}</div>
             <p className="text-xs text-muted-foreground">{formatMonth(month)}</p>
           </CardContent>
         </Card>
@@ -104,7 +104,7 @@ export default function Dashboard() {
             <Scale className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={cn('text-2xl font-bold', savings >= 0 ? 'text-positive' : 'text-negative')}>
+            <div className={cn('font-serif text-2xl font-semibold', savings >= 0 ? 'text-positive' : 'text-negative')}>
               {formatCents(savings)}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -195,7 +195,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className={cn(
-                      'shrink-0 text-sm font-semibold',
+                      'shrink-0 font-mono text-sm font-medium tabular-nums',
                       t.type === 'income' ? 'text-positive' : t.type === 'expense' ? 'text-negative' : 'text-muted-foreground',
                     )}>
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
@@ -224,7 +224,7 @@ export default function Dashboard() {
                       </div>
                       <span className="truncate text-sm font-medium" title={u.name}>{u.name}</span>
                     </div>
-                    <span className={cn('shrink-0 text-sm font-semibold', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
+                    <span className={cn('shrink-0 font-mono text-sm font-medium tabular-nums', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
                       {bal > 0 ? '+' : ''}{formatCents(bal)}
                     </span>
                   </div>

@@ -104,6 +104,7 @@ import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/providers/auth";
 import { toast } from "sonner";
 import { CHART } from "@/lib/chartColors";
+import Note from "@/components/Note";
 
 /** Zeilen-Typen der Vorsorge-Queries (nur die hier benötigten Felder) */
 interface SalaryDeduction {
@@ -442,7 +443,7 @@ function OverviewSection({
                 <div className="text-xs text-muted-foreground">
                   Monatliches Einkommen im Alter
                 </div>
-                <div className="text-xl font-bold text-positive">
+                <div className="font-serif text-xl font-semibold text-positive">
                   {formatCents(forecast.monthlyRetirementIncome)}
                 </div>
               </div>
@@ -478,7 +479,7 @@ function OverviewSection({
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
                   Säule 1 · AHV
                   {forecast.ahv.estimated && (
-                    <Badge variant="secondary" className="text-[10px]">
+                    <Badge variant="stamp" tone="warn">
                       Schätzung
                     </Badge>
                   )}
@@ -694,17 +695,16 @@ function OverviewSection({
             )}
 
             {forecast.warnings.length > 0 && (
-              <ul className="space-y-1.5 rounded-lg border border-warning/30 bg-warning/10 p-3">
-                {forecast.warnings.map((w, i) => (
-                  <li
-                    key={i}
-                    className="flex items-start gap-2 text-sm text-warning"
-                  >
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    {w}
-                  </li>
-                ))}
-              </ul>
+              <Note title="Hinweise">
+                <ul className="space-y-1.5">
+                  {forecast.warnings.map((w, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              </Note>
             )}
           </>
         )}
@@ -1083,6 +1083,7 @@ function TransferDialog({ disabled }: { disabled: boolean }) {
             Abbrechen
           </Button>
           <Button
+            variant="stamp"
             onClick={submit}
             disabled={transfer.isPending || accounts.length === 0}
           >
@@ -1145,7 +1146,7 @@ function SalarySection({
           </div>
           <div className="text-right">
             <div className="text-xs text-muted-foreground">Aktuelles Netto</div>
-            <div className="text-lg font-bold text-positive">
+            <div className="font-serif text-lg font-semibold text-positive">
               {currentNet != null ? formatCents(currentNet) : "—"}
             </div>
           </div>
@@ -1176,7 +1177,7 @@ function SalarySection({
                   <TableCell className="text-right">
                     <div className="font-medium">{formatCents(netFor(s))}</div>
                     {s.deductions.length > 0 && (
-                      <Badge variant="outline" className="mt-0.5 text-[10px]">
+                      <Badge variant="stamp" className="mt-0.5">
                         eigene Abzüge
                       </Badge>
                     )}
@@ -1807,17 +1808,17 @@ function AhvCalculation() {
           <div className="text-xs text-muted-foreground">
             Berechnete Monatsrente
           </div>
-          <div className="text-2xl font-bold">
+          <div className="font-serif text-2xl font-semibold">
             {formatCents(d.monthlyPension)}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary">Skala {d.duration.scale}/44</Badge>
+            <Badge variant="label">Skala {d.duration.scale}/44</Badge>
             {gaps > 0 && (
-              <Badge className="bg-warning/15 text-warning hover:bg-warning/15 dark:text-warning">
+              <Badge variant="stamp" tone="warn">
                 {gaps} {gaps === 1 ? "Lücke" : "Lücken"}
               </Badge>
             )}
-            {d.partnerLinked && <Badge variant="outline">Ehepaar</Badge>}
+            {d.partnerLinked && <Badge variant="label">Ehepaar</Badge>}
             <span>ab {formatDate(d.pensionStartDate)}</span>
           </div>
         </div>
@@ -2056,13 +2057,13 @@ function FundsSection({
                     {f.name}
                   </CardTitle>
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="secondary">
+                    <Badge variant="label">
                       {f.kind === "pension_fund"
                         ? "Pensionskasse"
                         : "Freizügigkeitskonto"}
                     </Badge>
                     {f.tiers.length > 0 && (
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="label">
                         Abstufungen
                       </Badge>
                     )}
@@ -2101,7 +2102,7 @@ function FundsSection({
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-xl font-bold">
+                  <span className="font-serif text-xl font-semibold">
                     {formatCents(f.currentCapital)}
                   </span>
                 </div>
@@ -2184,7 +2185,7 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
                   <CardDescription className="flex flex-wrap items-center gap-1.5">
                     {p.institution || "ohne Institution"}
                     {linked && (
-                      <Badge variant="secondary" className="text-[10px]">
+                      <Badge variant="stamp" tone="good">
                         Konto verknüpft
                       </Badge>
                     )}
@@ -2205,7 +2206,7 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-xl font-bold">
+                  <span className="font-serif text-xl font-semibold">
                     {formatCents(balance)}
                   </span>
                 </div>
@@ -2282,7 +2283,7 @@ function HistoryCard() {
                 className="space-y-1 border-b pb-3 last:border-0"
               >
                 <div className="flex items-center justify-between gap-2 text-sm">
-                  <Badge variant="secondary">
+                  <Badge variant="label">
                     {ENTITY_LABELS[entry.entity] ?? entry.entity}
                   </Badge>
                   <span className="text-xs text-muted-foreground">

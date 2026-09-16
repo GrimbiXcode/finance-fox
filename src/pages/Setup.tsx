@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, Copy, PiggyBank, Plus, Trash2, Users } from 'lucide-react';
+import { CheckCircle2, Copy, Plus, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import BrandMark from '@/components/BrandMark';
 
 interface InvitedUser {
   id: number;
@@ -105,9 +106,7 @@ export default function Setup() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-8">
       <Card className="w-full max-w-lg">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-stamp text-stamp-foreground">
-            <PiggyBank className="h-6 w-6" />
-          </div>
+          <BrandMark size="lg" className="mb-2" />
           <CardTitle>Einrichtung</CardTitle>
           <CardDescription>
             Schritt {step + 1} von 3 — {['Administratorkonto', 'Personen einladen', 'Datenübernahme'][step]}
@@ -257,7 +256,7 @@ export default function Setup() {
                 Einrichtung abschließen
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                <Badge variant="secondary">Tipp</Badge> Personen und Daten kannst du später jederzeit in den Einstellungen verwalten.
+                <Badge variant="label">Tipp</Badge> Personen und Daten kannst du später jederzeit in den Einstellungen verwalten.
               </p>
             </div>
           )}

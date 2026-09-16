@@ -143,6 +143,7 @@ function TransferForm({
           Abbrechen
         </Button>
         <Button
+          variant="stamp"
           onClick={submit}
           disabled={transfer.isPending}
         >

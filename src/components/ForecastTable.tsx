@@ -300,14 +300,14 @@ export function ForecastTable({ scenario }: ForecastTableProps) {
                           die Badges werden abgeschnitten statt der Name */}
                       <span className="min-w-0 truncate">{g.name}</span>
                       {g.targetAmount === null && (
-                        <Badge variant="secondary" className="text-[10px]">
+                        <Badge variant="stamp">
                           offenes Ziel
                         </Badge>
                       )}
                       {g.hasHiddenSources && (
                         <Badge
-                          variant="outline"
-                          className="text-[10px]"
+                          variant="stamp"
+                          tone="warn"
                           title="Enthält Quellen auf Konten, die du nicht sehen darfst — der Stand ist unvollständig"
                         >
                           verborgene Quellen

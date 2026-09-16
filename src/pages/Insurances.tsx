@@ -221,7 +221,7 @@ function Kpi({
       <CardContent>
         <div
           className={cn(
-            "text-2xl font-bold",
+            "font-serif text-2xl font-semibold",
             tone === "warn" && "text-destructive"
           )}
         >
@@ -475,11 +475,11 @@ function ComparisonCard({
                     <p className="truncate font-medium text-foreground" title={p.name}>
                       {p.name}
                     </p>
-                    <Badge variant="secondary" className="mt-1">
+                    <Badge variant="label" className="mt-1">
                       {INSURANCE_BRANCH_LABELS[p.branch]}
                     </Badge>
                     {p.status === "quote" && (
-                      <Badge variant="outline" className="ml-1 mt-1">
+                      <Badge variant="stamp" tone="ink" className="ml-1 mt-1">
                         Angebot
                       </Badge>
                     )}
@@ -536,11 +536,12 @@ function ComparisonCard({
 
 /* ------------------------------- Policen-Karte ---------------------------- */
 
-const STATUS_BADGE: Record<InsuranceStatus, string> = {
-  active: "border-positive/40 bg-positive/10 text-positive",
-  cancelled: "border-warning/40 bg-warning/10 text-warning",
-  expired: "border-muted bg-muted text-muted-foreground",
-  quote: "border-pencil-7/40 bg-pencil-7/10 text-pencil-7",
+/** Stempelfarbe je Status (Badge variant="stamp") */
+const STATUS_TONE: Record<InsuranceStatus, "good" | "warn" | "neutral" | "ink"> = {
+  active: "good",
+  cancelled: "warn",
+  expired: "neutral",
+  quote: "ink",
 };
 
 function DetailRow({
@@ -596,24 +597,24 @@ function PolicyCard({
               {policy.name}
             </CardTitle>
             <div className="mt-2 flex flex-wrap items-center gap-1">
-              <Badge variant="secondary">
+              <Badge variant="label">
                 {INSURANCE_BRANCH_LABELS[policy.branch]}
               </Badge>
-              <Badge variant="outline" className={STATUS_BADGE[policy.status]}>
+              <Badge variant="stamp" tone={STATUS_TONE[policy.status]}>
                 {INSURANCE_STATUS_LABELS[policy.status]}
               </Badge>
               {policy.premiumRecurringId !== null && (
-                <Badge variant="outline">Dauerbuchung</Badge>
+                <Badge variant="stamp" tone="ink">Dauerbuchung</Badge>
               )}
               {policy.personIds.length === 0 ? (
-                <Badge variant="secondary">Gemeinsam</Badge>
+                <Badge variant="label">Gemeinsam</Badge>
               ) : (
                 policy.personIds.map(id => {
                   const u = users.find(x => x.id === id);
                   return (
                     <Badge
                       key={id}
-                      variant="outline"
+                      variant="label"
                       style={{
                         borderColor: u?.color,
                         color: u?.color ?? undefined,
@@ -662,7 +663,7 @@ function PolicyCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <p className="text-xl font-bold">{formatCents(policy.premium)}</p>
+          <p className="font-serif text-xl font-semibold">{formatCents(policy.premium)}</p>
           <p className="text-xs text-muted-foreground">
             {
               RECURRING_INTERVAL_LABELS[
@@ -853,7 +854,7 @@ function HistoryCard() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Badge variant="secondary">
+                    <Badge variant="label">
                       {ENTITY_LABELS[entry.entity] ?? entry.entity}
                     </Badge>
                     {entry.userName && (

@@ -92,9 +92,9 @@ export default function OfflineCard() {
         <CardTitle className="flex flex-wrap items-center gap-2">
           Offline-Betrieb
           {reason === null ? (
-            <Badge variant="secondary">aktiv</Badge>
+            <Badge variant="stamp" tone="good">aktiv</Badge>
           ) : (
-            <Badge variant="outline">nicht verfügbar</Badge>
+            <Badge variant="stamp">nicht verfügbar</Badge>
           )}
         </CardTitle>
         <CardDescription>

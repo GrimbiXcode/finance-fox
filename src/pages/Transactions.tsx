@@ -236,21 +236,21 @@ export default function Transactions() {
                   t.type === 'income' ? `−${formatCents(t.amount)}` : `+${formatCents(t.amount)}`;
                 return (
                   <TableRow key={t.id} className={cn((isStorno || isReversed) && 'opacity-60')}>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(t.date)}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">{formatDate(t.date)}</TableCell>
                     <TableCell>
                       <div className="font-medium">{t.note || (t.type === 'transfer' ? 'Umbuchung' : '—')}</div>
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {isStorno && <Badge variant="outline" className="text-[10px]">Storno</Badge>}
-                        {isReversed && <Badge variant="outline" className="text-[10px]">Storniert</Badge>}
-                        {t.splits.length > 0 && <Badge variant="secondary" className="text-[10px]">geteilt</Badge>}
+                        {isStorno && <Badge variant="stamp" tone="ink">Storno</Badge>}
+                        {isReversed && <Badge variant="stamp" tone="ink">Storniert</Badge>}
+                        {t.splits.length > 0 && <Badge variant="stamp" tone="good">geteilt</Badge>}
                         {t.changeCount > 0 && (
                           <TransactionHistoryDialog
                             transactionId={t.id}
                             note={t.note}
                             trigger={
                               <Badge
-                                variant="secondary"
-                                className="cursor-pointer text-[10px] hover:bg-muted"
+                                variant="stamp"
+                                className="cursor-pointer hover:bg-muted"
                                 title="Änderungsverlauf anzeigen"
                               >
                                 bearbeitet
@@ -259,12 +259,12 @@ export default function Transactions() {
                           />
                         )}
                         {project && (
-                          <Badge variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${project.color}` }}>
+                          <Badge variant="label" style={{ borderLeft: `3px solid ${project.color}` }}>
                             {project.name}
                           </Badge>
                         )}
                         {t.tags.map((tag) => (
-                          <Badge key={tag.id} variant="secondary" className="gap-1 text-[10px]">
+                          <Badge key={tag.id} variant="label" className="gap-1">
                             <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
                             {tag.name}
                           </Badge>
@@ -291,7 +291,7 @@ export default function Transactions() {
                       )}
                     </TableCell>
                     <TableCell className={cn(
-                      'whitespace-nowrap text-right font-semibold',
+                      'whitespace-nowrap text-right font-mono font-medium tabular-nums',
                       t.type === 'income' ? 'text-positive' : t.type === 'expense' ? 'text-negative' : 'text-muted-foreground',
                     )}>
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}

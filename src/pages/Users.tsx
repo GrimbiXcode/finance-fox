@@ -151,15 +151,15 @@ export default function UsersPage() {
                   <CardDescription className="text-xs">{u.email}</CardDescription>
                 </div>
               </div>
-              <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className={u.role === 'admin' ? 'bg-positive' : ''}>
+              <Badge variant="stamp" tone={u.role === 'admin' ? 'brand' : 'neutral'}>
                 {u.role === 'admin' ? 'Admin' : 'Mitglied'}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2 text-xs">
-                {!u.active && <Badge variant="destructive">Deaktiviert</Badge>}
-                {!u.hasPassword && <Badge variant="outline">Passwort noch nicht gesetzt</Badge>}
-                {u.id === user?.id && <Badge variant="secondary">Das bist du</Badge>}
+                {!u.active && <Badge variant="stamp" tone="bad">Deaktiviert</Badge>}
+                {!u.hasPassword && <Badge variant="stamp" tone="warn">Passwort noch nicht gesetzt</Badge>}
+                {u.id === user?.id && <Badge variant="label">Das bist du</Badge>}
               </div>
               {user?.role === 'admin' && u.id !== user.id && (
                 <div className="flex gap-2">

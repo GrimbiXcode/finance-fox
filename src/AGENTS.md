@@ -26,7 +26,10 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   `InsurancePolicyDialog.tsx`/`InsuranceCoverageDialog.tsx`/
   `InsuranceTransferDialog.tsx`/`InsuranceAttachments.tsx`
   (Versicherungs-Modul, Muster Hypotheken bzw. PensionAttachments),
-  `ui/` (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert).
+  `Note.tsx` (Notizzettel für Hinweise/Erinnerungen), `BrandMark.tsx`
+  (Fuchs als Stempel), `ui/` (shadcn/ui, via shadcn generiert — nicht von
+  Hand umschreiben; die wenigen bewussten Papier-Anpassungen tragen einen
+  Kommentar `// Papier:` und sind unter „Papier-Design“ aufgezählt).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
   `AppRouter` aus `api/router.ts`), `auth.tsx`.
 - `lib/` — `finance.ts` (Berechnungen, Cent-Helfer, Locale), `data.ts`,
@@ -418,6 +421,20 @@ Code steht:
 - Körnung: `body { background-image: var(--grain) }`; die Unterlage
   (`Layout.tsx`: Wurzel-`div` und Seitenleiste ohne eigenen Hintergrund)
   zeigt sie, Blätter (`bg-card`) decken sie ab.
+- **Komponenten-Regeln** (Papier-Anpassungen in `ui/`): `Badge` hat zwei
+  Rollen – `variant="stamp"` für Zustände (Versalien, Umriss, Farbe über
+  `tone="good|warn|bad|ink|brand"`) und `variant="label"` für Zuordnungen
+  (Tag, Projekt, Kategorie, Sparte, Zähler; mit Farbpunkt oder
+  `borderLeft`-Farbkante). `default`/`secondary`/`outline` nicht mehr für
+  neue Badges verwenden. `Button variant="stamp"` (grün gefüllt) nur für die
+  eine Aktion, die etwas verbucht; `destructive` ist ein Umriss, die
+  Bestätigung in der Gefahrenzone bekommt die Füllung per className.
+  Tabellen: Kopf in Versalien, `TableFooter` mit Doppelstrich, Datum-Zellen
+  `font-mono text-xs tabular-nums text-muted-foreground`, Betrags-Zellen
+  `font-mono font-medium tabular-nums`. Kennzahlen `font-serif … font-
+  semibold`. `Progress` ist ein Meter: Füllung Tinte, ab 80 % `bg-warning`,
+  überzogen `bg-destructive`. Hinweise mit Handlungsbedarf als `<Note>`
+  (Zettel), Formularfehler bleiben eine Rotstift-Zeile unter dem Feld.
 
 ## Dark Mode
 

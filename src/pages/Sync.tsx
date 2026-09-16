@@ -118,9 +118,9 @@ export default function Sync() {
             <CardTitle className="flex flex-wrap items-center gap-2">
               Status
               {status.reachable ? (
-                <Badge variant="secondary">Heimnetz erreichbar</Badge>
+                <Badge variant="stamp" tone="good">Heimnetz erreichbar</Badge>
               ) : (
-                <Badge variant="outline">Unterwegs</Badge>
+                <Badge variant="stamp">Unterwegs</Badge>
               )}
             </CardTitle>
           </CardHeader>
@@ -152,7 +152,7 @@ export default function Sync() {
           <CardTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-warning" />
             Konflikte
-            {open.length > 0 && <Badge variant="outline">{open.length}</Badge>}
+            {open.length > 0 && <Badge variant="label">{open.length}</Badge>}
           </CardTitle>
           <CardDescription>
             Hier steht nur, was die App nicht selbst entscheiden kann: dasselbe
@@ -192,7 +192,7 @@ export default function Sync() {
               <History className="h-5 w-5" />
               Automatisch zusammengeführt
               {mergeRows.length > 0 && (
-                <Badge variant="secondary">{mergeRows.length}</Badge>
+                <Badge variant="label">{mergeRows.length}</Badge>
               )}
             </CardTitle>
             {mergeRows.length > 0 && (

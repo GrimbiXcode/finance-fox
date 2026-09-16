@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/sheet';
 import QuickAddDialog from '@/components/QuickAddDialog';
 import SyncStatus from '@/components/SyncStatus';
+import BrandMark from '@/components/BrandMark';
 
 // Menüstruktur (Desktop-Seitenleiste und mobiles „Mehr“-Menü): thematisch
 // gruppiert — Alltag (buchen & teilen), Konten, Planung, Analyse, Verwaltung.
@@ -101,12 +102,10 @@ export default function Layout() {
     <div className="flex min-h-screen">
       <aside className={cn('hidden flex-col border-r transition-all md:sticky md:top-0 md:flex md:h-screen', collapsed ? 'w-16' : 'w-64')}>
         <div className={cn('flex items-center gap-2 border-b py-5', collapsed ? 'justify-center px-2' : 'px-6')}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stamp text-stamp-foreground">
-            <PiggyBank className="h-5 w-5" />
-          </div>
+          <BrandMark />
           {!collapsed && (
             <div>
-              <div className="text-sm font-semibold leading-tight">Finance Fox</div>
+              <div className="font-serif text-[15px] font-semibold leading-tight">Finance Fox</div>
               <div className="text-xs text-muted-foreground">Self-hosted &amp; privat</div>
             </div>
           )}
@@ -145,7 +144,7 @@ export default function Layout() {
         {!collapsed && (
           <div className="border-t px-6 py-4">
             <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
-            <div className={cn('text-lg font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
+            <div className={cn('font-serif text-xl font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
             <div className="mt-2 flex items-center gap-1.5 text-xs text-stamp">
               <ShieldCheck className="h-3.5 w-3.5" />
               Daten bleiben auf deinem Server
@@ -167,10 +166,11 @@ export default function Layout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           <div className="flex min-w-0 items-center gap-2 md:hidden">
-            <PiggyBank className="h-5 w-5 shrink-0 text-stamp" />
-            <span className="truncate font-semibold">Finance Fox</span>
+            <BrandMark size="sm" />
+            <span className="truncate font-serif text-[15px] font-semibold">Finance Fox</span>
           </div>
-          <div className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">
+          {/* Briefkopf: der Haushalt in Serife kursiv */}
+          <div className="hidden min-w-0 truncate font-serif text-[15px] italic text-foreground/75 md:block">
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}
           </div>
           <div className="flex shrink-0 items-center gap-3">

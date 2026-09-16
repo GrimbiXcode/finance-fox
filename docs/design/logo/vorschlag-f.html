@@ -1,0 +1,433 @@
+<title>Fuchs hinter dem Kassenbuch</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #ECE7DB; --paper: #FBF9F3; --paper-deep: #F4F0E6; --ink: #211D18; --ink-2: #4F483E;
+    --muted: #6F6759; --line: #D9D1C2; --line-strong: #B9AF9C; --stamp: #2F6B4F;
+    --note: #F7E9AE; --note-fg: #4A3D10;
+    --night-bg: #1E1B17; --night-paper: #292520; --night-ink: #EDE6D8; --night-muted: #A2998A; --night-line: #3E382F; --night-stamp: #7FBF95;
+    --day-bg: #ECE7DB; --day-paper: #FBF9F3; --day-ink: #211D18; --day-muted: #6F6759; --day-line: #D9D1C2; --day-stamp: #2F6B4F;
+    /* Tinte des Zeichens; die Fuchsfarbe fällt auf die Tinte zurück, außer bei „Zweifarbig“ */
+    --ink-day: var(--day-stamp); --ink-night: var(--night-stamp);
+    --fox-day: var(--ink-day); --fox-night: var(--ink-night);
+    --serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --shadow-sheet: 0 1px 0 rgb(33 29 24 / 0.04), 0 1px 3px rgb(33 29 24 / 0.08), 0 6px 16px rgb(33 29 24 / 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1E1B17; --paper: #292520; --paper-deep: #322D27; --ink: #EDE6D8; --ink-2: #C9C0AE; --muted: #A2998A;
+      --line: #3E382F; --line-strong: #5A5245; --stamp: #7FBF95; --note: #4A3D10; --note-fg: #F7E9AE;
+      --shadow-sheet: 0 1px 0 rgb(0 0 0 / 0.3), 0 6px 16px rgb(0 0 0 / 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1E1B17; --paper: #292520; --paper-deep: #322D27; --ink: #EDE6D8; --ink-2: #C9C0AE; --muted: #A2998A;
+    --line: #3E382F; --line-strong: #5A5245; --stamp: #7FBF95; --note: #4A3D10; --note-fg: #F7E9AE;
+    --shadow-sheet: 0 1px 0 rgb(0 0 0 / 0.3), 0 6px 16px rgb(0 0 0 / 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; padding-block: 40px 72px; padding-inline: clamp(16px, 4vw, 48px); }
+  .wrap { max-width: 1120px; margin-inline: auto; display: grid; gap: 40px; }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.005em; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(30px, 4vw, 42px); line-height: 1.1; }
+  h2 { font-size: 24px; line-height: 1.2; }
+  h3 { font-size: 17px; line-height: 1.25; }
+  p { margin: 0; max-width: 62ch; }
+  .muted { color: var(--muted); }
+  .eyebrow { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  section { display: grid; gap: 16px; }
+  section > .intro { display: grid; gap: 6px; }
+  .sheet { background: var(--paper); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow-sheet); overflow: hidden; }
+  ul.plain { margin: 0; padding-left: 18px; max-width: 62ch; }
+  ul.plain li { margin: 4px 0; }
+  code { font-family: var(--mono); font-size: 13px; background: var(--paper-deep); padding: 1px 5px; border-radius: 3px; }
+
+  header { display: grid; gap: 16px; padding-bottom: 28px; border-bottom: 1px solid var(--line-strong); }
+  .hero { display: grid; grid-template-columns: 1fr 1fr; }
+  .stage { display: grid; place-items: center; aspect-ratio: 1 / 1; max-width: 100%; }
+  .stage.day { background: var(--day-paper); }
+  .stage.night { background: var(--night-paper); }
+  .stage svg { width: 60%; height: 60%; }
+  .mark { display: block; }
+  .day .mark, .day.mark { color: var(--ink-day); --paper: var(--day-paper); --fox: var(--fox-day); }
+  .night .mark, .night.mark { color: var(--ink-night); --paper: var(--night-paper); --fox: var(--fox-night); }
+
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+  .toolbar .label { font-size: 13px; color: var(--ink-2); }
+  .radios { display: flex; flex-wrap: wrap; gap: 4px; border: 1px solid var(--line-strong); border-radius: 4px; padding: 3px; background: var(--paper); }
+  .radios label { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 3px; font-size: 13px; cursor: pointer; color: var(--ink-2); }
+  .radios input { position: absolute; opacity: 0; pointer-events: none; }
+  .radios label:has(input:checked) { background: var(--ink); color: var(--paper); }
+  .radios label:has(input:focus-visible) { outline: 2px solid var(--stamp); outline-offset: 1px; }
+  .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid rgb(0 0 0 / .15); }
+  .swatch.two { background: linear-gradient(90deg, #C4551C 50%, #2F6B4F 50%); }
+
+  /* Größensystem */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
+  .step { display: grid; grid-template-rows: auto 1fr auto; gap: 12px; padding: 18px 20px 20px; border-right: 1px solid var(--line); }
+  .step:last-child { border-right: 0; }
+  @media (max-width: 760px) { .step { border-right: 0; border-bottom: 1px solid var(--line); } .step:last-child { border-bottom: 0; } }
+  .step .title { display: grid; gap: 2px; }
+  .step .demo { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; padding: 10px 0; }
+  .step .demo .mark { flex: none; }
+  .step p { font-size: 14px; color: var(--ink-2); }
+
+  /* Varianten */
+  .variants { display: grid; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 760px) { .variants { grid-template-columns: 1fr; } }
+  .variant { display: grid; gap: 0; border-right: 1px solid var(--line); }
+  .variant:last-child { border-right: 0; }
+  @media (max-width: 760px) { .variant { border-right: 0; border-bottom: 1px solid var(--line); } .variant:last-child { border-bottom: 0; } }
+  .variant .pair { display: grid; grid-template-columns: 1fr 1fr; }
+  .variant .pair .stage svg { width: 64%; height: 64%; }
+  .variant .text { padding: 14px 18px 18px; display: grid; gap: 6px; }
+  .variant .text p { font-size: 14px; color: var(--ink-2); }
+  .variant .small { display: flex; gap: 12px; align-items: center; padding: 10px 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .variant .small .cap { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-right: auto; }
+  .tiny { display: inline-grid; place-items: center; flex: none; }
+  .tiny.night { background: var(--night-paper); border-radius: 3px; }
+
+  /* In der App */
+  .app { display: grid; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; } }
+  .app > div { padding: 22px; display: grid; gap: 18px; align-content: start; }
+  .app .day { background: var(--day-bg); color: var(--day-ink); }
+  .app .night { background: var(--night-bg); color: var(--night-ink); }
+  .app .cap { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; }
+  .app .day .cap { color: var(--day-muted); } .app .night .cap { color: var(--night-muted); }
+  .sidebar { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border: 1px solid; border-radius: 4px 4px 0 0; }
+  .app .day .sidebar { border-color: var(--day-line); background: var(--day-bg); }
+  .app .night .sidebar { border-color: var(--night-line); background: var(--night-bg); }
+  .sidebar .word { font-family: var(--serif); font-weight: 600; font-size: 15px; line-height: 1.15; }
+  .sidebar .sub { font-size: 12px; line-height: 1.2; }
+  .app .day .sub { color: var(--day-muted); } .app .night .sub { color: var(--night-muted); }
+  .sidebar .mark { width: 36px; height: 36px; flex: none; }
+  .sidebar.collapsed { width: 64px; justify-content: center; padding: 16px 8px; }
+  .sidebar-row { display: flex; gap: 12px; align-items: stretch; }
+  .sidebar-row .sidebar:first-child { flex: 1; }
+  .login { display: grid; justify-items: center; text-align: center; gap: 8px; padding: 28px 24px; border: 1px solid; border-radius: 4px; }
+  .app .day .login { background: var(--day-paper); border-color: var(--day-line); }
+  .app .night .login { background: var(--night-paper); border-color: var(--night-line); }
+  .login .mark { width: 72px; height: 72px; }
+  .login .word { font-family: var(--serif); font-weight: 600; font-size: 22px; line-height: 1.1; margin-top: 6px; }
+  .login .sub { font-size: 13px; }
+  .login .field { width: 100%; max-width: 260px; height: 34px; border: 1px solid; border-radius: 3px; margin-top: 6px; }
+  .app .day .field { border-color: var(--line-strong); background: var(--day-paper); } .app .night .field { border-color: #5A5245; background: var(--night-paper); }
+  .login .btn { width: 100%; max-width: 260px; height: 34px; border-radius: 3px; display: grid; place-items: center; font-size: 13px; font-weight: 500; }
+  .app .day .btn { background: var(--day-ink); color: var(--day-paper); } .app .night .btn { background: var(--night-ink); color: var(--night-bg); }
+  .loading { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .loading .mark { width: 28px; height: 28px; }
+  .icons { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+  .appicon { border-radius: 22.5%; display: grid; place-items: center; background: var(--day-paper); box-shadow: 0 1px 2px rgb(33 29 24 / .25), inset 0 0 0 1px rgb(33 29 24 / .08); }
+  .appicon.night { background: var(--night-paper); }
+  .appicon .mark { width: 78%; height: 78%; }
+  .tab { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; font-size: 12px; border-radius: 6px 6px 0 0; border: 1px solid; border-bottom: 0; }
+  .app .day .tab { background: var(--day-paper); border-color: var(--day-line); }
+  .app .night .tab { background: var(--night-paper); border-color: var(--night-line); }
+  .tab .mark { width: 16px; height: 16px; }
+
+  .sticky-note { background: var(--note); color: var(--note-fg); padding: 14px 18px; border-radius: 2px; box-shadow: 0 1px 2px rgb(120 90 10 / 0.28), 0 6px 14px rgb(33 29 24 / 0.08); max-width: 60ch; transform: rotate(-.4deg); font-size: 14px; }
+  .sticky-note p { max-width: none; }
+  .files { display: grid; gap: 0; }
+  .files .row { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .files .row:last-child { border-bottom: 0; }
+  .files .mark { width: 32px; height: 32px; }
+  .files .row .name { font-family: var(--mono); font-size: 13px; }
+  .files .row .desc { color: var(--ink-2); }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- Fuchs: Ohren, Kopf, Augen. Farbe über --fox, fällt auf die Tinte zurück. -->
+    <g id="fox-head">
+      <g fill="var(--fox, currentColor)">
+        <path d="M19 9 L40 32 C44 28 56 28 60 32 L81 9 C82 22 78 34 77 42 C74 54 66 66 64 72 L36 72 C34 66 26 54 23 42 C22 34 18 22 19 9 Z"/>
+      </g>
+      <g fill="var(--paper)">
+        <ellipse cx="37" cy="44.5" rx="3.3" ry="4.3" transform="rotate(-14 37 44.5)"/>
+        <ellipse cx="63" cy="44.5" rx="3.3" ry="4.3" transform="rotate(14 63 44.5)"/>
+      </g>
+    </g>
+    <!-- Blatt mit Eselsohr -->
+    <g id="sheet">
+      <path d="M14 50 H72 L86 64 V88 H14 Z" fill="var(--paper)" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M72 50 V64 H86" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+    </g>
+    <!-- Kassenbuch-Zeilen: Text links, Betrag rechts, Summe mit Doppelstrich -->
+    <g id="ledger" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+      <line x1="24" y1="63" x2="46" y2="63"/><line x1="60" y1="63" x2="70" y2="63"/>
+      <line x1="24" y1="71" x2="50" y2="71"/><line x1="68" y1="71" x2="76" y2="71"/>
+      <line x1="24" y1="80" x2="76" y2="80"/><line x1="24" y1="83.5" x2="76" y2="83.5"/>
+    </g>
+    <!-- Pfoten auf der Blattkante -->
+    <g id="paws">
+      <g fill="var(--fox, currentColor)">
+        <path d="M27 48.5 H41 V52 A7 7 0 0 1 27 52 Z"/>
+        <path d="M59 48.5 H73 V52 A7 7 0 0 1 59 52 Z"/>
+      </g>
+      <g stroke="var(--paper)" stroke-width="1.5" stroke-linecap="round">
+        <line x1="31.5" y1="52" x2="31.5" y2="56"/><line x1="36.5" y1="52" x2="36.5" y2="56"/>
+        <line x1="63.5" y1="52" x2="63.5" y2="56"/><line x1="68.5" y1="52" x2="68.5" y2="56"/>
+      </g>
+    </g>
+
+    <!-- Voll: ab 40 px -->
+    <symbol id="m-full" viewBox="0 0 100 100"><use href="#fox-head"/><use href="#sheet"/><use href="#ledger"/></symbol>
+    <!-- Kompakt: 20 bis 40 px – nur die Summenlinie, kräftigerer Strich -->
+    <symbol id="m-compact" viewBox="0 0 100 100">
+      <use href="#fox-head"/>
+      <path d="M14 50 H72 L86 64 V88 H14 Z" fill="var(--paper)" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M72 50 V64 H86" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+      <g stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><line x1="25" y1="73" x2="75" y2="73"/><line x1="25" y1="79" x2="75" y2="79"/></g>
+    </symbol>
+    <!-- Favicon: bis 20 px – Ohren, Augen, Blatt, sonst nichts -->
+    <symbol id="m-favicon" viewBox="0 0 100 100">
+      <g fill="var(--fox, currentColor)">
+        <path d="M16 4 L40 30 C44 26 56 26 60 30 L84 4 C86 20 80 34 78 44 C76 56 68 66 66 76 L34 76 C32 66 24 56 22 44 C20 34 14 20 16 4 Z"/>
+      </g>
+      <g fill="var(--paper)"><circle cx="36" cy="43" r="5"/><circle cx="64" cy="43" r="5"/></g>
+      <path d="M10 50 H70 L90 70 V92 H10 Z" fill="var(--paper)" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/>
+      <path d="M70 50 V70 H90" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/>
+      <line x1="26" y1="78" x2="74" y2="78" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- Varianten zum Entscheiden -->
+    <symbol id="v-calm" viewBox="0 0 100 100"><use href="#fox-head"/><use href="#sheet"/><use href="#ledger"/></symbol>
+    <symbol id="v-paws" viewBox="0 0 100 100"><use href="#fox-head"/><use href="#sheet"/><use href="#ledger"/><use href="#paws"/></symbol>
+    <symbol id="v-frame" viewBox="0 0 100 100">
+      <rect x="5" y="5" width="90" height="90" rx="14" fill="none" stroke="currentColor" stroke-width="5"/>
+      <g transform="translate(50 51) scale(.74) translate(-50 -50)"><use href="#fox-head"/><use href="#sheet"/><use href="#ledger"/></g>
+    </symbol>
+    <symbol id="v-paws-compact" viewBox="0 0 100 100">
+      <use href="#fox-head"/>
+      <path d="M14 50 H72 L86 64 V88 H14 Z" fill="var(--paper)" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M72 50 V64 H86" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+      <g stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><line x1="25" y1="73" x2="75" y2="73"/><line x1="25" y1="79" x2="75" y2="79"/></g>
+      <g fill="var(--fox, currentColor)"><path d="M27 48 H41 V52 A7 7 0 0 1 27 52 Z"/><path d="M59 48 H73 V52 A7 7 0 0 1 59 52 Z"/></g>
+    </symbol>
+    <symbol id="v-frame-compact" viewBox="0 0 100 100">
+      <rect x="5" y="5" width="90" height="90" rx="14" fill="none" stroke="currentColor" stroke-width="6"/>
+      <g transform="translate(50 51) scale(.74) translate(-50 -50)"><use href="#m-compact" width="100" height="100"/></g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Finance Fox · Logo · Vorschlag F, zweite Runde · 16. September 2026</div>
+      <h1 style="margin-top:6px">Fuchs hinter dem Kassenbuch</h1>
+      <p class="muted" style="margin-top:10px">Der Fuchs schaut über das Blatt, auf dem gerade Buch geführt wird. Diese Runde schärft die Zeichnung, löst das Kleinformat und stellt drei Detailfragen zur Entscheidung.</p>
+    </div>
+    <div class="sheet hero">
+      <div class="stage day"><svg class="mark" viewBox="0 0 100 100"><use href="#v-calm"/></svg></div>
+      <div class="stage night"><svg class="mark" viewBox="0 0 100 100"><use href="#v-calm"/></svg></div>
+    </div>
+    <div class="toolbar">
+      <span class="label">Tinte:</span>
+      <div class="radios" role="radiogroup" aria-label="Farbe des Zeichens">
+        <label><input type="radio" name="ink" id="ink-green" value="green" checked><span class="swatch" style="background:#2F6B4F"></span>Stempelgrün</label>
+        <label><input type="radio" name="ink" id="ink-two" value="two"><span class="swatch two"></span>Zweifarbig: Fuchs in Fuchsrot</label>
+        <label><input type="radio" name="ink" id="ink-black" value="ink"><span class="swatch" style="background:#211D18"></span>Tinte</label>
+      </div>
+    </div>
+    <ul class="plain">
+      <li><b>Fuchs-Silhouette.</b> Ein Pfad: die Ohrspitzen sind die breiteste Stelle, darunter die Wangenecke, dann läuft die Schnauze hinter dem Blatt zusammen. Der Kopf ist schmaler als das Blatt, so bleibt er Fuchs.</li>
+      <li><b>Echtes Kassenbuch.</b> Zwei Buchungszeilen mit Text links und Betrag rechts, darunter die Summe mit dem Doppelstrich, wie in den Tabellen der App.</li>
+      <li><b>Größeres Eselsohr.</b> Das gefaltete Eck ist die Papier-Signatur und bleibt bis 16 px sichtbar.</li>
+      <li><b>Drei Stufen statt einer Zeichnung.</b> Voll, Kompakt und Favicon; die App wählt nach Größe, so lösen sich die kleinen Zeilen nicht in Rauschen auf.</li>
+    </ul>
+  </header>
+
+  <section>
+    <div class="intro">
+      <h2>Größensystem</h2>
+      <p class="muted">Ein Zeichen, drei Ausbaustufen. Die Silhouette bleibt gleich, nur das Innenleben des Blatts nimmt mit der Größe zu.</p>
+    </div>
+    <div class="sheet steps">
+      <div class="step">
+        <div class="title"><span class="eyebrow">Voll · ab 40 px</span><h3>Zwei Zeilen, Betrag, Summe</h3></div>
+        <div class="demo day">
+          <svg class="mark" viewBox="0 0 100 100" style="width:120px;height:120px"><use href="#m-full"/></svg>
+          <svg class="mark" viewBox="0 0 100 100" style="width:72px;height:72px"><use href="#m-full"/></svg>
+          <svg class="mark" viewBox="0 0 100 100" style="width:40px;height:40px"><use href="#m-full"/></svg>
+        </div>
+        <p>Login, Ladebildschirm, README, Deckblatt des PDF-Berichts, Home-Icon.</p>
+      </div>
+      <div class="step">
+        <div class="title"><span class="eyebrow">Kompakt · 20 bis 40 px</span><h3>Nur die Summenlinie</h3></div>
+        <div class="demo day">
+          <svg class="mark" viewBox="0 0 100 100" style="width:40px;height:40px"><use href="#m-compact"/></svg>
+          <svg class="mark" viewBox="0 0 100 100" style="width:36px;height:36px"><use href="#m-compact"/></svg>
+          <svg class="mark" viewBox="0 0 100 100" style="width:28px;height:28px"><use href="#m-compact"/></svg>
+          <svg class="mark" viewBox="0 0 100 100" style="width:20px;height:20px"><use href="#m-compact"/></svg>
+        </div>
+        <p>Seitenleiste, Kopfzeile auf dem Handy, eingeklappte Navigation. Strich kräftiger, Buchungszeilen weg, Doppelstrich bleibt.</p>
+      </div>
+      <div class="step">
+        <div class="title"><span class="eyebrow">Favicon · bis 20 px</span><h3>Ohren, Augen, Blatt</h3></div>
+        <div class="demo day">
+          <svg class="mark" viewBox="0 0 100 100" style="width:32px;height:32px"><use href="#m-favicon"/></svg>
+          <svg class="mark" viewBox="0 0 100 100" style="width:20px;height:20px"><use href="#m-favicon"/></svg>
+          <svg class="mark" viewBox="0 0 100 100" style="width:16px;height:16px"><use href="#m-favicon"/></svg>
+          <span class="tiny night" style="width:24px;height:24px;padding:3px"><svg class="mark night" viewBox="0 0 100 100" style="width:100%;height:100%"><use href="#m-favicon"/></svg></span>
+          <span class="tiny night" style="width:20px;height:20px;padding:2px"><svg class="mark night" viewBox="0 0 100 100" style="width:100%;height:100%"><use href="#m-favicon"/></svg></span>
+        </div>
+        <p>Browser-Tab, Lesezeichen, Benachrichtigungen. Nur noch Silhouette und ein Strich; die Augen werden zu Punkten.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="intro">
+      <h2>Drei Details zum Entscheiden</h2>
+      <p class="muted">Alle drei haben dieselbe Basis. Sie unterscheiden sich in einem Merkmal, das über Ton und Einsatz entscheidet.</p>
+    </div>
+    <div class="sheet variants">
+      <div class="variant">
+        <div class="pair">
+          <div class="stage day"><svg class="mark" viewBox="0 0 100 100"><use href="#v-calm"/></svg></div>
+          <div class="stage night"><svg class="mark" viewBox="0 0 100 100"><use href="#v-calm"/></svg></div>
+        </div>
+        <div class="small">
+          <span class="cap">Kompakt 32 / 20</span>
+          <svg class="mark day" viewBox="0 0 100 100" style="width:32px;height:32px"><use href="#m-compact"/></svg>
+          <svg class="mark day" viewBox="0 0 100 100" style="width:20px;height:20px"><use href="#m-compact"/></svg>
+          <span class="tiny night" style="width:32px;height:32px;padding:3px"><svg class="mark night" viewBox="0 0 100 100" style="width:100%;height:100%"><use href="#m-compact"/></svg></span>
+        </div>
+        <div class="text">
+          <span class="eyebrow">F1</span>
+          <h3>Ruhig</h3>
+          <p>Nur Kopf und Blatt. Der Fuchs beobachtet. Am wenigsten Illustration, am meisten Marke; funktioniert ohne Rahmen als freistehendes Zeichen.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="pair">
+          <div class="stage day"><svg class="mark" viewBox="0 0 100 100"><use href="#v-paws"/></svg></div>
+          <div class="stage night"><svg class="mark" viewBox="0 0 100 100"><use href="#v-paws"/></svg></div>
+        </div>
+        <div class="small">
+          <span class="cap">Kompakt 32 / 20</span>
+          <svg class="mark day" viewBox="0 0 100 100" style="width:32px;height:32px"><use href="#v-paws-compact"/></svg>
+          <svg class="mark day" viewBox="0 0 100 100" style="width:20px;height:20px"><use href="#v-paws-compact"/></svg>
+          <span class="tiny night" style="width:32px;height:32px;padding:3px"><svg class="mark night" viewBox="0 0 100 100" style="width:100%;height:100%"><use href="#v-paws-compact"/></svg></span>
+        </div>
+        <div class="text">
+          <span class="eyebrow">F2</span>
+          <h3>Mit Pfoten</h3>
+          <p>Zwei Pfoten halten das Blatt an der Kante. Er hält das Kassenbuch, statt nur dahinter zu sitzen. Mehr Wärme, im Kompaktformat werden die Pfoten zu zwei Knubbeln.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="pair">
+          <div class="stage day"><svg class="mark" viewBox="0 0 100 100"><use href="#v-frame"/></svg></div>
+          <div class="stage night"><svg class="mark" viewBox="0 0 100 100"><use href="#v-frame"/></svg></div>
+        </div>
+        <div class="small">
+          <span class="cap">Kompakt 32 / 20</span>
+          <svg class="mark day" viewBox="0 0 100 100" style="width:32px;height:32px"><use href="#v-frame-compact"/></svg>
+          <svg class="mark day" viewBox="0 0 100 100" style="width:20px;height:20px"><use href="#v-frame-compact"/></svg>
+          <span class="tiny night" style="width:32px;height:32px;padding:3px"><svg class="mark night" viewBox="0 0 100 100" style="width:100%;height:100%"><use href="#v-frame-compact"/></svg></span>
+        </div>
+        <div class="text">
+          <span class="eyebrow">F3</span>
+          <h3>Im Stempelrahmen</h3>
+          <p>Wie das heutige Icon: das Motiv im gerundeten Stempel. Bleibt nah am Bestand und passt zur Rahmenlogik von BrandMark, verliert aber Platz; bei 20 px wird es eng.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="intro">
+      <h2>In der App</h2>
+      <p class="muted">Basis F1 in den Stellen, an denen BrandMark heute sitzt. Die Seitenleiste nimmt die Kompaktstufe, Login und Ladebildschirm die Vollstufe.</p>
+    </div>
+    <div class="sheet app">
+      <div class="day">
+        <span class="cap">Hell</span>
+        <div class="sidebar-row">
+          <div class="sidebar"><svg class="mark" viewBox="0 0 100 100"><use href="#m-compact"/></svg><div><div class="word">Finance Fox</div><div class="sub">Self-hosted &amp; privat</div></div></div>
+          <div class="sidebar collapsed"><svg class="mark" viewBox="0 0 100 100"><use href="#m-compact"/></svg></div>
+        </div>
+        <div class="login">
+          <svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg>
+          <div class="word">Finance Fox</div>
+          <div class="sub">Anmelden mit E-Mail und Passwort</div>
+          <div class="field"></div><div class="field"></div>
+          <div class="btn">Anmelden</div>
+        </div>
+        <div class="loading"><svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg><span>Finance Fox wird geladen…</span></div>
+        <span class="cap">Home-Icon · Browser-Tab</span>
+        <div class="icons">
+          <div class="appicon" style="width:72px;height:72px"><svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg></div>
+          <div class="appicon" style="width:48px;height:48px"><svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg></div>
+          <div class="appicon" style="width:29px;height:29px"><svg class="mark" viewBox="0 0 100 100"><use href="#m-compact"/></svg></div>
+          <span class="tab"><svg class="mark" viewBox="0 0 100 100"><use href="#m-favicon"/></svg>Finance Fox</span>
+        </div>
+      </div>
+      <div class="night">
+        <span class="cap">Nachtpapier</span>
+        <div class="sidebar-row">
+          <div class="sidebar"><svg class="mark" viewBox="0 0 100 100"><use href="#m-compact"/></svg><div><div class="word">Finance Fox</div><div class="sub">Self-hosted &amp; privat</div></div></div>
+          <div class="sidebar collapsed"><svg class="mark" viewBox="0 0 100 100"><use href="#m-compact"/></svg></div>
+        </div>
+        <div class="login">
+          <svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg>
+          <div class="word">Finance Fox</div>
+          <div class="sub">Anmelden mit E-Mail und Passwort</div>
+          <div class="field"></div><div class="field"></div>
+          <div class="btn">Anmelden</div>
+        </div>
+        <div class="loading"><svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg><span>Finance Fox wird geladen…</span></div>
+        <span class="cap">Home-Icon · Browser-Tab</span>
+        <div class="icons">
+          <div class="appicon night" style="width:72px;height:72px"><svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg></div>
+          <div class="appicon night" style="width:48px;height:48px"><svg class="mark" viewBox="0 0 100 100"><use href="#m-full"/></svg></div>
+          <div class="appicon night" style="width:29px;height:29px"><svg class="mark" viewBox="0 0 100 100"><use href="#m-compact"/></svg></div>
+          <span class="tab"><svg class="mark" viewBox="0 0 100 100"><use href="#m-favicon"/></svg>Finance Fox</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="intro">
+      <h2>Dateien</h2>
+      <p class="muted">Die drei Stufen liegen als fertige SVGs im Repo unter <code>docs/design/logo/</code>, in Stempelgrün auf Blatt. Sie sind die Quelle für <code>icon.svg</code>, die PNGs und die Pfade in BrandMark.</p>
+    </div>
+    <div class="sheet files">
+      <div class="row"><svg class="mark day" viewBox="0 0 100 100"><use href="#m-full"/></svg><div><div class="name">mark-full.svg</div><div class="desc">Vollstufe, freistehend, quadratisch. Login, Ladebildschirm, README, Bericht.</div></div></div>
+      <div class="row"><svg class="mark day" viewBox="0 0 100 100"><use href="#m-compact"/></svg><div><div class="name">mark-compact.svg</div><div class="desc">Kompaktstufe für 20 bis 40 px. Seitenleiste, Kopfzeile, eingeklappte Navigation.</div></div></div>
+      <div class="row"><svg class="mark day" viewBox="0 0 100 100"><use href="#m-favicon"/></svg><div><div class="name">mark-favicon.svg</div><div class="desc">Favicon-Stufe bis 20 px. Browser-Tab, Lesezeichen.</div></div></div>
+      <div class="row"><div class="appicon" style="width:32px;height:32px"><svg class="mark day" viewBox="0 0 100 100"><use href="#m-full"/></svg></div><div><div class="name">public/icons/icon.svg · favicon.svg</div><div class="desc">Umgesetzt als F3: Home-Icon 512 × 512 mit Stempelrahmen in der sicheren Zone, PNGs daraus gerendert; Favicon-Stufe im Rahmen für den Browser-Tab. BrandMark zeichnet dieselben Pfade.</div></div></div>
+    </div>
+    <div class="sticky-note">
+      <p><b>Entschieden:</b> F3 im Stempelrahmen, Stempelgrün. Eingebaut in <code>public/icons/</code>, <code>BrandMark.tsx</code> (Kompaktstufe für sm/md, Vollstufe für lg) und <code>index.html</code>.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  const inks = {
+    green: { day: '#2F6B4F', night: '#7FBF95', foxDay: '#2F6B4F', foxNight: '#7FBF95' },
+    two:   { day: '#2F6B4F', night: '#7FBF95', foxDay: '#C4551C', foxNight: '#E8945E' },
+    ink:   { day: '#211D18', night: '#EDE6D8', foxDay: '#211D18', foxNight: '#EDE6D8' }
+  };
+  const root = document.documentElement.style;
+  const apply = v => {
+    const i = inks[v];
+    root.setProperty('--ink-day', i.day); root.setProperty('--ink-night', i.night);
+    root.setProperty('--fox-day', i.foxDay); root.setProperty('--fox-night', i.foxNight);
+    try { localStorage.setItem('ff-logo-f-ink', v); } catch (e) {}
+  };
+  document.querySelectorAll('input[name="ink"]').forEach(r => r.addEventListener('change', e => apply(e.target.value)));
+  try {
+    const saved = localStorage.getItem('ff-logo-f-ink');
+    if (saved && inks[saved]) { document.getElementById('ink-' + saved).checked = true; apply(saved); }
+  } catch (e) {}
+</script>

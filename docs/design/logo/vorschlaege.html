@@ -1,0 +1,417 @@
+<title>Finance Fox Logo-Vorschläge</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #ECE7DB;
+    --paper: #FBF9F3;
+    --paper-deep: #F4F0E6;
+    --ink: #211D18;
+    --ink-2: #4F483E;
+    --muted: #6F6759;
+    --line: #D9D1C2;
+    --line-strong: #B9AF9C;
+    --stamp: #2F6B4F;
+    --note: #F7E9AE;
+    --note-fg: #4A3D10;
+    --neg: #B3382E;
+    /* Gegenstück fürs Nebeneinander: immer beide Themen zeigen */
+    --night-bg: #1E1B17;
+    --night-paper: #292520;
+    --night-ink: #EDE6D8;
+    --night-muted: #A2998A;
+    --night-line: #3E382F;
+    --night-stamp: #7FBF95;
+    --day-bg: #ECE7DB;
+    --day-paper: #FBF9F3;
+    --day-ink: #211D18;
+    --day-muted: #6F6759;
+    --day-line: #D9D1C2;
+    --day-stamp: #2F6B4F;
+    /* Tintenwahl (Steuerung oben) */
+    --ink-day: var(--day-stamp);
+    --ink-night: var(--night-stamp);
+    --serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --shadow-sheet: 0 1px 0 rgb(33 29 24 / 0.04), 0 1px 3px rgb(33 29 24 / 0.08), 0 6px 16px rgb(33 29 24 / 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1E1B17; --paper: #292520; --paper-deep: #322D27; --ink: #EDE6D8; --ink-2: #C9C0AE;
+      --muted: #A2998A; --line: #3E382F; --line-strong: #5A5245; --stamp: #7FBF95;
+      --note: #4A3D10; --note-fg: #F7E9AE; --neg: #E48B80;
+      --shadow-sheet: 0 1px 0 rgb(0 0 0 / 0.3), 0 6px 16px rgb(0 0 0 / 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1E1B17; --paper: #292520; --paper-deep: #322D27; --ink: #EDE6D8; --ink-2: #C9C0AE;
+    --muted: #A2998A; --line: #3E382F; --line-strong: #5A5245; --stamp: #7FBF95;
+    --note: #4A3D10; --note-fg: #F7E9AE; --neg: #E48B80;
+    --shadow-sheet: 0 1px 0 rgb(0 0 0 / 0.3), 0 6px 16px rgb(0 0 0 / 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.55;
+    padding-block: 40px 72px; padding-inline: clamp(16px, 4vw, 48px);
+  }
+  .wrap { max-width: 1120px; margin-inline: auto; }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.005em; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(30px, 4vw, 42px); line-height: 1.1; }
+  h2 { font-size: 24px; line-height: 1.2; }
+  h3 { font-size: 17px; line-height: 1.25; }
+  p { margin: 0; max-width: 62ch; }
+  .muted { color: var(--muted); }
+  .eyebrow { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+  header { display: grid; gap: 18px; padding-bottom: 28px; border-bottom: 1px solid var(--line-strong); margin-bottom: 28px; }
+  header .lead { display: grid; gap: 10px; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-top: 6px; }
+  .toolbar .label { font-size: 13px; color: var(--ink-2); }
+  .radios { display: flex; gap: 4px; border: 1px solid var(--line-strong); border-radius: 4px; padding: 3px; background: var(--paper); }
+  .radios label { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 3px; font-size: 13px; cursor: pointer; color: var(--ink-2); }
+  .radios input { position: absolute; opacity: 0; pointer-events: none; }
+  .radios label:has(input:checked) { background: var(--ink); color: var(--paper); }
+  .radios label:has(input:focus-visible) { outline: 2px solid var(--stamp); outline-offset: 1px; }
+  .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid rgb(0 0 0 / .15); }
+
+  /* Ist-Zustand */
+  .current { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: center; padding: 18px 20px; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow-sheet); }
+  .current .mark-box { width: 72px; height: 72px; }
+  @media (max-width: 560px) { .current { grid-template-columns: 1fr; } }
+
+  /* Vorschläge */
+  .proposals { display: grid; gap: 28px; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow-sheet); overflow: hidden; }
+  .card-head { display: grid; grid-template-columns: 1fr auto; gap: 12px 24px; align-items: start; padding: 20px 24px 16px; border-bottom: 1px solid var(--line); }
+  .card-head .num { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+  .card-head .title { display: grid; gap: 4px; }
+  .card-head .claim { font-family: var(--serif); font-style: italic; font-size: 16px; color: var(--ink-2); }
+  .card-body { display: grid; grid-template-columns: 1.15fr 1fr; }
+  @media (max-width: 860px) { .card-body { grid-template-columns: 1fr; } .card-head { grid-template-columns: 1fr; } }
+
+  .showcase { display: grid; grid-template-columns: 1fr 1fr; }
+  .stage { display: grid; place-items: center; aspect-ratio: 1 / 1; max-width: 100%; }
+  .stage.day { background: var(--day-paper); }
+  .stage.night { background: var(--night-paper); }
+  .stage svg { width: 58%; height: 58%; }
+  .mark { display: block; }
+  .day .mark { color: var(--ink-day); --paper: var(--day-paper); }
+  .night .mark { color: var(--ink-night); --paper: var(--night-paper); }
+
+  .contexts { display: grid; grid-template-rows: auto auto; border-top: 1px solid var(--line); }
+  @media (min-width: 861px) { .contexts { border-top: 0; border-left: 1px solid var(--line); } }
+  .sidebars { display: grid; grid-template-columns: 1fr 1fr; }
+  .sidebar { display: flex; align-items: center; gap: 10px; padding: 18px 20px; border-bottom: 1px solid; }
+  .sidebar.day { background: var(--day-bg); color: var(--day-ink); border-color: var(--day-line); }
+  .sidebar.night { background: var(--night-bg); color: var(--night-ink); border-color: var(--night-line); }
+  .sidebar .word { font-family: var(--serif); font-weight: 600; font-size: 15px; line-height: 1.15; }
+  .sidebar .sub { font-size: 12px; line-height: 1.2; }
+  .sidebar.day .sub { color: var(--day-muted); }
+  .sidebar.night .sub { color: var(--night-muted); }
+  .sidebar .mark { width: 36px; height: 36px; flex: none; }
+
+  .sizes { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; align-items: center; padding: 18px 20px; }
+  .sizes .row { display: flex; align-items: center; gap: 16px; }
+  .sizes .cap { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .appicon { border-radius: 22.5%; display: grid; place-items: center; background: var(--day-paper); box-shadow: 0 1px 2px rgb(33 29 24 / .25), inset 0 0 0 1px rgb(33 29 24 / .08); }
+  .appicon .mark { color: var(--ink-day); --paper: var(--day-paper); width: 76%; height: 76%; }
+  .appicon.night { background: var(--night-paper); }
+  .appicon.night .mark { color: var(--ink-night); --paper: var(--night-paper); }
+  .tiny { display: inline-grid; place-items: center; }
+  .tiny.day { color: var(--ink-day); --paper: var(--day-paper); }
+  .tiny.night { color: var(--ink-night); --paper: var(--night-paper); background: var(--night-paper); border-radius: 3px; }
+  .tab { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; font-size: 12px; border-radius: 6px 6px 0 0; }
+  .tab.day { background: var(--day-paper); color: var(--day-ink); border: 1px solid var(--day-line); border-bottom: 0; }
+  .tab.night { background: var(--night-paper); color: var(--night-ink); border: 1px solid var(--night-line); border-bottom: 0; }
+  .tab .mark { width: 16px; height: 16px; }
+  .tab.day .mark { color: var(--ink-day); --paper: var(--day-paper); }
+  .tab.night .mark { color: var(--ink-night); --paper: var(--night-paper); }
+
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 28px; padding: 18px 24px 22px; border-top: 1px solid var(--line); }
+  @media (max-width: 640px) { .notes { grid-template-columns: 1fr; } }
+  .notes h4 { margin: 0 0 6px; font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 500; }
+  .notes ul { margin: 0; padding-left: 18px; }
+  .notes li { margin: 3px 0; }
+  .notes .idea { grid-column: 1 / -1; }
+
+  /* Bewertung */
+  .verdict { margin-top: 36px; display: grid; gap: 18px; }
+  .table-wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow-sheet); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  th { text-align: left; font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; color: var(--muted); padding: 12px 16px; border-bottom: 1.5px solid var(--line-strong); }
+  td { padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.k { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.name { font-weight: 500; white-space: nowrap; }
+  .dots { letter-spacing: 2px; color: var(--stamp); }
+  .dots .off { color: var(--line-strong); }
+
+  .sticky-note { background: var(--note); color: var(--note-fg); padding: 14px 18px; border-radius: 2px; box-shadow: 0 1px 2px rgb(120 90 10 / 0.28), 0 6px 14px rgb(33 29 24 / 0.08); max-width: 60ch; transform: rotate(-.4deg); font-size: 14px; }
+  .sticky-note b { font-weight: 600; }
+  .sticky-note p { max-width: none; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <path id="ring" d="M50 50 m-39.5 0 a39.5 39.5 0 1 1 79 0 a39.5 39.5 0 1 1 -79 0"/>
+
+    <!-- 0 · Ist-Zustand -->
+    <symbol id="m-0" viewBox="0 0 100 100">
+      <rect x="6" y="6" width="88" height="88" rx="14" fill="none" stroke="currentColor" stroke-width="4"/>
+      <g fill="currentColor">
+        <path d="M30 21 L42 39 L25 42 Z"/><path d="M70 21 L58 39 L75 42 Z"/>
+        <path d="M50 34 C38 34 29 44 29 56 C29 67 38 77 50 83 C62 77 71 67 71 56 C71 44 62 34 50 34 Z"/>
+      </g>
+      <g fill="var(--paper)"><circle cx="42" cy="54" r="3.2"/><circle cx="58" cy="54" r="3.2"/><circle cx="50" cy="69" r="2.4"/></g>
+    </symbol>
+
+    <!-- A · Stempel-Fuchs, geschärft -->
+    <symbol id="m-a" viewBox="0 0 100 100">
+      <rect x="6" y="6" width="88" height="88" rx="14" fill="none" stroke="currentColor" stroke-width="5"/>
+      <g fill="currentColor">
+        <path d="M23 19 L43 40 L19 47 Z"/>
+        <path d="M77 19 L57 40 L81 47 Z"/>
+        <path d="M50 34 C36 34 24 43 24 56 C24 65 31 72 39 77 L50 88 L61 77 C69 72 76 65 76 56 C76 43 64 34 50 34 Z"/>
+      </g>
+      <g fill="var(--paper)">
+        <ellipse cx="40" cy="56" rx="3.6" ry="4.6" transform="rotate(-18 40 56)"/>
+        <ellipse cx="60" cy="56" rx="3.6" ry="4.6" transform="rotate(18 60 56)"/>
+        <path d="M45.5 73 L54.5 73 L50 79 Z"/>
+      </g>
+    </symbol>
+
+    <!-- B · Origami-Fuchs -->
+    <symbol id="m-b" viewBox="0 0 100 100">
+      <g fill="currentColor">
+        <path d="M18 14 L47 38 L16 49 Z"/>
+        <path d="M82 14 L53 38 L84 49 Z" opacity=".78"/>
+        <path d="M16 49 L50 41 L50 90 Z"/>
+        <path d="M84 49 L50 41 L50 90 Z" opacity=".78"/>
+      </g>
+      <g fill="var(--paper)">
+        <path d="M37 63 L63 63 L50 85 Z"/>
+        <path d="M30 51 L41 53 L35 59 Z"/>
+        <path d="M70 51 L59 53 L65 59 Z"/>
+      </g>
+      <path d="M46.5 77 L53.5 77 L50 83 Z" fill="currentColor"/>
+    </symbol>
+
+    <!-- C · Monogramm ff mit Doppelstrich -->
+    <symbol id="m-c" viewBox="0 0 100 100">
+      <rect x="6" y="6" width="88" height="88" rx="14" fill="none" stroke="currentColor" stroke-width="5"/>
+      <text x="51" y="61" text-anchor="middle" font-family="Newsreader, 'Iowan Old Style', Georgia, serif" font-style="italic" font-weight="500" font-size="60" fill="currentColor">ff</text>
+      <g stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <line x1="30" y1="73.5" x2="70" y2="73.5"/>
+        <line x1="30" y1="79" x2="70" y2="79"/>
+      </g>
+    </symbol>
+
+    <!-- D · Tintenstrich-Fuchs -->
+    <symbol id="m-d" viewBox="0 0 100 100">
+      <path d="M16 17 L21 57 Q21 74 50 88 Q79 74 79 57 L84 17 L61 40 L39 40 Z" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="40" cy="58" r="4" fill="currentColor"/>
+      <circle cx="60" cy="58" r="4" fill="currentColor"/>
+      <path d="M45 71 L55 71 L50 77.5 Z" fill="currentColor"/>
+    </symbol>
+
+    <!-- E · Rundsiegel -->
+    <symbol id="m-e" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="46.5" fill="none" stroke="currentColor" stroke-width="3"/>
+      <circle cx="50" cy="50" r="32.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="7.6" font-weight="500" fill="currentColor" letter-spacing="1.3">
+        <textPath href="#ring" textLength="248" lengthAdjust="spacing">FINANCE FOX · SELF-HOSTED · PRIVAT · </textPath>
+      </text>
+      <g transform="translate(50 52) scale(.5) translate(-50 -53)">
+        <g fill="currentColor">
+          <path d="M23 19 L43 40 L19 47 Z"/><path d="M77 19 L57 40 L81 47 Z"/>
+          <path d="M50 34 C36 34 24 43 24 56 C24 65 31 72 39 77 L50 88 L61 77 C69 72 76 65 76 56 C76 43 64 34 50 34 Z"/>
+        </g>
+        <g fill="var(--paper)">
+          <ellipse cx="40" cy="56" rx="3.6" ry="4.6" transform="rotate(-18 40 56)"/>
+          <ellipse cx="60" cy="56" rx="3.6" ry="4.6" transform="rotate(18 60 56)"/>
+          <path d="M45.5 73 L54.5 73 L50 79 Z"/>
+        </g>
+      </g>
+    </symbol>
+
+    <!-- F · Fuchs hinter dem Kassenbuch -->
+    <symbol id="m-f" viewBox="0 0 100 100">
+      <g fill="currentColor">
+        <path d="M25 14 L42 35 L21 42 Z"/>
+        <path d="M75 14 L58 35 L79 42 Z"/>
+        <path d="M21 52 C21 37 34 29 50 29 C66 29 79 37 79 52 Z"/>
+      </g>
+      <g fill="var(--paper)">
+        <ellipse cx="39" cy="45" rx="3.2" ry="4" transform="rotate(-16 39 45)"/>
+        <ellipse cx="61" cy="45" rx="3.2" ry="4" transform="rotate(16 61 45)"/>
+      </g>
+      <path d="M19 51 H69 L81 63 V90 H19 Z" fill="var(--paper)" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M69 51 V63 H81" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+      <g stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+        <line x1="29" y1="66" x2="57" y2="66"/>
+        <line x1="29" y1="74" x2="64" y2="74"/>
+        <line x1="29" y1="82" x2="71" y2="82"/>
+        <line x1="29" y1="85.5" x2="71" y2="85.5"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div class="lead">
+      <div class="eyebrow">Finance Fox · Marke im Papier-Design · 16. September 2026</div>
+      <h1>Sechs Vorschläge für ein neues Logo</h1>
+      <p class="muted">Alle Entwürfe bleiben in der Sprache der App: Tinte auf Papier, die Marke als Stempel. Jeder Vorschlag ist als Vektor gezeichnet und wird so gezeigt, wie er in der App auftaucht, als Blatt in Hell und Nachtpapier, in der Seitenleiste, als Home-Icon und ganz klein im Browser-Tab.</p>
+    </div>
+    <div class="toolbar">
+      <span class="label">Tinte der Marke:</span>
+      <div class="radios" role="radiogroup" aria-label="Tintenfarbe">
+        <label><input type="radio" name="ink" id="ink-green" value="green" checked><span class="swatch" style="background:#2F6B4F"></span>Stempelgrün (heute)</label>
+        <label><input type="radio" name="ink" id="ink-orange" value="orange"><span class="swatch" style="background:#D9692C"></span>Fuchsrot</label>
+        <label><input type="radio" name="ink" id="ink-black" value="ink"><span class="swatch" style="background:#211D18"></span>Tinte</label>
+      </div>
+    </div>
+    <div class="current">
+      <div class="mark-box day"><svg class="mark" viewBox="0 0 100 100" style="width:72px;height:72px"><use href="#m-0"/></svg></div>
+      <div>
+        <div class="eyebrow">Ist-Zustand</div>
+        <h3>Der Stempel-Fuchs aus icon.svg</h3>
+        <p class="muted" style="margin-top:4px">Rundes Gesicht, drei Punkte, Rahmen in sicherer Zone. Solide, aber austauschbar: ohne die Ohren könnte es jede Maskottchen-App sein. Die Vorschläge unten behalten Rahmen und Farbe, wo es passt, und geben dem Fuchs einen Charakter, der zum Haushaltsbuch gehört.</p>
+      </div>
+    </div>
+  </header>
+
+  <section class="proposals" id="proposals"></section>
+
+  <section class="verdict">
+    <h2>Einordnung</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Vorschlag</th><th>Erkennbar bei 16 px</th><th>Erzählt „Papier“</th><th>Erzählt „Fuchs“</th><th>Aufwand Umstellung</th><th>Passt zu</th></tr></thead>
+        <tbody>
+          <tr><td class="name">A · Stempel-Fuchs, geschärft</td><td class="dots">●●●●<span class="off">●</span></td><td class="dots">●●●<span class="off">●●</span></td><td class="dots">●●●●<span class="off">●</span></td><td class="k">klein, nur Pfade tauschen</td><td>sichere Weiterentwicklung</td></tr>
+          <tr><td class="name">B · Origami-Fuchs</td><td class="dots">●●●●<span class="off">●</span></td><td class="dots">●●●●●</td><td class="dots">●●●●●</td><td class="k">klein, ohne Rahmen</td><td>eigenständiger Auftritt</td></tr>
+          <tr><td class="name">C · Monogramm ff</td><td class="dots">●●●<span class="off">●●</span></td><td class="dots">●●●●<span class="off">●</span></td><td class="dots"><span class="off">●●●●●</span></td><td class="k">klein, Schrift einbetten</td><td>nüchtern, wie ein Verlagssignet</td></tr>
+          <tr><td class="name">D · Tintenstrich</td><td class="dots">●●●●●</td><td class="dots">●●●<span class="off">●●</span></td><td class="dots">●●●●<span class="off">●</span></td><td class="k">klein</td><td>Favicon, Monochrom, Druck</td></tr>
+          <tr><td class="name">E · Rundsiegel</td><td class="dots">●<span class="off">●●●●</span></td><td class="dots">●●●●●</td><td class="dots">●●●<span class="off">●●</span></td><td class="k">mittel, nur als Zweitzeichen</td><td>Login, PDF-Bericht, Deckblatt</td></tr>
+          <tr><td class="name">F · Fuchs hinter dem Kassenbuch</td><td class="dots">●●<span class="off">●●●</span></td><td class="dots">●●●●●</td><td class="dots">●●●●<span class="off">●</span></td><td class="k">mittel, Detail bei 20 px prüfen</td><td>Charme, README, Ladebildschirm</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="sticky-note">
+      <p><b>Empfehlung:</b> B (Origami) als Hauptzeichen, weil er als einziger Fuchs <i>und</i> Papier zugleich erzählt und ohne Rahmen auskommt. D als Strichfassung für Favicon und Monochrom, E als Siegel auf dem PDF-Bericht. Wer weniger Bruch will, nimmt A: gleicher Aufbau wie heute, nur mit Schnauze und Blick.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  const proposals = [
+    {
+      id: 'a', num: 'A', name: 'Stempel-Fuchs, geschärft', claim: 'Derselbe Stempel, jetzt mit Schnauze.',
+      idea: 'Behält Rahmen, Ohren und die drei Punkte, gibt dem Kopf aber eine spitze Schnauze, schräge Augen und eine Dreiecksnase. Der Fuchs bekommt einen Blick, ohne dass sich sonst etwas ändert.',
+      pro: ['Kein Bruch: Sidebar, Login, Icons funktionieren wie heute', 'Liest sich bei 16 px noch als Tier', 'Rahmen bleibt die sichere Zone für maskierbare Icons'],
+      con: ['Bleibt ein Maskottchen-Kopf im Kasten, wenig Eigenständigkeit', 'Erzählt Papier nur über die Farbe']
+    },
+    {
+      id: 'b', num: 'B', name: 'Origami-Fuchs', claim: 'Ein gefaltetes Blatt wird zum Fuchs.',
+      idea: 'Der Kopf besteht aus vier Flächen wie ein Papier-Faltfuchs; die rechte Seite liegt im Schatten. Schnauze und Augen sind Aussparungen, die Nase ein kleines Dreieck. Kein Rahmen nötig, die Form trägt sich selbst.',
+      pro: ['Fuchs und Papier in einem Bild, ohne Erklärung', 'Facetten bleiben auch als Flachform lesbar (Favicon, Druck)', 'Funktioniert ohne Rahmen, auf Blatt und auf Nachtpapier'],
+      con: ['Im Home-Icon braucht er etwas mehr Rand als heute', 'Der Schatten-Ton (78 %) muss im Dark Mode geprüft werden']
+    },
+    {
+      id: 'c', num: 'C', name: 'Monogramm ff', claim: 'Zwei Kursiv-f auf der Summenlinie.',
+      idea: 'Kein Tier, ein Signet: „ff“ kursiv in der Newsreader, die auch die Seitentitel setzt, darunter der Doppelstrich, mit dem das Kassenbuch eine Summe abschließt. Der Fuchs steckt nur noch im Namen.',
+      pro: ['Sehr ruhig, passt zu Bericht, Rechnung, Briefkopf', 'Verwendet die vorhandene Schrift, keine neue Formensprache', 'Der Doppelstrich ist ein echtes Zitat aus der App'],
+      con: ['Der Fuchs verschwindet; der Name verliert sein Bild', 'Kursive Serife bei 16 px wird matschig', 'Schrift muss als Pfad eingebettet werden']
+    },
+    {
+      id: 'd', num: 'D', name: 'Tintenstrich-Fuchs', claim: 'Ein Federzug, zwei Punkte, eine Nase.',
+      idea: 'Der Kopf als ein einziger Linienzug mit runden Ecken, wie mit dem Füller in einem Zug gezeichnet. Augen und Nase sind die einzigen Flächen. Ohne Rahmen; die Linie selbst ist der Stempel.',
+      pro: ['Bestes Kleinformat aller Vorschläge, bleibt bei 16 px klar', 'Einfarbig, invertierbar, druckbar', 'Strichstärke lässt sich pro Größe anpassen'],
+      con: ['Etwas generisch, ähnliche Linienfüchse gibt es', 'Wirkt allein etwas dünn im großen Format, braucht die Wortmarke']
+    },
+    {
+      id: 'e', num: 'E', name: 'Rundsiegel', claim: 'Der Fuchs als Amtsstempel.',
+      idea: 'Ein runder Stempel mit Schriftring in der IBM Plex Mono und dem geschärften Fuchs in der Mitte. Gedacht als Zweitzeichen: Deckblatt des PDF-Berichts, Login-Karte, „Verbucht“-Stempel im Ladebildschirm.',
+      pro: ['Erzählt Papier und Selbst-Hosting im Ring gleich mit', 'Schöne große Form für Bericht und Startseite', 'Kombiniert sich direkt mit A'],
+      con: ['Als Favicon oder in der Sidebar unbrauchbar, Ring wird zu Rauschen', 'Nur zusammen mit einem der anderen Zeichen sinnvoll']
+    },
+    {
+      id: 'f', num: 'F', name: 'Fuchs hinter dem Kassenbuch', claim: 'Er schaut über das Blatt.',
+      idea: 'Ein Blatt mit Eselsohr und Kassenbuch-Zeilen, dahinter lugt der Fuchs hervor, nur Ohren und Augen. Die Summenlinie ist der Doppelstrich. Das Motiv erzählt, was die App tut: jemand führt Buch, und der Fuchs passt auf.',
+      pro: ['Am meisten Charakter und Geschichte', 'Direktes Zitat aus dem Design: Blatt, Hairlines, Doppelstrich', 'Bringt Humor in Login und README'],
+      con: ['Zwei Motive in einem Zeichen: bei 20 px verschwinden die Zeilen', 'Fürs Home-Icon eher als gerahmte Illustration denn als Marke']
+    }
+  ];
+
+  const useOf = (id, cls = 'mark') => `<svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true"><use href="#m-${id}"/></svg>`;
+
+  document.getElementById('proposals').innerHTML = proposals.map(p => `
+    <article class="card" id="vorschlag-${p.id}">
+      <div class="card-head">
+        <div class="title">
+          <span class="num">Vorschlag ${p.num}</span>
+          <h2>${p.name}</h2>
+          <span class="claim">${p.claim}</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="showcase">
+          <div class="stage day">${useOf(p.id)}</div>
+          <div class="stage night">${useOf(p.id)}</div>
+        </div>
+        <div class="contexts">
+          <div class="sidebars">
+            <div class="sidebar day">${useOf(p.id)}<div><div class="word">Finance Fox</div><div class="sub">Self-hosted &amp; privat</div></div></div>
+            <div class="sidebar night">${useOf(p.id)}<div><div class="word">Finance Fox</div><div class="sub">Self-hosted &amp; privat</div></div></div>
+          </div>
+          <div class="sizes">
+            <span class="cap">Home-Icon</span>
+            <div class="row">
+              <div class="appicon" style="width:64px;height:64px">${useOf(p.id)}</div>
+              <div class="appicon night" style="width:64px;height:64px">${useOf(p.id)}</div>
+              <div class="appicon" style="width:40px;height:40px">${useOf(p.id)}</div>
+            </div>
+            <span class="cap">Browser-Tab</span>
+            <div class="row">
+              <span class="tab day">${useOf(p.id)}Finance Fox</span>
+              <span class="tab night">${useOf(p.id)}Finance Fox</span>
+            </div>
+            <span class="cap">24 / 16 px</span>
+            <div class="row">
+              <span class="tiny day" style="width:24px;height:24px">${useOf(p.id)}</span>
+              <span class="tiny day" style="width:16px;height:16px">${useOf(p.id)}</span>
+              <span class="tiny night" style="width:24px;height:24px;padding:2px">${useOf(p.id)}</span>
+              <span class="tiny night" style="width:16px;height:16px;padding:1px">${useOf(p.id)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="notes">
+        <div class="idea"><h4>Idee</h4><p>${p.idea}</p></div>
+        <div><h4>Dafür</h4><ul>${p.pro.map(x => `<li>${x}</li>`).join('')}</ul></div>
+        <div><h4>Dagegen</h4><ul>${p.con.map(x => `<li>${x}</li>`).join('')}</ul></div>
+      </div>
+    </article>
+  `).join('');
+
+  // Tintenwahl: Stempelgrün (App-Token), Fuchsrot (pencil-2) oder reine Tinte
+  const inks = {
+    green:  { day: '#2F6B4F', night: '#7FBF95' },
+    orange: { day: '#C4551C', night: '#E8945E' },
+    ink:    { day: '#211D18', night: '#EDE6D8' }
+  };
+  const apply = v => {
+    document.documentElement.style.setProperty('--ink-day', inks[v].day);
+    document.documentElement.style.setProperty('--ink-night', inks[v].night);
+    try { localStorage.setItem('ff-logo-ink', v); } catch (e) {}
+  };
+  document.querySelectorAll('input[name="ink"]').forEach(r => r.addEventListener('change', e => apply(e.target.value)));
+  try {
+    const saved = localStorage.getItem('ff-logo-ink');
+    if (saved && inks[saved]) { document.getElementById('ink-' + saved).checked = true; apply(saved); }
+  } catch (e) {}
+</script>

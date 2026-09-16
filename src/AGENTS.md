@@ -516,4 +516,9 @@ Hot-Reload. Offline prüfen heißt deshalb `npm run build && npm start` und
 `http://localhost:3000` (localhost ist ein secure context).
 
 - **Manifest**: `public/manifest.webmanifest` plus Icons in `public/icons/`
-  (Quell-SVG `icon.svg`, PNGs daraus gerendert), eingebunden in `index.html`.
+  (Quell-SVG `icon.svg`, PNGs daraus gerendert – ImageMagicks interner
+  SVG-Renderer verschluckt Rahmen und Strichfarben, deshalb über WebKit:
+  `qlmanage -t -s 1024 -o <dir> public/icons/icon.svg`, dann mit `magick`
+  auf 512/192/180 skalieren; `favicon.svg` ist die reduzierte Stufe für
+  den Browser-Tab), eingebunden in `index.html`. Entwurf und Motiv-Quellen
+  liegen in `docs/design/logo/`.

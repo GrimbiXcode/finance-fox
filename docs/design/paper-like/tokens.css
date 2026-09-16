@@ -1,0 +1,130 @@
+/*
+ * Papier-Design – Farb-Tokens für src/index.css (Vorschlag).
+ *
+ * Drop-in: ersetzt die Blöcke `:root { … }` und `.dark { … }` in
+ * src/index.css. Format wie bei shadcn/ui: HSL-Komponenten ohne Funktion,
+ * damit tailwind.config.js weiter `hsl(var(--x))` verwenden kann.
+ * Die Hex-Werte stehen als Kommentar daneben – sie sind die Quelle,
+ * die HSL-Zahlen sind daraus gerundet.
+ *
+ * Zusätzliche Tokens (nicht Teil des shadcn-Standards, in tailwind.config.js
+ * unter theme.extend.colors registrieren – siehe README.md):
+ *   --positive / --negative / --warning   Einnahme, Ausgabe (Rotstift), Warnung
+ *   --stamp / --stamp-foreground          Marke, Fokus-Ring, „Stempel“-Knopf
+ *   --paper-deep                          Meter-Spur, Skeleton
+ *   --rule-strong                         kräftige Linie (Tabellenkopf, Doppelstrich)
+ *   --note / --note-foreground            Notizzettel (Erinnerungen)
+ *   --pencil-1 … --pencil-8               Buntstift-Palette für Kategorien/Tags
+ *                                         (feste Reihenfolge, CVD-geprüft)
+ */
+
+@layer base {
+  :root {
+    --background: 42.4 30.9% 89.2%;           /* #ECE7DB */
+    --foreground: 33.3 15.8% 11.2%;           /* #211D18 */
+    --card: 45 50% 96.9%;                     /* #FBF9F3 */
+    --card-foreground: 33.3 15.8% 11.2%;      /* #211D18 */
+    --popover: 45 50% 96.9%;                  /* #FBF9F3 */
+    --popover-foreground: 33.3 15.8% 11.2%;   /* #211D18 */
+    --primary: 33.3 15.8% 11.2%;              /* #211D18 */
+    --primary-foreground: 45 50% 96.9%;       /* #FBF9F3 */
+    --secondary: 42.9 38.9% 92.9%;            /* #F4F0E6 */
+    --secondary-foreground: 33.3 15.8% 11.2%; /* #211D18 */
+    --muted: 42.9 38.9% 92.9%;                /* #F4F0E6 */
+    --muted-foreground: 38.2 11% 39.2%;       /* #6F6759 */
+    --accent: 42.9 38.9% 92.9%;               /* #F4F0E6 */
+    --accent-foreground: 33.3 15.8% 11.2%;    /* #211D18 */
+    --destructive: 4.5 59.1% 44.1%;           /* #B3382E */
+    --destructive-foreground: 45 50% 96.9%;   /* #FBF9F3 */
+    --border: 39.1 23.2% 80.6%;               /* #D9D1C2 */
+    --input: 39.3 17.2% 66.9%;                /* #B9AF9C */
+    --ring: 152 39% 30.2%;                    /* #2F6B4F */
+    --sidebar-background: 42.4 30.9% 89.2%;   /* #ECE7DB */
+    --sidebar-foreground: 35.3 12.1% 27.6%;   /* #4F483E */
+    --sidebar-primary: 33.3 15.8% 11.2%;      /* #211D18 */
+    --sidebar-primary-foreground: 45 50% 96.9%;/* #FBF9F3 */
+    --sidebar-accent: 45 50% 96.9%;           /* #FBF9F3 */
+    --sidebar-accent-foreground: 33.3 15.8% 11.2%;/* #211D18 */
+    --sidebar-border: 39.1 23.2% 80.6%;       /* #D9D1C2 */
+    --sidebar-ring: 152 39% 30.2%;            /* #2F6B4F */
+    --positive: 147.7 43.6% 29.2%;            /* #2A6B48 */
+    --negative: 4.5 59.1% 44.1%;              /* #B3382E */
+    --warning: 38.2 79.5% 30.6%;              /* #8C5F10 */
+    --stamp: 152 39% 30.2%;                   /* #2F6B4F */
+    --stamp-foreground: 45 50% 96.9%;         /* #FBF9F3 */
+    --paper-deep: 42 28.6% 86.3%;             /* #E6E0D2 */
+    --rule-strong: 39.3 17.2% 66.9%;          /* #B9AF9C */
+    --note: 48.5 82% 82.5%;                   /* #F7E9AE */
+    --note-foreground: 46.6 64.4% 17.6%;      /* #4A3D10 */
+    --pencil-1: 214.2 61.3% 47.6%;            /* #2F6FC4 */
+    --pencil-2: 21.2 69.5% 51.2%;             /* #D9692C */
+    --pencil-3: 160.8 67.6% 36.3%;            /* #1E9B73 */
+    --pencil-4: 41 84.7% 46.1%;               /* #D99A12 */
+    --pencil-5: 338.5 56.5% 62.2%;            /* #D5688F */
+    --pencil-6: 120 50.3% 36.3%;              /* #2E8B2E */
+    --pencil-7: 255.4 42.5% 51.6%;            /* #6A4FB8 */
+    --pencil-8: 1.7 56.6% 51.2%;              /* #C9403C */
+    --radius: 0.25rem;
+
+    /* Papierkörnung (optional, über body::before einblenden) */
+    --grain-opacity: 0.055;
+    --grain-blend: multiply;
+    --shadow-sheet: 0 1px 0 rgb(33 29 24 / 0.04), 0 1px 3px rgb(33 29 24 / 0.08),
+      0 10px 24px -14px rgb(33 29 24 / 0.22);
+    --shadow-lift: 0 2px 4px rgb(33 29 24 / 0.08),
+      0 18px 36px -16px rgb(33 29 24 / 0.32);
+  }
+
+  .dark {
+    --background: 34.3 13.2% 10.4%;           /* #1E1B17 */
+    --foreground: 40 36.8% 88.8%;             /* #EDE6D8 */
+    --card: 33.3 12.3% 14.3%;                 /* #292520 */
+    --card-foreground: 40 36.8% 88.8%;        /* #EDE6D8 */
+    --popover: 33.3 12.3% 14.3%;              /* #292520 */
+    --popover-foreground: 40 36.8% 88.8%;     /* #EDE6D8 */
+    --primary: 40 36.8% 88.8%;                /* #EDE6D8 */
+    --primary-foreground: 34.3 13.2% 10.4%;   /* #1E1B17 */
+    --secondary: 32.7 12.4% 17.5%;            /* #322D27 */
+    --secondary-foreground: 40 36.8% 88.8%;   /* #EDE6D8 */
+    --muted: 32.7 12.4% 17.5%;                /* #322D27 */
+    --muted-foreground: 37.5 11.4% 58.8%;     /* #A2998A */
+    --accent: 32.7 12.4% 17.5%;               /* #322D27 */
+    --accent-foreground: 40 36.8% 88.8%;      /* #EDE6D8 */
+    --destructive: 5 51.9% 40.8%;             /* #9E3B32 */
+    --destructive-foreground: 40 36.8% 88.8%; /* #EDE6D8 */
+    --border: 36 13.8% 21.4%;                 /* #3E382F */
+    --input: 37.1 13.2% 31.2%;                /* #5A5245 */
+    --ring: 140.6 33.3% 62.4%;                /* #7FBF95 */
+    --sidebar-background: 34.3 13.2% 10.4%;   /* #1E1B17 */
+    --sidebar-foreground: 40 20% 73.5%;       /* #C9C0AE */
+    --sidebar-primary: 40 36.8% 88.8%;        /* #EDE6D8 */
+    --sidebar-primary-foreground: 34.3 13.2% 10.4%;/* #1E1B17 */
+    --sidebar-accent: 33.3 12.3% 14.3%;       /* #292520 */
+    --sidebar-accent-foreground: 40 36.8% 88.8%;/* #EDE6D8 */
+    --sidebar-border: 36 13.8% 21.4%;         /* #3E382F */
+    --sidebar-ring: 140.6 33.3% 62.4%;        /* #7FBF95 */
+    --positive: 140.6 33.3% 62.4%;            /* #7FBF95 */
+    --negative: 6.6 64.9% 69.8%;              /* #E48B80 */
+    --warning: 36.9 65.3% 57.1%;              /* #D9A24A */
+    --stamp: 140.6 33.3% 62.4%;               /* #7FBF95 */
+    --stamp-foreground: 34.3 13.2% 10.4%;     /* #1E1B17 */
+    --paper-deep: 32.3 12.6% 20.2%;           /* #3A342D */
+    --rule-strong: 37.1 13.2% 31.2%;          /* #5A5245 */
+    --note: 44.2 34.5% 21.6%;                 /* #4A4024 */
+    --note-foreground: 48 69.9% 81.8%;        /* #F1E4B0 */
+    --pencil-1: 214.8 60.7% 53.1%;            /* #3F7CD0 */
+    --pencil-2: 21.9 62.4% 50%;               /* #CF6A30 */
+    --pencil-3: 161.5 60% 38.2%;              /* #279C78 */
+    --pencil-4: 40.8 73.6% 41.6%;             /* #B8861C */
+    --pencil-5: 335.1 48% 61.6%;              /* #CC6E95 */
+    --pencil-6: 116.9 45.3% 41.6%;            /* #3F9A3A */
+    --pencil-7: 253.9 49.3% 60.6%;            /* #8069CC */
+    --pencil-8: 2.3 58.1% 55.1%;              /* #CF4F4A */
+
+    --grain-opacity: 0.07;
+    --grain-blend: screen;
+    --shadow-sheet: 0 1px 0 rgb(0 0 0 / 0.25), 0 1px 3px rgb(0 0 0 / 0.35),
+      0 10px 24px -14px rgb(0 0 0 / 0.6);
+    --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.35), 0 18px 36px -16px rgb(0 0 0 / 0.7);
+  }
+}

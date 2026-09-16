@@ -18,6 +18,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
@@ -60,6 +61,9 @@ import { trpc } from "@/providers/trpc";
 import { cn } from "@/lib/utils";
 import { CHART } from "@/lib/chartColors";
 import Note from "@/components/Note";
+import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import { PaperTooltip } from "@/components/ChartParts";
+import { chartDefs } from "@/lib/chartDefs";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
 type Schedule = inferRouterOutputs<AppRouter>["mortgage"]["forecast"];
@@ -411,7 +415,8 @@ function OverviewSection({
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  {chartDefs()}
+                  <CartesianGrid {...GRID_PROPS} />
                   {/* Numerische Achse: mit einer Kategorien-Achse liefert die
                       Band-Skala für ReferenceArea keine Koordinaten (NaN) */}
                   <XAxis
@@ -436,12 +441,8 @@ function OverviewSection({
                     }
                     width={80}
                   />
-                  <Tooltip
-                    formatter={(value: number | string, name: string) => [
-                      `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`,
-                      name,
-                    ]}
-                  />
+                  <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                  <Legend iconType="square" iconSize={10} />
                   {bands.map(b => (
                     <ReferenceArea
                       ifOverflow="hidden"
@@ -449,9 +450,8 @@ function OverviewSection({
                       x1={b.year}
                       x2={b.year}
                       stroke={CHART.warning}
-                      strokeOpacity={0.6}
-                      fill={CHART.warning}
-                      fillOpacity={0.08}
+                      strokeOpacity={0.8}
+                      fill="none"
                       label={{
                         value: `Ablauf ${b.name}`,
                         position: "insideTop",
@@ -464,15 +464,17 @@ function OverviewSection({
                     type="monotone"
                     dataKey="Restschuld"
                     stroke={CHART.negative}
-                    fill={CHART.negative}
-                    fillOpacity={0.3}
+                    strokeWidth={2}
+                    fill={hatch("negative")}
+                    fillOpacity={HATCH_OPACITY}
                   />
                   <Area
                     type="monotone"
                     dataKey="Eigenkapital"
                     stroke={CHART.positive}
-                    fill={CHART.positive}
-                    fillOpacity={0.3}
+                    strokeWidth={2}
+                    fill={hatch("positive")}
+                    fillOpacity={HATCH_OPACITY}
                   />
                 </AreaChart>
               </ResponsiveContainer>

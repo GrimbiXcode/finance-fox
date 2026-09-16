@@ -291,7 +291,25 @@ steht es hier.
   Herkunftsbalken (Phase 5, Buntstifte) und die Deckungs-Check-Liste als
   Zettel – sie ist eine interaktive Liste mit Ausblenden-Knöpfen und bleibt
   eine.
-- Phasen 4 und 5 stehen aus.
+- **Phase 4 ist umgesetzt** (Diagramme): `src/lib/chartTheme.ts` bündelt
+  Raster (waagrechte Hairline, keine Strichelung), Achsen, Tooltip-Cursor,
+  Marker (r = 4, 2-px-Ring in Blattfarbe) und die Schraffur-Namen;
+  `src/lib/chartDefs.tsx` liefert die `<pattern>`-Definitionen (45° für
+  Einnahmen/Ist/Eigenkapital, 135° für Ausgaben/Restschuld – bewusst als
+  Funktionsaufruf `{chartDefs()}`, weil recharts eigene Komponenten als
+  Kinder verwirft); `src/components/ChartParts.tsx` den Tooltip als kleines
+  Blatt (Titel in Serife, Farbpunkt, Wert in Mono). Achsen-Schrift (Mono,
+  gedämpft) und Legenden-Text (Tinte statt Serienfarbe) kommen aus
+  `index.css` – außerhalb von `@layer`, weil Tailwind Layer-Regeln mit
+  Selektoren entfernt, die in keiner Quelldatei stehen. Umgestellt: Dashboard
+  (Cashflow mit Schraffur, Legende und Markern; Kreis mit Papierfugen, Summe
+  in Serife in der Mitte und Legendenliste mit Betrag und Anteil), Konten-
+  Verlauf, Prognosen (Nulllinie als kräftige Linie, Legende), Hypotheken
+  (Schraffur, Ablauf-Marken nur als Linie), Vorsorge und Versicherungsausweis
+  (Phasen-Bänder in `paper-deep` statt Farbe), Jahresvergleich (Balken ≤ 24 px
+  mit 2-px-Fuge). Die Geldfluss-Grafik ist eigenes SVG und war schon in Phase
+  2 auf Tokens umgestellt.
+- Phase 5 steht aus.
 
 ## Umsetzung in Phasen
 

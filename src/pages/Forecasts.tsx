@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, CalendarClock, FlaskConical, LineChart as LineChartIcon, Target } from 'lucide-react';
 import {
-  CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -17,6 +17,8 @@ import { trpc } from '@/providers/trpc';
 import { currencySymbol, formatCents, formatMonth, formatMonthYearShort, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
+import { AXIS_PROPS, CURSOR_LINE, GRID_PROPS, activeDotFor, dotFor } from '@/lib/chartTheme';
+import { PaperTooltip } from '@/components/ChartParts';
 
 export default function Forecasts() {
   const [months, setMonths] = useState('12');
@@ -214,13 +216,14 @@ export default function Forecasts() {
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                <CartesianGrid {...GRID_PROPS} />
+                <XAxis dataKey="month" {...AXIS_PROPS} tick={{ fontSize: 11 }} />
                 <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(1)}k ${currencySymbol()}`} width={70} />
-                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
-                <ReferenceLine y={0} stroke={CHART.muted} strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="Ist" stroke={CHART.positive} strokeWidth={2.5} dot={{ r: 3 }} connectNulls={false} />
-                <Line type="monotone" dataKey="Prognose" stroke={CHART.pencil(7)} strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} />
+                <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                <Legend iconType="plainline" iconSize={14} />
+                <ReferenceLine y={0} stroke="hsl(var(--rule-strong))" />
+                <Line type="monotone" dataKey="Ist" stroke={CHART.positive} strokeWidth={2} dot={dotFor(CHART.positive)} activeDot={activeDotFor(CHART.positive)} connectNulls={false} />
+                <Line type="monotone" dataKey="Prognose" stroke={CHART.pencil(7)} strokeWidth={2} strokeDasharray="6 4" dot={dotFor(CHART.pencil(7))} activeDot={activeDotFor(CHART.pencil(7))} connectNulls={false} />
                 {hasNetWorth && (
                   <Line type="monotone" dataKey="Vermögen" stroke={CHART.pencil(1)} strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} />
                 )}

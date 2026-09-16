@@ -19,6 +19,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
@@ -105,6 +106,9 @@ import { useAuth } from "@/providers/auth";
 import { toast } from "sonner";
 import { CHART } from "@/lib/chartColors";
 import Note from "@/components/Note";
+import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import { PaperTooltip } from "@/components/ChartParts";
+import { chartDefs } from "@/lib/chartDefs";
 
 /** Zeilen-Typen der Vorsorge-Queries (nur die hier benötigten Felder) */
 interface SalaryDeduction {
@@ -623,10 +627,8 @@ function OverviewSection({
                     data={chartData}
                     margin={{ left: 0, right: 8, top: 8 }}
                   >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      className="stroke-muted"
-                    />
+                    {chartDefs()}
+                    <CartesianGrid {...GRID_PROPS} />
                     <XAxis
                       dataKey="year"
                       type="number"
@@ -649,12 +651,8 @@ function OverviewSection({
                       }
                       width={80}
                     />
-                    <Tooltip
-                      formatter={(value: number | string, name: string) => [
-                        `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`,
-                        name,
-                      ]}
-                    />
+                    <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                    <Legend iconType="square" iconSize={10} />
                     {phaseBands.map((p, i) => (
                       <ReferenceArea
                         ifOverflow="hidden"
@@ -663,8 +661,8 @@ function OverviewSection({
                         x2={
                           phaseBands[i + 1]?.fromYear ?? lastYear ?? p.fromYear
                         }
-                        fill={CHART.pencil(7)}
-                        fillOpacity={0.05}
+                        fill="hsl(var(--paper-deep))"
+                        fillOpacity={i % 2 ? 0 : 0.7}
                         label={{
                           value: `${formatBp(p.rateBp)} %`,
                           position: "insideTop",
@@ -678,16 +676,18 @@ function OverviewSection({
                       dataKey="Säule 2"
                       stackId="1"
                       stroke={CHART.pencil(7)}
-                      fill={CHART.pencil(7)}
-                      fillOpacity={0.4}
+                      strokeWidth={2}
+                      fill={hatch("pencil-7")}
+                      fillOpacity={HATCH_OPACITY}
                     />
                     <Area
                       type="monotone"
                       dataKey="Säule 3a"
                       stackId="1"
                       stroke={CHART.pencil(1)}
-                      fill={CHART.pencil(1)}
-                      fillOpacity={0.4}
+                      strokeWidth={2}
+                      fill={hatch("pencil-1")}
+                      fillOpacity={HATCH_OPACITY}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

@@ -9,9 +9,11 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { trpc } from '@/providers/trpc';
-import { currencySymbol, formatCents, getUserLocale } from '@/lib/finance';
+import { currencySymbol, formatCents } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
+import { CURSOR_BAR, GRID_PROPS } from '@/lib/chartTheme';
+import { PaperTooltip } from '@/components/ChartParts';
 
 /** Differenz Jahr vs. Vorjahr: mehr Ausgaben = negativ (rot), weniger = positiv (grün) */
 function DiffCell({ current, previous }: { current: number; previous: number }) {
@@ -141,20 +143,17 @@ export default function YearReview() {
             <p className="text-sm text-muted-foreground">Keine Daten für ein Diagramm.</p>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <BarChart data={chartData} margin={{ left: 0, right: 8, top: 8 }} barGap={2}>
+                <CartesianGrid {...GRID_PROPS} />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} />
                 <YAxis
                   tickLine={false} axisLine={false} width={70}
                   tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
                 />
-                <Tooltip
-                  formatter={(value: number | string) =>
-                    `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`}
-                />
-                <Legend />
-                <Bar dataKey={String(year - 1)} fill={CHART.muted} radius={[4, 4, 0, 0]} />
-                <Bar dataKey={String(year)} fill={CHART.positive} radius={[4, 4, 0, 0]} />
+                <Tooltip content={<PaperTooltip />} cursor={CURSOR_BAR} />
+                <Legend iconType="square" iconSize={10} />
+                <Bar dataKey={String(year - 1)} fill={CHART.muted} radius={[4, 4, 0, 0]} maxBarSize={24} />
+                <Bar dataKey={String(year)} fill={CHART.positive} radius={[4, 4, 0, 0]} maxBarSize={24} />
               </BarChart>
             </ResponsiveContainer>
           )}

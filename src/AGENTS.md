@@ -429,6 +429,17 @@ Code steht:
   neue Badges verwenden. `Button variant="stamp"` (grün gefüllt) nur für die
   eine Aktion, die etwas verbucht; `destructive` ist ein Umriss, die
   Bestätigung in der Gefahrenzone bekommt die Füllung per className.
+  **Diagramme (recharts)**: Konstanten aus `lib/chartTheme.ts`
+  (`GRID_PROPS`, `AXIS_PROPS`, `CURSOR_LINE`/`CURSOR_BAR`, `dotFor`,
+  `HATCH_OPACITY`, `hatch('positive'|'negative'|'pencil-1'|'pencil-7'|
+  'muted')`, `moneyLabel`), Schraffuren per `{chartDefs()}` als erstes Kind
+  des Charts (Funktionsaufruf, keine Komponente – recharts verwirft eigene
+  Komponenten als Kinder), Tooltip immer `content={<PaperTooltip … />}`
+  aus `components/ChartParts.tsx`, Legende ab zwei Serien, Flächen
+  `fill={hatch(…)}` statt Verlauf, `ReferenceArea`-Bänder in `paper-deep`.
+  Achsen-Schrift und Legenden-Farbe stehen als `.recharts-…`-Regeln in
+  `index.css` außerhalb von `@layer` (Layer-Regeln mit Selektoren, die in
+  keiner Quelldatei vorkommen, entfernt Tailwind).
   Tabellen: Kopf in Versalien, `TableFooter` mit Doppelstrich, Datum-Zellen
   `font-mono text-xs tabular-nums text-muted-foreground`, Betrags-Zellen
   `font-mono font-medium tabular-nums`. Kennzahlen `font-serif … font-

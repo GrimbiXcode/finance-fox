@@ -185,3 +185,18 @@
     line-height: 1.25;
   }
 }
+
+/* Papier-Diagramme (recharts, Thema in lib/chartTheme.ts): Achsen und
+   Bänder-Beschriftung in Mono gedämpft, Legende in Tinte statt in
+   Serienfarbe – die Farbe trägt der Punkt daneben. Bewusst außerhalb von
+   `@layer`: Tailwind entfernt Regeln in Layern, deren Selektoren in keiner
+   Quelldatei vorkommen – die recharts-Klassen stehen nur im Bundle. */
+.recharts-cartesian-axis-tick-value,
+.recharts-label {
+  font-family: theme('fontFamily.mono');
+  fill: hsl(var(--muted-foreground));
+}
+.recharts-legend-item-text {
+  color: hsl(var(--foreground)) !important;
+  font-size: 12px;
+}

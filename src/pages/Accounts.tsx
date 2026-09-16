@@ -11,9 +11,12 @@ import AccountDialog from '@/components/AccountDialog';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
-import { currencySymbol, formatCents, formatDate, getUserLocale } from '@/lib/finance';
+import { currencySymbol, formatCents, formatDate } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
+import { CURSOR_LINE, HATCH_OPACITY, hatch } from '@/lib/chartTheme';
+import { PaperTooltip } from '@/components/ChartParts';
+import { chartDefs } from '@/lib/chartDefs';
 
 /** Icons für die Builtin-Typen; eigene Typen bekommen das Fallback-Icon */
 const typeIcons: Record<string, typeof CreditCard> = {
@@ -79,7 +82,6 @@ function BalanceHistory({ accountId }: { accountId: number }) {
       prognose: history[history.length - 1].saldo,
     };
   }
-  const gradientId = `gSaldo${accountId}`;
 
   return (
     <div className="border-t px-4 pb-4 pt-3">
@@ -114,12 +116,7 @@ function BalanceHistory({ accountId }: { accountId: number }) {
         <div className="h-40">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={CHART.positive} stopOpacity={0.3} />
-                  <stop offset="100%" stopColor={CHART.positive} stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
+              {chartDefs()}
               <XAxis
                 dataKey="date" tickLine={false} axisLine={false} fontSize={11}
                 tickFormatter={(v: string) => formatDate(v)}
@@ -130,13 +127,12 @@ function BalanceHistory({ accountId }: { accountId: number }) {
                 tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
               />
               <Tooltip
-                labelFormatter={(label) => formatDate(String(label))}
-                formatter={(value: number | string) =>
-                  `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`}
+                content={<PaperTooltip labelFormatter={(label) => formatDate(String(label))} />}
+                cursor={CURSOR_LINE}
               />
               <Area
                 type="monotone" dataKey="saldo" stroke={CHART.positive}
-                fill={`url(#${gradientId})`} strokeWidth={2}
+                fill={hatch('positive')} fillOpacity={HATCH_OPACITY} strokeWidth={2}
                 connectNulls={false}
               />
               {showForecast && (

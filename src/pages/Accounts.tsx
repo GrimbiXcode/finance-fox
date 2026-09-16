@@ -11,8 +11,12 @@ import AccountDialog from '@/components/AccountDialog';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
-import { currencySymbol, formatCents, formatDate, getUserLocale } from '@/lib/finance';
+import { currencySymbol, formatCents, formatDate } from '@/lib/finance';
 import { cn } from '@/lib/utils';
+import { CHART } from '@/lib/chartColors';
+import { CURSOR_LINE, HATCH_OPACITY, hatch } from '@/lib/chartTheme';
+import { PaperTooltip } from '@/components/ChartParts';
+import { chartDefs } from '@/lib/chartDefs';
 
 /** Icons für die Builtin-Typen; eigene Typen bekommen das Fallback-Icon */
 const typeIcons: Record<string, typeof CreditCard> = {
@@ -78,7 +82,6 @@ function BalanceHistory({ accountId }: { accountId: number }) {
       prognose: history[history.length - 1].saldo,
     };
   }
-  const gradientId = `gSaldo${accountId}`;
 
   return (
     <div className="border-t px-4 pb-4 pt-3">
@@ -113,12 +116,7 @@ function BalanceHistory({ accountId }: { accountId: number }) {
         <div className="h-40">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
+              {chartDefs()}
               <XAxis
                 dataKey="date" tickLine={false} axisLine={false} fontSize={11}
                 tickFormatter={(v: string) => formatDate(v)}
@@ -129,18 +127,17 @@ function BalanceHistory({ accountId }: { accountId: number }) {
                 tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
               />
               <Tooltip
-                labelFormatter={(label) => formatDate(String(label))}
-                formatter={(value: number | string) =>
-                  `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`}
+                content={<PaperTooltip labelFormatter={(label) => formatDate(String(label))} />}
+                cursor={CURSOR_LINE}
               />
               <Area
-                type="monotone" dataKey="saldo" stroke="#10b981"
-                fill={`url(#${gradientId})`} strokeWidth={2}
+                type="monotone" dataKey="saldo" stroke={CHART.positive}
+                fill={hatch('positive')} fillOpacity={HATCH_OPACITY} strokeWidth={2}
                 connectNulls={false}
               />
               {showForecast && (
                 <Area
-                  type="monotone" dataKey="prognose" stroke="#6366f1"
+                  type="monotone" dataKey="prognose" stroke={CHART.pencil(7)}
                   fill="none" strokeWidth={2} strokeDasharray="6 4"
                   dot={false} connectNulls={false}
                 />
@@ -216,12 +213,12 @@ export default function Accounts() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Konten</h1>
+          <h1 className="text-2xl font-semibold">Konten</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} von {accounts.length} Konten im Haushalt</p>
         </div>
         <AccountDialog
           trigger={
-            <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neues Konto</Button>
+            <Button><Plus className="mr-2 h-4 w-4" /> Neues Konto</Button>
           }
         />
       </div>
@@ -296,7 +293,7 @@ export default function Accounts() {
             <Card key={a.id}>
               <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-positive/10 text-positive">
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
@@ -326,11 +323,11 @@ export default function Accounts() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className={cn('text-2xl font-bold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
+                <div className={cn('font-serif text-2xl font-semibold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="secondary">{txCount} Buchungen</Badge>
-                  {a.owners.length > 0 && <Badge variant="outline">Privat</Badge>}
-                  {a.access === 'view' && <Badge variant="outline">nur lesend</Badge>}
+                  <Badge variant="label">{txCount} Buchungen</Badge>
+                  {a.owners.length > 0 && <Badge variant="stamp" tone="ink">Privat</Badge>}
+                  {a.access === 'view' && <Badge variant="stamp">nur lesend</Badge>}
                   <span>Anfangsbestand: {formatCents(a.initialBalance)}</span>
                 </div>
                 {a.owners.length > 0 && (
@@ -371,14 +368,14 @@ export default function Accounts() {
                 <TableRow key={a.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-600">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-positive/10 text-positive">
                         <Icon className="h-4 w-4" />
                       </div>
                       <div>
                         <div className="font-medium">{a.name}</div>
                         <div className="flex gap-1">
-                          {a.owners.length > 0 && <Badge variant="outline" className="text-[10px]">Privat</Badge>}
-                          {a.access === 'view' && <Badge variant="outline" className="text-[10px]">nur lesend</Badge>}
+                          {a.owners.length > 0 && <Badge variant="stamp" tone="ink">Privat</Badge>}
+                          {a.access === 'view' && <Badge variant="stamp">nur lesend</Badge>}
                         </div>
                       </div>
                     </div>
@@ -387,8 +384,8 @@ export default function Accounts() {
                   <TableCell>{a.bankId !== null ? (bankName.get(a.bankId) ?? 'Unbekannte Bank') : '—'}</TableCell>
                   <TableCell className="font-mono text-xs">{a.iban ? formatIban(a.iban) : '—'}</TableCell>
                   <TableCell className="text-right">{txCountOf(a.id)}</TableCell>
-                  <TableCell className="text-right">{formatCents(a.initialBalance)}</TableCell>
-                  <TableCell className={cn('text-right font-bold', a.balance < 0 && 'text-destructive')}>
+                  <TableCell className="text-right font-mono tabular-nums">{formatCents(a.initialBalance)}</TableCell>
+                  <TableCell className={cn('text-right font-mono font-medium tabular-nums', a.balance < 0 && 'text-destructive')}>
                     {formatCents(a.balance)}
                   </TableCell>
                   <TableCell>
@@ -432,7 +429,7 @@ export default function Accounts() {
               <TableCell className="text-right">
                 {filtered.reduce((s, a) => s + txCountOf(a.id), 0)}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right font-mono tabular-nums">
                 {formatCents(filtered.reduce((s, a) => s + a.initialBalance, 0))}
               </TableCell>
               <TableCell className={cn(

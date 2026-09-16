@@ -26,7 +26,10 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   `InsurancePolicyDialog.tsx`/`InsuranceCoverageDialog.tsx`/
   `InsuranceTransferDialog.tsx`/`InsuranceAttachments.tsx`
   (Versicherungs-Modul, Muster Hypotheken bzw. PensionAttachments),
-  `ui/` (shadcn/ui, nicht von Hand umschreiben — via shadcn generiert).
+  `Note.tsx` (Notizzettel für Hinweise/Erinnerungen), `BrandMark.tsx`
+  (Fuchs als Stempel), `ui/` (shadcn/ui, via shadcn generiert — nicht von
+  Hand umschreiben; die wenigen bewussten Papier-Anpassungen tragen einen
+  Kommentar `// Papier:` und sind unter „Papier-Design“ aufgezählt).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
   `AppRouter` aus `api/router.ts`), `auth.tsx`.
 - `lib/` — `finance.ts` (Berechnungen, Cent-Helfer, Locale), `data.ts`,
@@ -384,6 +387,72 @@ Fokus erscheint unter dem Diagramm `MoneyFlowNodeDetails` mit allen Zu- und
 Abflüssen des Knotens. Bei dichten Graphen (`flow.dense`) werden die
 Betrags-Badges nur für den hervorgehobenen Knoten eingeblendet; der Schalter
 „Alle Beträge anzeigen" im Card-Header hebt das auf.
+## Papier-Design (Tokens, Schriften)
+
+Die Oberfläche folgt dem Papier-Entwurf in `docs/design/paper-like/`
+(README mit Leitidee, Tokens und den ausstehenden Phasen). Was davon im
+Code steht:
+
+- **Tokens** in `index.css` (`:root`/`.dark`, shadcn-HSL-Format): Unterlage
+  (`--background`) und Blatt (`--card`), drei Tintenstufen, Hairline
+  (`--border`) und kräftige Linie (`--input`, `--rule-strong`), dazu
+  `--positive`/`--negative`/`--warning` (Bedeutungsfarben), `--stamp`
+  (Marke, Fokus), `--note` (Notizzettel) und `--pencil-1…8` (Buntstifte für
+  Kategorien). In `tailwind.config.js` als `text-positive`, `bg-stamp`,
+  `bg-pencil-3` usw. registriert – neue Farben dort ergänzen, nicht als
+  Tailwind-Palette (`emerald-600`) hartkodieren. Regel: `positive`/`negative`
+  für Beträge und Zustände, `warning` für Fristen und Budgets ab 80 %,
+  `stamp` für Marke, Fokus, Link-Aktionen und die aktive Navigation
+  (Register-Reiter in `Layout.tsx`), `muted-foreground` für dekorative
+  Icons; primäre Knöpfe ohne eigene Farbe (Tinte). Für recharts und SVG
+  gibt es `lib/chartColors.ts` (`CHART.positive`, `CHART.pencil(n)` … als
+  `hsl(var(--…))`-Strings) – keine Hex-Werte in Chart-Props.
+- **Schriften** in `fonts.css` (vor `index.css` importiert): Newsreader
+  (`font-serif`, Titel und Kennzahlen), IBM Plex Sans (`font-sans`,
+  Bedienung), IBM Plex Mono (`font-mono`, Beträge/Daten/IBAN). Gebündelt aus
+  den fontsource-Paketen, bewusst nur latin + latin-ext als woff2 – der
+  Service Worker nimmt sie in den Precache. Keine Schriften von Google laden.
+- `h1`, `h2` sowie `CardTitle`/`DialogTitle`/`SheetTitle`/`AlertDialogTitle`
+  sind über `data-slot`-Selektoren in `index.css` serif; Utility-Klassen
+  gewinnen (`font-sans text-sm` für Feldbezeichner in KPI-Karten).
+- Ecken: `--radius` 0.25rem; `rounded-xl`/`lg` = 4 px (Blätter, Dialoge),
+  `md` = 3 px (Knöpfe, Felder), `sm` = 2 px. Schatten: `shadow-sm` =
+  aufliegendes Blatt, `shadow-md`/`lg` = abgehobenes Blatt (Popover, Dialog).
+- Körnung: `body { background-image: var(--grain) }`; die Unterlage
+  (`Layout.tsx`: Wurzel-`div` und Seitenleiste ohne eigenen Hintergrund)
+  zeigt sie, Blätter (`bg-card`) decken sie ab.
+- **Komponenten-Regeln** (Papier-Anpassungen in `ui/`): `Badge` hat zwei
+  Rollen – `variant="stamp"` für Zustände (Versalien, Umriss, Farbe über
+  `tone="good|warn|bad|ink|brand"`) und `variant="label"` für Zuordnungen
+  (Tag, Projekt, Kategorie, Sparte, Zähler; mit Farbpunkt oder
+  `borderLeft`-Farbkante). `default`/`secondary`/`outline` nicht mehr für
+  neue Badges verwenden. `Button variant="stamp"` (grün gefüllt) nur für die
+  eine Aktion, die etwas verbucht; `destructive` ist ein Umriss, die
+  Bestätigung in der Gefahrenzone bekommt die Füllung per className.
+  **Gespeicherte Farben** (Kategorien, Tags, Projekte, Personen, Sparziele)
+  nie roh in `style`/`fill` setzen, sondern durch `pencil()` aus
+  `lib/pencil.ts` – ein Buntstift wird zum Token (Dunkelmodus-Stufe), jede
+  andere Farbe wird zur Tinte hin abgetönt. Auswahl-Paletten nur aus
+  `PENCIL_COLORS` (`contracts/types.ts`); Reihen ohne gespeicherte Farbe
+  über `pencilSlot(n)`. Keine Migration alter Hex-Werte nötig.
+  **Diagramme (recharts)**: Konstanten aus `lib/chartTheme.ts`
+  (`GRID_PROPS`, `AXIS_PROPS`, `CURSOR_LINE`/`CURSOR_BAR`, `dotFor`,
+  `HATCH_OPACITY`, `hatch('positive'|'negative'|'pencil-1'|'pencil-7'|
+  'muted')`, `moneyLabel`), Schraffuren per `{chartDefs()}` als erstes Kind
+  des Charts (Funktionsaufruf, keine Komponente – recharts verwirft eigene
+  Komponenten als Kinder), Tooltip immer `content={<PaperTooltip … />}`
+  aus `components/ChartParts.tsx`, Legende ab zwei Serien, Flächen
+  `fill={hatch(…)}` statt Verlauf, `ReferenceArea`-Bänder in `paper-deep`.
+  Achsen-Schrift und Legenden-Farbe stehen als `.recharts-…`-Regeln in
+  `index.css` außerhalb von `@layer` (Layer-Regeln mit Selektoren, die in
+  keiner Quelldatei vorkommen, entfernt Tailwind).
+  Tabellen: Kopf in Versalien, `TableFooter` mit Doppelstrich, Datum-Zellen
+  `font-mono text-xs tabular-nums text-muted-foreground`, Betrags-Zellen
+  `font-mono font-medium tabular-nums`. Kennzahlen `font-serif … font-
+  semibold`. `Progress` ist ein Meter: Füllung Tinte, ab 80 % `bg-warning`,
+  überzogen `bg-destructive`. Hinweise mit Handlungsbedarf als `<Note>`
+  (Zettel), Formularfehler bleiben eine Rotstift-Zeile unter dem Feld.
+
 ## Dark Mode
 
 Umschalter im Layout-Header, via next-themes (`ThemeProvider` in `main.tsx`,

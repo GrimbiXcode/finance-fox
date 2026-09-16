@@ -415,7 +415,6 @@ function FundDialogForm({ fund, close }: { fund?: DialogFund; close: () => void 
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={addFund.isPending || updateFund.isPending}
         >

@@ -30,6 +30,7 @@ import {
   RECURRING_INTERVAL_LABELS, RECURRING_INTERVALS, type RecurringInterval,
 } from '@contracts/types';
 import { toast } from 'sonner';
+import { pencil } from '@/lib/pencil';
 
 type Interval = RecurringInterval;
 const intervalLabel = RECURRING_INTERVAL_LABELS;
@@ -123,9 +124,9 @@ function RecurringForm({
     <>
       <div className="grid gap-4 py-2">
         <div className="grid grid-cols-3 gap-2">
-          {typeButton('expense', 'Ausgabe', 'bg-rose-600 hover:bg-rose-700')}
-          {typeButton('income', 'Einnahme', 'bg-emerald-600 hover:bg-emerald-700')}
-          {typeButton('transfer', 'Umbuchung', 'bg-sky-600 hover:bg-sky-700')}
+          {typeButton('expense', 'Ausgabe', 'bg-negative hover:bg-negative/90')}
+          {typeButton('income', 'Einnahme', 'bg-positive hover:bg-positive/90')}
+          {typeButton('transfer', 'Umbuchung', 'bg-pencil-1 hover:bg-pencil-1/90')}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
@@ -215,7 +216,7 @@ function RecurringForm({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>Abbrechen</Button>
-        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSubmit(values)} disabled={isPending}>
+        <Button onClick={() => onSubmit(values)} disabled={isPending}>
           {submitLabel}
         </Button>
       </DialogFooter>
@@ -381,18 +382,18 @@ export default function Recurring() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Wiederkehrende Buchungen</h1>
+          <h1 className="text-2xl font-semibold">Wiederkehrende Buchungen</h1>
           <p className="text-sm text-muted-foreground">
             Der Server verbucht fällige Dauerbuchungen automatisch täglich (03:00 Uhr) und bei jedem Start.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => runNow.mutate()} disabled={runNow.isPending}>
+          <Button variant="stamp" onClick={() => runNow.mutate()} disabled={runNow.isPending}>
             <Zap className="mr-2 h-4 w-4" /> Jetzt verbuchen
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
+              <Button><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader><DialogTitle>Neue wiederkehrende Buchung</DialogTitle></DialogHeader>
@@ -523,7 +524,7 @@ export default function Recurring() {
                         )}
                       </CardDescription>
                     </div>
-                    <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-emerald-600' : ''}>
+                    <Badge variant="stamp" tone={archived ? 'neutral' : r.active ? 'good' : 'warn'}>
                       {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                     </Badge>
                   </div>
@@ -531,9 +532,9 @@ export default function Recurring() {
                 <CardContent className="space-y-3">
                   <div className="flex items-baseline justify-between">
                     <span className={cn(
-                      'text-xl font-bold',
-                      r.type === 'income' && 'text-emerald-600',
-                      r.type === 'expense' && 'text-rose-500',
+                      'font-serif text-xl font-semibold',
+                      r.type === 'income' && 'text-positive',
+                      r.type === 'expense' && 'text-negative',
                     )}>
                       {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
                     </span>
@@ -589,13 +590,13 @@ export default function Recurring() {
                 return (
                   <TableRow key={r.id} className={cn((!r.active || archived) && 'opacity-60')}>
                     <TableCell>
-                      <Badge variant="outline">{typeLabel[r.type]}</Badge>
+                      <Badge variant="label">{typeLabel[r.type]}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span>{r.note || (r.type === 'transfer' ? 'Umbuchung' : cat?.name) || '—'}</span>
                         {cat && (
-                          <Badge variant="secondary" className="text-[10px]">{cat.name}</Badge>
+                          <Badge variant="label">{cat.name}</Badge>
                         )}
                       </div>
                     </TableCell>
@@ -615,23 +616,23 @@ export default function Recurring() {
                         const owner = users.find((u) => u.id === r.userId);
                         return owner ? (
                           <span className="flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: owner.color }} />
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(owner.color) }} />
                             {owner.name}
                           </span>
                         ) : '—';
                       })()}
                     </TableCell>
                     <TableCell className={cn(
-                      'text-right font-bold',
-                      r.type === 'income' && 'text-emerald-600',
-                      r.type === 'expense' && 'text-rose-500',
+                      'text-right font-mono font-medium tabular-nums',
+                      r.type === 'income' && 'text-positive',
+                      r.type === 'expense' && 'text-negative',
                     )}>
                       {r.type === 'income' ? '+' : r.type === 'expense' ? '−' : ''}{formatCents(r.amount)}
                     </TableCell>
                     <TableCell>{intervalLabel[r.interval]}</TableCell>
-                    <TableCell>{formatDate(r.nextDate)}</TableCell>
+                    <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">{formatDate(r.nextDate)}</TableCell>
                     <TableCell>
-                      <Badge variant={r.active && !archived ? 'default' : 'secondary'} className={r.active && !archived ? 'bg-emerald-600' : ''}>
+                      <Badge variant="stamp" tone={archived ? 'neutral' : r.active ? 'good' : 'warn'}>
                         {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}
                       </Badge>
                     </TableCell>

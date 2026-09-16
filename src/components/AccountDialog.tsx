@@ -18,6 +18,7 @@ import { amountPlaceholder, currencySymbol, formatAmountInput, formatCents, pars
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import { pencil } from '@/lib/pencil';
 
 /** Konto, wie es finance.listAccounts liefert (nur die hier benötigten Felder) */
 export interface DialogAccount {
@@ -252,7 +253,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
             ) : (
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                className="flex items-center gap-1 text-xs text-stamp hover:underline"
                 onClick={() => setNewTypeOpen(true)}
               >
                 <Plus className="h-3 w-3" /> Neuer Typ
@@ -297,7 +298,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
             ) : (
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                className="flex items-center gap-1 text-xs text-stamp hover:underline"
                 onClick={() => setNewBankOpen(true)}
               >
                 <Plus className="h-3 w-3" /> Neue Bank
@@ -356,7 +357,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
                         onCheckedChange={(checked) => toggleOwner(u.id, checked === true)}
                       />
                       <Label htmlFor={`owner-${u.id}`} className="cursor-pointer">
-                        <span style={{ color: u.color }}>{u.name}</span>
+                        <span style={{ color: pencil(u.color) }}>{u.name}</span>
                       </Label>
                     </div>
                   ))}
@@ -382,7 +383,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
                   )}
                   {members.map((u) => (
                     <div key={u.id} className="flex items-center justify-between gap-3">
-                      <span className="text-sm" style={{ color: u.color }}>{u.name}</span>
+                      <span className="text-sm" style={{ color: pencil(u.color) }}>{u.name}</span>
                       <Select
                         value={permLevel(u.id)}
                         disabled={setPermission.isPending}
@@ -425,7 +426,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
                 <span className="text-muted-foreground">Differenz</span>
                 <span className={cn(
                   'font-medium',
-                  difference > 0 ? 'text-emerald-600' : difference < 0 ? 'text-rose-500' : 'text-muted-foreground',
+                  difference > 0 ? 'text-positive' : difference < 0 ? 'text-negative' : 'text-muted-foreground',
                 )}>
                   {difference > 0 ? '+' : ''}{formatCents(difference)}
                 </span>
@@ -466,7 +467,6 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={createAccount.isPending || updateAccount.isPending}
         >

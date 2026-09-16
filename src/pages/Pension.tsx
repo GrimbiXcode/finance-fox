@@ -19,6 +19,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
@@ -103,6 +104,11 @@ import {
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/providers/auth";
 import { toast } from "sonner";
+import { CHART } from "@/lib/chartColors";
+import Note from "@/components/Note";
+import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import { PaperTooltip } from "@/components/ChartParts";
+import { chartDefs } from "@/lib/chartDefs";
 
 /** Zeilen-Typen der Vorsorge-Queries (nur die hier benötigten Felder) */
 interface SalaryDeduction {
@@ -230,7 +236,7 @@ function SetupCard() {
     <Card className="mx-auto max-w-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-emerald-600" />
+          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
           Vorsorge einrichten
         </CardTitle>
         <CardDescription>
@@ -259,7 +265,6 @@ function SetupCard() {
           </div>
         </div>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={updateProfile.isPending}
         >
@@ -360,7 +365,6 @@ function ProfileDialog({
         </div>
         <DialogFooter>
           <Button
-            className="bg-emerald-600 hover:bg-emerald-700"
             onClick={submit}
             disabled={updateProfile.isPending}
           >
@@ -429,7 +433,7 @@ function OverviewSection({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-emerald-600" />
+              <TrendingUp className="h-5 w-5 text-muted-foreground" />
               Übersicht &amp; Prognose
             </CardTitle>
             <CardDescription>
@@ -443,7 +447,7 @@ function OverviewSection({
                 <div className="text-xs text-muted-foreground">
                   Monatliches Einkommen im Alter
                 </div>
-                <div className="text-xl font-bold text-emerald-600">
+                <div className="font-serif text-xl font-semibold text-positive">
                   {formatCents(forecast.monthlyRetirementIncome)}
                 </div>
               </div>
@@ -479,7 +483,7 @@ function OverviewSection({
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
                   Säule 1 · AHV
                   {forecast.ahv.estimated && (
-                    <Badge variant="secondary" className="text-[10px]">
+                    <Badge variant="stamp" tone="warn">
                       Schätzung
                     </Badge>
                   )}
@@ -552,7 +556,7 @@ function OverviewSection({
                 />
                 <span className="text-muted-foreground">Jahren</span>
                 {hypAge.trim() !== "" && !hypValid && (
-                  <span className="text-xs text-amber-600">
+                  <span className="text-xs text-warning">
                     Ganzzahl 50–75, abweichend vom eingestellten Alter (
                     {profile.retirementAge})
                   </span>
@@ -571,7 +575,7 @@ function OverviewSection({
                       {formatDate(hypo.retirementDate)}) — monatliches
                       Einkommen{" "}
                     </span>
-                    <span className="font-semibold text-emerald-600">
+                    <span className="font-semibold text-positive">
                       {formatCents(hypo.monthlyRetirementIncome)}
                     </span>
                     <span className="text-muted-foreground">
@@ -623,10 +627,8 @@ function OverviewSection({
                     data={chartData}
                     margin={{ left: 0, right: 8, top: 8 }}
                   >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      className="stroke-muted"
-                    />
+                    {chartDefs()}
+                    <CartesianGrid {...GRID_PROPS} />
                     <XAxis
                       dataKey="year"
                       type="number"
@@ -649,12 +651,8 @@ function OverviewSection({
                       }
                       width={80}
                     />
-                    <Tooltip
-                      formatter={(value: number | string, name: string) => [
-                        `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`,
-                        name,
-                      ]}
-                    />
+                    <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                    <Legend iconType="square" iconSize={10} />
                     {phaseBands.map((p, i) => (
                       <ReferenceArea
                         ifOverflow="hidden"
@@ -663,13 +661,13 @@ function OverviewSection({
                         x2={
                           phaseBands[i + 1]?.fromYear ?? lastYear ?? p.fromYear
                         }
-                        fill="#6366f1"
-                        fillOpacity={0.05}
+                        fill="hsl(var(--paper-deep))"
+                        fillOpacity={i % 2 ? 0 : 0.7}
                         label={{
                           value: `${formatBp(p.rateBp)} %`,
                           position: "insideTop",
                           fontSize: 10,
-                          fill: "#64748b",
+                          fill: CHART.muted,
                         }}
                       />
                     ))}
@@ -677,17 +675,19 @@ function OverviewSection({
                       type="monotone"
                       dataKey="Säule 2"
                       stackId="1"
-                      stroke="#6366f1"
-                      fill="#6366f1"
-                      fillOpacity={0.4}
+                      stroke={CHART.pencil(7)}
+                      strokeWidth={2}
+                      fill={hatch("pencil-7")}
+                      fillOpacity={HATCH_OPACITY}
                     />
                     <Area
                       type="monotone"
                       dataKey="Säule 3a"
                       stackId="1"
-                      stroke="#0ea5e9"
-                      fill="#0ea5e9"
-                      fillOpacity={0.4}
+                      stroke={CHART.pencil(1)}
+                      strokeWidth={2}
+                      fill={hatch("pencil-1")}
+                      fillOpacity={HATCH_OPACITY}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -695,17 +695,16 @@ function OverviewSection({
             )}
 
             {forecast.warnings.length > 0 && (
-              <ul className="space-y-1.5 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
-                {forecast.warnings.map((w, i) => (
-                  <li
-                    key={i}
-                    className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-200"
-                  >
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    {w}
-                  </li>
-                ))}
-              </ul>
+              <Note title="Hinweise">
+                <ul className="space-y-1.5">
+                  {forecast.warnings.map((w, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              </Note>
             )}
           </>
         )}
@@ -981,7 +980,6 @@ function SalaryDialogForm({
           Abbrechen
         </Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={addSalary.isPending || updateSalary.isPending}
         >
@@ -1085,7 +1083,7 @@ function TransferDialog({ disabled }: { disabled: boolean }) {
             Abbrechen
           </Button>
           <Button
-            className="bg-emerald-600 hover:bg-emerald-700"
+            variant="stamp"
             onClick={submit}
             disabled={transfer.isPending || accounts.length === 0}
           >
@@ -1139,7 +1137,7 @@ function SalarySection({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-sky-500" />
+              <Wallet className="h-5 w-5 text-muted-foreground" />
               Lohn
             </CardTitle>
             <CardDescription>
@@ -1148,7 +1146,7 @@ function SalarySection({
           </div>
           <div className="text-right">
             <div className="text-xs text-muted-foreground">Aktuelles Netto</div>
-            <div className="text-lg font-bold text-emerald-600">
+            <div className="font-serif text-lg font-semibold text-positive">
               {currentNet != null ? formatCents(currentNet) : "—"}
             </div>
           </div>
@@ -1179,7 +1177,7 @@ function SalarySection({
                   <TableCell className="text-right">
                     <div className="font-medium">{formatCents(netFor(s))}</div>
                     {s.deductions.length > 0 && (
-                      <Badge variant="outline" className="mt-0.5 text-[10px]">
+                      <Badge variant="stamp" className="mt-0.5">
                         eigene Abzüge
                       </Badge>
                     )}
@@ -1243,7 +1241,7 @@ function SalarySection({
         <div className="flex flex-wrap gap-2">
           <SalaryDialog
             trigger={
-              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+              <Button size="sm">
                 <Plus className="mr-2 h-4 w-4" /> Lohn erfassen
               </Button>
             }
@@ -1406,7 +1404,6 @@ function DeductionDialogForm({
           Abbrechen
         </Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={addDeduction.isPending || updateDeduction.isPending}
         >
@@ -1436,7 +1433,7 @@ function DeductionsSection({ deductions }: { deductions: DeductionRow[] }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <MinusCircle className="h-5 w-5 text-rose-500" />
+          <MinusCircle className="h-5 w-5 text-negative" />
           Abzüge (global)
         </CardTitle>
         <CardDescription>
@@ -1762,7 +1759,6 @@ function AhvDialogForm({
           Abbrechen
         </Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={updateAhv.isPending}
         >
@@ -1812,17 +1808,17 @@ function AhvCalculation() {
           <div className="text-xs text-muted-foreground">
             Berechnete Monatsrente
           </div>
-          <div className="text-2xl font-bold">
+          <div className="font-serif text-2xl font-semibold">
             {formatCents(d.monthlyPension)}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary">Skala {d.duration.scale}/44</Badge>
+            <Badge variant="label">Skala {d.duration.scale}/44</Badge>
             {gaps > 0 && (
-              <Badge className="bg-amber-500/15 text-amber-700 hover:bg-amber-500/15 dark:text-amber-500">
+              <Badge variant="stamp" tone="warn">
                 {gaps} {gaps === 1 ? "Lücke" : "Lücken"}
               </Badge>
             )}
-            {d.partnerLinked && <Badge variant="outline">Ehepaar</Badge>}
+            {d.partnerLinked && <Badge variant="label">Ehepaar</Badge>}
             <span>ab {formatDate(d.pensionStartDate)}</span>
           </div>
         </div>
@@ -1903,7 +1899,7 @@ function PartnerLink() {
           ))}
         </select>
         {detail.data?.partnerPending && (
-          <span className="text-xs text-amber-600 dark:text-amber-500">
+          <span className="text-xs text-warning">
             Warten auf Bestätigung — die andere Person muss dich ebenfalls
             verknüpfen. Bis dahin rechnet die AHV hier ohne Plafonierung und
             ohne Einkommensteilung. Eine Bestätigung, die inzwischen erfolgt
@@ -1911,7 +1907,7 @@ function PartnerLink() {
           </span>
         )}
         {detail.data?.partnerLinked && (
-          <span className="text-xs text-emerald-600">
+          <span className="text-xs text-positive">
             Beidseitig bestätigt — Renten werden plafoniert.
           </span>
         )}
@@ -1944,7 +1940,7 @@ function AhvCard({ ahv }: { ahv: AhvRow | null }) {
       <CardHeader className="flex flex-row items-start justify-between pb-2">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Landmark className="h-5 w-5 text-violet-500" />
+            <Landmark className="h-5 w-5 text-muted-foreground" />
             AHV (1. Säule)
           </CardTitle>
           <CardDescription>Ausweisdaten und erwartete Rente</CardDescription>
@@ -2029,7 +2025,7 @@ function FundsSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <Building2 className="h-5 w-5 text-indigo-500" />
+          <Building2 className="h-5 w-5 text-muted-foreground" />
           Pensionskasse (2. Säule)
         </h2>
         <PensionFundDialog
@@ -2061,13 +2057,13 @@ function FundsSection({
                     {f.name}
                   </CardTitle>
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="secondary">
+                    <Badge variant="label">
                       {f.kind === "pension_fund"
                         ? "Pensionskasse"
                         : "Freizügigkeitskonto"}
                     </Badge>
                     {f.tiers.length > 0 && (
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="label">
                         Abstufungen
                       </Badge>
                     )}
@@ -2106,7 +2102,7 @@ function FundsSection({
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-xl font-bold">
+                  <span className="font-serif text-xl font-semibold">
                     {formatCents(f.currentCapital)}
                   </span>
                 </div>
@@ -2157,7 +2153,7 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <PiggyBank className="h-5 w-5 text-emerald-600" />
+          <PiggyBank className="h-5 w-5 text-muted-foreground" />
           Säule 3a
         </h2>
         <PensionPillar3Dialog
@@ -2189,7 +2185,7 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
                   <CardDescription className="flex flex-wrap items-center gap-1.5">
                     {p.institution || "ohne Institution"}
                     {linked && (
-                      <Badge variant="secondary" className="text-[10px]">
+                      <Badge variant="stamp" tone="good">
                         Konto verknüpft
                       </Badge>
                     )}
@@ -2210,12 +2206,12 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-xl font-bold">
+                  <span className="font-serif text-xl font-semibold">
                     {formatCents(balance)}
                   </span>
                 </div>
                 {(p.goalCommitment ?? 0) > 0 && (
-                  <p className="flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <p className="flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     Davon {formatCents(p.goalCommitment!)} im Sparziel „
                     {p.goalNames.join("“, „")}“ verplant
@@ -2287,7 +2283,7 @@ function HistoryCard() {
                 className="space-y-1 border-b pb-3 last:border-0"
               >
                 <div className="flex items-center justify-between gap-2 text-sm">
-                  <Badge variant="secondary">
+                  <Badge variant="label">
                     {ENTITY_LABELS[entry.entity] ?? entry.entity}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
@@ -2356,7 +2352,7 @@ export default function Pension() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Vorsorge</h1>
+        <h1 className="text-2xl font-semibold">Vorsorge</h1>
         <p className="text-sm text-muted-foreground">
           Deine private Altersvorsorge nach dem 3-Säulen-Prinzip
         </p>

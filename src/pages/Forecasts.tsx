@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, CalendarClock, FlaskConical, LineChart as LineChartIcon, Target } from 'lucide-react';
 import {
-  CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -16,6 +16,10 @@ import { ForecastTable } from '@/components/ForecastTable';
 import { trpc } from '@/providers/trpc';
 import { currencySymbol, formatCents, formatMonth, formatMonthYearShort, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
+import { CHART } from '@/lib/chartColors';
+import { AXIS_PROPS, CURSOR_LINE, GRID_PROPS, activeDotFor, dotFor } from '@/lib/chartTheme';
+import { PaperTooltip } from '@/components/ChartParts';
+import { pencil } from '@/lib/pencil';
 
 export default function Forecasts() {
   const [months, setMonths] = useState('12');
@@ -100,7 +104,7 @@ export default function Forecasts() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Prognosen</h1>
+          <h1 className="text-2xl font-semibold">Prognosen</h1>
           <p className="text-sm text-muted-foreground">
             Hochrechnungen auf Basis deiner Buchungen und Dauerbuchungen
           </p>
@@ -123,7 +127,7 @@ export default function Forecasts() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <FlaskConical className="h-5 w-5 text-violet-500" />
+                <FlaskConical className="h-5 w-5 text-muted-foreground" />
                 Szenario
               </CardTitle>
               <CardDescription>
@@ -131,7 +135,7 @@ export default function Forecasts() {
               </CardDescription>
             </div>
             {scenarioActive && (
-              <Badge variant="secondary">Szenario: {scenarioParts.join(', ')}</Badge>
+              <Badge variant="label">Szenario: {scenarioParts.join(', ')}</Badge>
             )}
           </div>
         </CardHeader>
@@ -182,7 +186,7 @@ export default function Forecasts() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <LineChartIcon className="h-5 w-5 text-emerald-600" />
+                <LineChartIcon className="h-5 w-5 text-muted-foreground" />
                 Kontostand-Prognose
               </CardTitle>
               <CardDescription>
@@ -190,7 +194,7 @@ export default function Forecasts() {
                 {hasNetWorth && ' — „Vermögen" bezieht Liegenschaften und Hypotheken ein (Verkehrswert konstant fortgeschrieben)'}
               </CardDescription>
               {(balance.data?.mortgageMissingRecurring ?? 0) > 0 && (
-                <p className="pt-1 text-xs text-amber-600 dark:text-amber-400">
+                <p className="pt-1 text-xs text-warning">
                   {balance.data!.mortgageMissingRecurring} Hypotheken-Posten ohne
                   Dauerbuchung — deren Zahlungen fehlen in der Projektion, das
                   Vermögen fällt dadurch zu optimistisch aus.
@@ -200,7 +204,7 @@ export default function Forecasts() {
             {endBalance !== undefined && (
               <div className="text-right">
                 <div className="text-xs text-muted-foreground">Voraussichtlich in {months} Monaten</div>
-                <div className={cn('text-xl font-bold', endBalance < 0 ? 'text-destructive' : 'text-emerald-600')}>
+                <div className={cn('font-serif text-xl font-semibold', endBalance < 0 ? 'text-destructive' : 'text-positive')}>
                   {formatCents(endBalance)}
                 </div>
               </div>
@@ -213,15 +217,16 @@ export default function Forecasts() {
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                <CartesianGrid {...GRID_PROPS} />
+                <XAxis dataKey="month" {...AXIS_PROPS} tick={{ fontSize: 11 }} />
                 <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(1)}k ${currencySymbol()}`} width={70} />
-                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
-                <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="Ist" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} connectNulls={false} />
-                <Line type="monotone" dataKey="Prognose" stroke="#6366f1" strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} />
+                <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                <Legend iconType="plainline" iconSize={14} />
+                <ReferenceLine y={0} stroke="hsl(var(--rule-strong))" />
+                <Line type="monotone" dataKey="Ist" stroke={CHART.positive} strokeWidth={2} dot={dotFor(CHART.positive)} activeDot={activeDotFor(CHART.positive)} connectNulls={false} />
+                <Line type="monotone" dataKey="Prognose" stroke={CHART.pencil(7)} strokeWidth={2} strokeDasharray="6 4" dot={dotFor(CHART.pencil(7))} activeDot={activeDotFor(CHART.pencil(7))} connectNulls={false} />
                 {hasNetWorth && (
-                  <Line type="monotone" dataKey="Vermögen" stroke="#0ea5e9" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="Vermögen" stroke={CHART.pencil(1)} strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} />
                 )}
               </LineChart>
             </ResponsiveContainer>
@@ -232,11 +237,11 @@ export default function Forecasts() {
             <div className="grid gap-4 text-sm sm:grid-cols-2">
               <div>
                 <span className="text-muted-foreground">Ø variable Einnahmen/Monat: </span>
-                <span className="font-medium text-emerald-600">+{formatCents(balance.data.avgVariableIncome)}</span>
+                <span className="font-medium text-positive">+{formatCents(balance.data.avgVariableIncome)}</span>
               </div>
               <div>
                 <span className="text-muted-foreground">Ø variable Ausgaben/Monat: </span>
-                <span className="font-medium text-rose-500">−{formatCents(balance.data.avgVariableExpense)}</span>
+                <span className="font-medium text-negative">−{formatCents(balance.data.avgVariableExpense)}</span>
               </div>
             </div>
           </CardContent>
@@ -251,7 +256,7 @@ export default function Forecasts() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              <AlertTriangle className="h-5 w-5 text-warning" />
               Budget-Hochrechnung
             </CardTitle>
             <CardDescription>Wohin steuern die Ausgaben bis Monatsende?</CardDescription>
@@ -266,17 +271,17 @@ export default function Forecasts() {
                 <div key={b.categoryId} className="space-y-1.5">
                   <div className="flex flex-wrap items-center justify-between gap-x-2 text-sm">
                     <span className="flex min-w-0 items-center gap-2 font-medium">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: b.color }} />
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(b.color) }} />
                       {b.categoryName}
                     </span>
                     <span className={cn('font-semibold', b.willExceed ? 'text-destructive' : 'text-muted-foreground')}>
                       {formatCents(b.projected)} / {formatCents(b.budget)}
-                      {b.willExceed && <Badge variant="destructive" className="ml-2 text-[10px]">Überschreitung</Badge>}
+                      {b.willExceed && <Badge variant="stamp" tone="bad" className="ml-2">Überschreitung</Badge>}
                     </span>
                   </div>
                   <Progress
                     value={pct}
-                    className={cn(b.willExceed ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-amber-500' : '[&>div]:bg-emerald-600')}
+                    className={cn(b.willExceed ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-warning' : '')}
                   />
                   <p className="text-xs text-muted-foreground">
                     Bisher {formatCents(b.spent)} ausgegeben
@@ -290,7 +295,7 @@ export default function Forecasts() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Target className="h-5 w-5 text-sky-500" />
+              <Target className="h-5 w-5 text-muted-foreground" />
               Sparziel-Prognose
             </CardTitle>
             <CardDescription>
@@ -313,16 +318,16 @@ export default function Forecasts() {
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <CalendarClock className="h-3.5 w-3.5" />
                       {open
-                        ? <Badge variant="secondary" className="text-[10px]">offenes Ziel</Badge>
+                        ? <Badge variant="stamp">offenes Ziel</Badge>
                         : g.remaining === 0
-                          ? <Badge className="bg-emerald-600 text-[10px]">Erreicht</Badge>
+                          ? <Badge variant="stamp" tone="good">Erreicht</Badge>
                           : g.etaMonth
                             ? <span>voraussichtlich <span className="font-medium text-foreground">{formatMonth(g.etaMonth)}</span></span>
                             : <span>mit aktuellen Dauerbuchungen nicht erreichbar</span>}
                     </span>
                   </div>
                   {!open && (
-                    <Progress value={pct} style={{ ['--progress-color' as string]: g.color }} className="[&>div]:bg-[var(--progress-color)]" />
+                    <Progress value={pct} style={{ ['--progress-color' as string]: pencil(g.color) }} className="[&>div]:bg-[var(--progress-color)]" />
                   )}
                   <p className="text-xs text-muted-foreground">
                     {open ? `Bisher ${formatCents(g.total)} angespart` : `Noch ${formatCents(g.remaining ?? 0)} offen`}

@@ -10,8 +10,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // Papier: Rotstift-Umriss, Füllung erst beim Hover (gefüllt nur die
+        // Bestätigung in der Gefahrenzone – dort per className)
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "border border-destructive bg-transparent text-destructive hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
+        // Papier: der eine grüne Stempel – für die Aktion, die etwas verbucht
+        stamp: "bg-stamp text-stamp-foreground hover:bg-stamp/90",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
         secondary:

@@ -125,7 +125,7 @@ function QuickAddForm({ close }: { close: () => void }) {
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
-          <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={createTx.isPending}>
+          <Button type="submit" disabled={createTx.isPending}>
             Buchen
           </Button>
         </form>

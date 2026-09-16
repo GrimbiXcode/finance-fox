@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- ARTIFACT-HEAD-START -->
+<title>Finance Fox Papier-Entwurf</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* ---------- Tokens: Papier & Tinte (hell) ---------- */
+:root{
+  color-scheme:light;
+  --paper:#ECE7DB;      /* Unterlage (Seite) */
+  --sheet:#FBF9F3;      /* Blatt (Karte) */
+  --sheet-2:#F4F0E6;    /* Blatt, vertieft (Tabellenkopf, Hover, Chips) */
+  --sheet-3:#E6E0D2;    /* Meter-Spur, Skeleton */
+  --ink:#211D18;
+  --ink-2:#4F483E;
+  --ink-3:#6F6759;
+  --rule:#D9D1C2;
+  --rule-strong:#B9AF9C;
+  --good:#2A6B48;  --good-wash:rgba(42,107,72,.10);
+  --bad:#B3382E;   --bad-wash:rgba(179,56,46,.10);
+  --warn:#8C5F10;  --warn-wash:rgba(140,95,16,.12);
+  --stamp:#2F6B4F; --on-stamp:#FBF9F3;
+  --on-ink:#FBF9F3;
+  --note:#F7E9AE; --note-ink:#4A3D10; --note-shadow:rgba(120,90,10,.28);
+  --c1:#2F6FC4; --c2:#D9692C; --c3:#1E9B73; --c4:#D99A12; --c5:#D5688F; --c6:#2E8B2E; --c7:#6A4FB8; --c8:#C9403C;
+  --u-alex:#2A6B48; --u-sam:#6A4FB8;
+  --shadow-sheet:0 1px 0 rgba(33,29,24,.04),0 1px 3px rgba(33,29,24,.08),0 10px 24px -14px rgba(33,29,24,.22);
+  --shadow-lift:0 2px 4px rgba(33,29,24,.08),0 18px 36px -16px rgba(33,29,24,.32);
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-opacity:.055; --grain-blend:multiply;
+  --radius:4px; --radius-sm:3px;
+  --font-serif:"Newsreader","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --font-sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --bezel:#2A2622;
+}
+/* ---------- Tokens: Nachtpapier (dunkel) ---------- */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#1E1B17; --sheet:#292520; --sheet-2:#322D27; --sheet-3:#3A342D;
+    --ink:#EDE6D8; --ink-2:#C9C0AE; --ink-3:#A2998A;
+    --rule:#3E382F; --rule-strong:#5A5245;
+    --good:#7FBF95; --good-wash:rgba(127,191,149,.14);
+    --bad:#E48B80;  --bad-wash:rgba(228,139,128,.14);
+    --warn:#D9A24A; --warn-wash:rgba(217,162,74,.16);
+    --stamp:#7FBF95; --on-stamp:#1E1B17; --on-ink:#1E1B17;
+    --note:#4A4024; --note-ink:#F1E4B0; --note-shadow:rgba(0,0,0,.45);
+    --c1:#3F7CD0; --c2:#CF6A30; --c3:#279C78; --c4:#B8861C; --c5:#CC6E95; --c6:#3F9A3A; --c7:#8069CC; --c8:#CF4F4A;
+    --u-alex:#7FBF95; --u-sam:#B39BD6;
+    --shadow-sheet:0 1px 0 rgba(0,0,0,.25),0 1px 3px rgba(0,0,0,.35),0 10px 24px -14px rgba(0,0,0,.6);
+    --shadow-lift:0 2px 4px rgba(0,0,0,.35),0 18px 36px -16px rgba(0,0,0,.7);
+    --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    --grain-opacity:.07; --grain-blend:screen;
+    --bezel:#3A342D;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#1E1B17; --sheet:#292520; --sheet-2:#322D27; --sheet-3:#3A342D;
+  --ink:#EDE6D8; --ink-2:#C9C0AE; --ink-3:#A2998A;
+  --rule:#3E382F; --rule-strong:#5A5245;
+  --good:#7FBF95; --good-wash:rgba(127,191,149,.14);
+  --bad:#E48B80;  --bad-wash:rgba(228,139,128,.14);
+  --warn:#D9A24A; --warn-wash:rgba(217,162,74,.16);
+  --stamp:#7FBF95; --on-stamp:#1E1B17; --on-ink:#1E1B17;
+  --note:#4A4024; --note-ink:#F1E4B0; --note-shadow:rgba(0,0,0,.45);
+  --c1:#3F7CD0; --c2:#CF6A30; --c3:#279C78; --c4:#B8861C; --c5:#CC6E95; --c6:#3F9A3A; --c7:#8069CC; --c8:#CF4F4A;
+  --u-alex:#7FBF95; --u-sam:#B39BD6;
+  --shadow-sheet:0 1px 0 rgba(0,0,0,.25),0 1px 3px rgba(0,0,0,.35),0 10px 24px -14px rgba(0,0,0,.6);
+  --shadow-lift:0 2px 4px rgba(0,0,0,.35),0 18px 36px -16px rgba(0,0,0,.7);
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-opacity:.07; --grain-blend:screen;
+  --bezel:#3A342D;
+}
+
+/* ---------- Grundlagen ---------- */
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:14px/1.5 var(--font-sans);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+body::before{content:"";position:fixed;inset:0;background-image:var(--grain);background-size:240px 240px;opacity:var(--grain-opacity);mix-blend-mode:var(--grain-blend);pointer-events:none;z-index:9999}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--stamp);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+.ic{width:16px;height:16px;flex:none}
+.ic-lg{width:20px;height:20px}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.pos{color:var(--good)} .neg{color:var(--bad)} .muted{color:var(--ink-3)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ---------- Vorschau-Leiste (nicht Teil der App) ---------- */
+.pv{background:var(--ink);color:var(--on-ink);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;font-size:12.5px}
+.pv .t{font:600 15px/1.2 var(--font-serif);margin-right:auto}
+.pv .t small{display:block;font:400 11.5px/1.3 var(--font-sans);opacity:.75;margin-top:2px}
+.pv label{opacity:.7;margin-right:6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.seg{display:inline-flex;border:1px solid color-mix(in srgb,var(--on-ink) 35%,transparent);border-radius:3px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:5px 10px;cursor:pointer;color:inherit}
+.seg button+button{border-left:1px solid color-mix(in srgb,var(--on-ink) 25%,transparent)}
+.seg button[aria-pressed="true"]{background:var(--sheet);color:var(--ink)}
+
+/* ---------- App-Rahmen ---------- */
+.frame{container-type:inline-size;container-name:app;background:var(--paper)}
+.frame.mobile{max-width:412px;margin:20px auto;border:10px solid var(--bezel);border-radius:36px;height:820px;overflow:auto;box-shadow:var(--shadow-lift);overscroll-behavior:contain}
+.app{display:flex;min-height:100%;background:var(--paper)}
+
+/* Seitenleiste = Register */
+.side{width:232px;flex:none;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;border-right:1px solid var(--rule);background:var(--paper)}
+.frame.mobile .side{height:100%}
+.brand{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--rule)}
+.mark{width:36px;height:36px;flex:none;border:2px solid var(--stamp);border-radius:7px;display:grid;place-items:center;color:var(--stamp);background:var(--sheet)}
+.mark svg{width:24px;height:24px}
+.brand b{display:block;font:600 16px/1.15 var(--font-serif);letter-spacing:-.005em}
+.brand small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
+.nav{flex:1;overflow-y:auto;padding:10px 12px 12px}
+.nav h6{font:600 10.5px/1 var(--font-sans);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:16px 10px 6px}
+.nav h6:first-child{margin-top:6px}
+.nav a{display:flex;gap:10px;align-items:center;padding:7px 10px;border-radius:var(--radius);color:var(--ink-2);text-decoration:none;font-weight:500;font-size:13.5px;border:1px solid transparent;margin-bottom:1px}
+.nav a:hover{background:var(--sheet-2);color:var(--ink)}
+.nav a[aria-current="page"]{background:var(--sheet);color:var(--ink);border-color:var(--rule);box-shadow:0 1px 2px rgba(33,29,24,.08)}
+.nav a[aria-current="page"] .ic{color:var(--stamp)}
+.side-foot{border-top:1px solid var(--rule);padding:14px 18px}
+.lab{font:500 11px/1.2 var(--font-sans);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.hero{font:600 21px/1.2 var(--font-serif);font-variant-numeric:lining-nums;margin-top:3px;letter-spacing:-.01em}
+.safe{display:flex;gap:6px;align-items:center;color:var(--stamp);font-size:11.5px;margin-top:8px}
+.side-tools{border-top:1px solid var(--rule);padding:8px;display:flex;justify-content:center}
+
+/* Kopfzeile */
+.col{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 28px;border-bottom:1px solid var(--rule);background:color-mix(in srgb,var(--paper) 90%,transparent);backdrop-filter:blur(6px)}
+.top .house{font:italic 500 15px/1.3 var(--font-serif);color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand-m{display:none;align-items:center;gap:8px;font:600 15px/1 var(--font-serif)}
+.brand-m .mark{width:28px;height:28px;border-width:1.5px;border-radius:5px}
+.brand-m .mark svg{width:18px;height:18px}
+.top-r{display:flex;align-items:center;gap:8px;flex:none}
+.sync{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink-3)}
+.sync .ic{color:var(--stamp)}
+.avs{display:flex;margin-left:4px}
+.av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:600 10.5px var(--font-sans);color:#fff;border:2px solid var(--sheet);box-shadow:0 0 0 1px var(--rule)}
+.av+.av{margin-left:-8px}
+.me{display:flex;align-items:center;gap:6px;border-left:1px solid var(--rule);padding-left:10px;font-weight:500}
+
+/* Hauptbereich */
+main{padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px;min-width:0}
+.ph{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px}
+h1{font:600 28px/1.15 var(--font-serif);margin:0;letter-spacing:-.012em;text-wrap:balance}
+.ph p{margin:3px 0 0;color:var(--ink-3);font-size:13px}
+.ph .acts{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Knöpfe */
+.btn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:var(--radius-sm);border:1px solid var(--rule-strong);background:var(--sheet);color:var(--ink);font:500 13px var(--font-sans);cursor:pointer;box-shadow:0 1px 0 rgba(33,29,24,.05);white-space:nowrap;text-decoration:none}
+.btn:hover{background:var(--sheet-2)}
+.btn-primary{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.btn-primary:hover{background:var(--ink-2);border-color:var(--ink-2)}
+.btn-stamp{background:var(--stamp);color:var(--on-stamp);border-color:var(--stamp)}
+.btn-ghost{border-color:transparent;background:transparent;box-shadow:none;color:var(--ink-2)}
+.btn-ghost:hover{background:var(--sheet-2);color:var(--ink)}
+.btn-danger{color:var(--bad);border-color:var(--bad);background:transparent}
+.btn-danger:hover{background:var(--bad-wash)}
+.btn-icon{width:34px;padding:0;justify-content:center}
+.btn-sm{height:28px;padding:0 9px;font-size:12px}
+.btn-sm.btn-icon{width:28px}
+.btn[disabled]{opacity:.5;cursor:default}
+
+/* Blätter */
+.sheet{background:var(--sheet);border:1px solid var(--rule);border-radius:var(--radius);box-shadow:var(--shadow-sheet);min-width:0}
+.sheet-h{padding:16px 20px 0;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.sheet-h h2{font:600 17px/1.25 var(--font-serif);margin:0;letter-spacing:-.005em}
+.sheet-h p{margin:3px 0 0;color:var(--ink-3);font-size:12.5px}
+.sheet-b{padding:16px 20px 20px}
+
+/* Kennzahlen */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.kpi{padding:14px 18px 16px}
+.kpi .lab{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+.kpi .val{font:600 26px/1.15 var(--font-serif);margin-top:14px;font-variant-numeric:lining-nums;letter-spacing:-.012em;white-space:nowrap}
+.kpi .sub{font-size:12px;color:var(--ink-3);margin-top:4px}
+
+.g2{display:grid;grid-template-columns:3fr 2fr;gap:14px;align-items:start}
+
+/* Diagramme */
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto}
+.chart .ax{font:11px var(--font-mono);fill:var(--ink-3)}
+.chart .lbl{font:500 11px var(--font-mono);fill:var(--ink)}
+.chart .grid{stroke:var(--rule);stroke-width:1}
+.chart .base{stroke:var(--rule-strong);stroke-width:1}
+.chart .xh{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3;visibility:hidden}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink-2);margin:6px 0 10px}
+.key{display:inline-block;width:18px;border-top:2px solid;vertical-align:middle;margin-right:6px;position:relative;top:-1px}
+.tip{position:absolute;pointer-events:none;background:var(--sheet);border:1px solid var(--rule-strong);box-shadow:var(--shadow-lift);padding:8px 10px;border-radius:3px;font-size:12px;min-width:160px;display:none;z-index:3}
+.tip b{display:block;font:600 12.5px var(--font-serif);margin-bottom:4px}
+.tip div{display:flex;justify-content:space-between;gap:12px}
+.tip .sw{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.donut{display:grid;grid-template-columns:168px 1fr;gap:16px;align-items:center}
+.donut svg{width:168px;height:168px}
+.donut .ctr{font:600 15px var(--font-serif);fill:var(--ink)}
+.donut .ctr2{font:11px var(--font-sans);fill:var(--ink-3)}
+.dl{list-style:none;margin:0;padding:0;font-size:12.5px}
+.dl li{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--rule);cursor:default}
+.dl li:last-child{border-bottom:0}
+.dl .dot{width:9px;height:9px;border-radius:2px}
+.dl .amt{margin-left:auto}
+.dl .pct{width:38px;text-align:right;color:var(--ink-3)}
+.dl li.dim,.donut path.dim{opacity:.4}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+
+/* Kassenbuch-Listen */
+.ledger{list-style:none;margin:0;padding:0}
+.ledger li{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--rule)}
+.ledger li:last-child{border-bottom:0}
+.ledger .who{min-width:0}
+.ledger .who b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ledger .who small{color:var(--ink-3);font-size:11.5px}
+.amt{font:500 13px var(--font-mono);font-variant-numeric:tabular-nums;margin-left:auto;white-space:nowrap}
+.sum{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding-top:8px;border-top:3px double var(--rule-strong);font-weight:600}
+
+/* Tabelle */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:820px}
+th{font:600 10.5px var(--font-sans);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:10px 12px;border-bottom:1px solid var(--rule-strong);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+tbody tr:hover{background:var(--sheet-2)}
+th.num,td.num{text-align:right}
+td.date{font:12.5px var(--font-mono);color:var(--ink-3);white-space:nowrap}
+td .desc{font-weight:500}
+td .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+td.acts{white-space:nowrap;text-align:right;color:var(--ink-3)}
+td.acts .btn{color:var(--ink-3)}
+td.acts .btn.on{color:var(--stamp)}
+tfoot td{border-top:3px double var(--rule-strong);border-bottom:0;font-weight:600;padding-top:12px}
+.cat,.who2{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.arrow{color:var(--ink-3)}
+
+/* Stempel & Etiketten */
+.stamp{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border:1px solid currentColor;border-radius:2px;font:600 9.5px/1 var(--font-sans);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap;background:transparent}
+.stamp-good{color:var(--stamp)} .stamp-warn{color:var(--warn)} .stamp-bad{color:var(--bad)} .stamp-ink{color:var(--ink)}
+.stamp-tilt{transform:rotate(-4deg);height:22px;padding:0 8px;font-size:11px;border-width:1.5px}
+.tag{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:2px;background:var(--sheet-2);border:1px solid var(--rule);font-size:11px;color:var(--ink-2);white-space:nowrap}
+.tag .dot{width:6px;height:6px}
+.proj{border-left:3px solid var(--c1)}
+
+/* Formular */
+.filters{display:flex;flex-wrap:wrap;gap:10px}
+.input{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--rule-strong);border-radius:var(--radius-sm);background:var(--sheet);font-size:13px;color:var(--ink-2);min-width:0}
+.input input{border:0;background:transparent;font:inherit;color:var(--ink);outline:none;width:100%;min-width:0}
+.input input::placeholder{color:var(--ink-3)}
+.input.search{flex:1 1 220px}
+.sel{justify-content:space-between;min-width:140px;cursor:pointer;flex:0 1 auto}
+.sel .ic{color:var(--ink-3)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;font-weight:500;color:var(--ink-2)}
+.switch{width:34px;height:20px;border-radius:999px;background:var(--sheet-3);border:1px solid var(--rule-strong);position:relative;display:inline-block;vertical-align:middle}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--sheet);border:1px solid var(--rule-strong)}
+.switch.on{background:var(--ink);border-color:var(--ink)}
+.switch.on::after{left:16px;background:var(--on-ink);border-color:var(--ink)}
+.check{width:16px;height:16px;border:1px solid var(--rule-strong);border-radius:2px;display:inline-grid;place-items:center;vertical-align:middle;background:var(--sheet)}
+.check.on{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+
+/* Meter, Notizzettel, Bausteine */
+.meter{height:8px;background:var(--sheet-3);border-radius:2px;overflow:hidden;border:1px solid var(--rule)}
+.meter i{display:block;height:100%;background:var(--ink)}
+.meter i.warn{background:var(--warn)} .meter i.over{background:var(--bad)}
+.budget{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--rule)}
+.budget:last-child{border-bottom:0}
+.budget .row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.note{background:var(--note);color:var(--note-ink);padding:12px 14px;border-radius:2px;box-shadow:0 1px 2px var(--note-shadow),0 8px 16px -10px var(--note-shadow);transform:rotate(-.6deg);font-size:13px;max-width:360px}
+.note strong{font:600 14px var(--font-serif);display:block;margin-bottom:3px}
+.spec{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start}
+.sw{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--rule);font-size:12.5px}
+.sw:last-child{border-bottom:0}
+.sw i{width:34px;height:24px;border-radius:3px;border:1px solid var(--rule);flex:none}
+.sw code{font:11.5px var(--font-mono);color:var(--ink-3);margin-left:auto}
+.row-wrap{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.type p{margin:0 0 10px}
+.t-h1{font:600 28px/1.15 var(--font-serif)}
+.t-h2{font:600 17px/1.25 var(--font-serif)}
+.t-body{font:14px/1.5 var(--font-sans)}
+.t-mono{font:13px var(--font-mono);font-variant-numeric:tabular-nums}
+.t-lab{font:500 11px var(--font-sans);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.type small{display:block;color:var(--ink-3);font-size:11px;margin-top:2px}
+.rules{margin:0;padding-left:18px;color:var(--ink-2);font-size:13px}
+.rules li{margin-bottom:6px}
+.pal{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+.pal i{display:block;height:28px;border-radius:2px}
+
+/* Untere Leiste (Handy) */
+.bnav{display:none;position:sticky;bottom:0;z-index:5;background:var(--paper);border-top:1px solid var(--rule);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));justify-content:space-around;margin-top:auto}
+.bnav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:var(--ink-3);text-decoration:none;min-width:0}
+.bnav a span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bnav a[aria-current="page"]{color:var(--stamp)}
+
+/* ---------- Responsiv (Container) ---------- */
+@container app (max-width: 1100px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@container app (max-width: 900px){ .g2{grid-template-columns:1fr} .top .house{display:none} .me span{display:none} }
+@container app (max-width: 760px){
+  .side{display:none} .bnav{display:flex} .brand-m{display:flex}
+  main{padding:18px 16px 28px;gap:16px} .top{padding:10px 16px}
+  .hide-m{display:none!important} .sync span{display:none}
+  .donut{grid-template-columns:1fr;justify-items:center} .donut ul{width:100%}
+}
+@container app (max-width: 520px){ .kpis{grid-template-columns:1fr} h1{font-size:24px} .kpi .val{font-size:24px} .ph .acts .btn:not(.btn-primary){display:none} }
+@media (max-width: 720px){ .pv .t small{display:none} }
+</style>
+<!-- ARTIFACT-HEAD-END -->
+</head>
+<body>
+<!-- ARTIFACT-BODY-START -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-fox" viewBox="0 0 512 512"><g fill="currentColor"><path d="M156 108 L216 196 L128 208 Z"/><path d="M356 108 L296 196 L384 208 Z"/><path d="M256 176C196 176 148 224 148 284C148 340 196 392 256 424C316 392 364 340 364 284C364 224 316 176 256 176Z"/></g><g fill="var(--sheet)"><circle cx="214" cy="272" r="16"/><circle cx="298" cy="272" r="16"/><circle cx="256" cy="352" r="12"/></g></symbol>
+  </defs>
+  <symbol id="i-dash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="i-piggy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.7-1 2-2h2v-4h-2c0-1-.5-1.5-1-2V5z"/><path d="M2 9v1c0 1.1.9 2 2 2h1"/><path d="M16 11h.01"/></symbol>
+  <symbol id="i-landmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></symbol>
+  <symbol id="i-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10.5 9-7.5 9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></symbol>
+  <symbol id="i-umbrella" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12a10 10 0 0 0-20 0Z"/><path d="M12 12v8a2 2 0 0 0 4 0"/><path d="M12 2v1"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></symbol>
+  <symbol id="i-fileup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M12 12v6"/><path d="m9 15 3-3 3 3"/></symbol>
+  <symbol id="i-usercog" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6"/><circle cx="18" cy="17" r="3"/><path d="M18 12.5V14"/><path d="M18 20v1.5"/><path d="m14.1 15.2 1.3.75"/><path d="m20.6 19 1.3.75"/><path d="m14.1 19 1.3-.75"/><path d="m20.6 15.2 1.3-.75"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4Z"/><circle cx="7" cy="7" r="1" fill="currentColor"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-dl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-ul" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+</svg>
+
+<div class="pv" role="toolbar" aria-label="Vorschau-Einstellungen">
+  <div class="t">Finance Fox · Papier-Entwurf<small>Statische Vorschau mit Beispieldaten. Konzept und Umsetzung: <code>docs/design/paper-like/README.md</code></small></div>
+  <div><label>Ansicht</label><span class="seg" id="seg-view"><button type="button" data-view-btn="dashboard" aria-pressed="true">Dashboard</button><button type="button" data-view-btn="transaktionen" aria-pressed="false">Transaktionen</button><button type="button" data-view-btn="bausteine" aria-pressed="false">Bausteine</button></span></div>
+  <div><label>Papier</label><span class="seg" id="seg-theme"><button type="button" data-theme-btn="light" aria-pressed="false">Hell</button><button type="button" data-theme-btn="dark" aria-pressed="false">Dunkel</button><button type="button" data-theme-btn="system" aria-pressed="true">System</button></span></div>
+  <div><label>Gerät</label><span class="seg" id="seg-width"><button type="button" data-width-btn="desktop" aria-pressed="true">Desktop</button><button type="button" data-width-btn="mobile" aria-pressed="false">Handy</button></span></div>
+</div>
+
+<div class="frame" id="frame">
+<div class="app">
+  <aside class="side" aria-label="Seitenleiste">
+    <div class="brand">
+      <div class="mark"><svg><use href="#i-fox"/></svg></div>
+      <div><b>Finance Fox</b><small>Self-hosted &amp; privat</small></div>
+    </div>
+    <nav class="nav">
+      <h6>Alltag</h6>
+      <a href="#" data-nav="dashboard" aria-current="page"><svg class="ic"><use href="#i-dash"/></svg>Dashboard</a>
+      <a href="#" data-nav="transaktionen"><svg class="ic"><use href="#i-swap"/></svg>Transaktionen</a>
+      <a href="#"><svg class="ic"><use href="#i-repeat"/></svg>Wiederkehrend</a>
+      <a href="#"><svg class="ic"><use href="#i-users"/></svg>Aufteilung</a>
+      <h6>Konten</h6>
+      <a href="#"><svg class="ic"><use href="#i-wallet"/></svg>Konten</a>
+      <a href="#"><svg class="ic"><use href="#i-branch"/></svg>Geldfluss</a>
+      <h6>Planung</h6>
+      <a href="#"><svg class="ic"><use href="#i-target"/></svg>Budgets</a>
+      <a href="#"><svg class="ic"><use href="#i-piggy"/></svg>Sparziele</a>
+      <a href="#"><svg class="ic"><use href="#i-landmark"/></svg>Vorsorge</a>
+      <a href="#"><svg class="ic"><use href="#i-house"/></svg>Hypotheken</a>
+      <a href="#"><svg class="ic"><use href="#i-umbrella"/></svg>Versicherungen</a>
+      <h6>Analyse</h6>
+      <a href="#"><svg class="ic"><use href="#i-up"/></svg>Prognosen</a>
+      <a href="#"><svg class="ic"><use href="#i-chart"/></svg>Auswertung</a>
+      <a href="#"><svg class="ic"><use href="#i-file"/></svg>Bericht</a>
+      <h6>Verwaltung</h6>
+      <a href="#"><svg class="ic"><use href="#i-usercog"/></svg>Personen</a>
+      <a href="#"><svg class="ic"><use href="#i-refresh"/></svg>Abgleich</a>
+      <a href="#" data-nav="bausteine"><svg class="ic"><use href="#i-sliders"/></svg>Einstellungen</a>
+    </nav>
+    <div class="side-foot">
+      <div class="lab">Gesamtvermögen</div>
+      <div class="hero">18.002,20 €</div>
+      <div class="safe"><svg class="ic" style="width:14px;height:14px"><use href="#i-shield"/></svg>Daten bleiben auf deinem Server</div>
+    </div>
+    <div class="side-tools"><button class="btn btn-ghost btn-icon" type="button" title="Seitenleiste einklappen"><svg class="ic"><use href="#i-panel"/></svg></button></div>
+  </aside>
+
+  <div class="col">
+    <header class="top">
+      <div class="brand-m"><div class="mark"><svg><use href="#i-fox"/></svg></div>Finance Fox</div>
+      <div class="house">Gemeinsamer Haushalt · Alex &amp; Sam</div>
+      <div class="top-r">
+        <button class="btn hide-m" type="button"><svg class="ic"><use href="#i-zap"/></svg>Schnell</button>
+        <div class="sync" title="Zuletzt abgeglichen vor 2 Minuten"><svg class="ic" style="width:14px;height:14px"><use href="#i-check"/></svg><span>Abgeglichen</span></div>
+        <button class="btn btn-ghost btn-icon" type="button" id="hdr-theme" title="Hell/Dunkel wechseln"><svg class="ic"><use href="#i-moon"/></svg></button>
+        <div class="avs"><div class="av" style="background:var(--u-alex)" title="Alex">AL</div><div class="av" style="background:var(--u-sam)" title="Sam">SA</div></div>
+        <div class="me hide-m"><span>Alex</span><button class="btn btn-ghost btn-icon btn-sm" type="button" title="Abmelden"><svg class="ic"><use href="#i-logout"/></svg></button></div>
+      </div>
+    </header>
+
+    <!-- ================= Dashboard ================= -->
+    <main class="view" data-view="dashboard">
+      <div class="ph">
+        <div><h1>Dashboard</h1><p>Überblick für Juli 2026</p></div>
+        <div class="acts"><button class="btn btn-primary" type="button"><svg class="ic"><use href="#i-plus"/></svg>Neue Buchung</button></div>
+      </div>
+
+      <div class="kpis">
+        <div class="sheet kpi"><div class="lab">Gesamtvermögen<svg class="ic"><use href="#i-wallet"/></svg></div><div class="val">18.002,20 €</div><div class="sub">4 Konten · inkl. Immobilie 246.500,00 €</div></div>
+        <div class="sheet kpi"><div class="lab">Einnahmen (Monat)<svg class="ic" style="color:var(--good)"><use href="#i-up"/></svg></div><div class="val pos">5.600,00 €</div><div class="sub">Juli 2026</div></div>
+        <div class="sheet kpi"><div class="lab">Ausgaben (Monat)<svg class="ic" style="color:var(--bad)"><use href="#i-down"/></svg></div><div class="val neg">2.023,80 €</div><div class="sub">Juli 2026</div></div>
+        <div class="sheet kpi"><div class="lab">Sparrate (Monat)<svg class="ic"><use href="#i-scale"/></svg></div><div class="val pos">3.576,20 €</div><div class="sub">64 % der Einnahmen</div></div>
+      </div>
+
+      <div class="g2">
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Cashflow</h2><p>Einnahmen und Ausgaben der letzten 6 Monate</p></div></div>
+          <div class="sheet-b">
+            <div class="legend"><span><i class="key" style="border-color:var(--good)"></i>Einnahmen</span><span><i class="key" style="border-color:var(--bad)"></i>Ausgaben</span></div>
+            <div class="chart" id="cf"></div>
+          </div>
+        </section>
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Ausgaben nach Kategorie</h2><p>Juli 2026</p></div></div>
+          <div class="sheet-b"><div class="donut" id="dn"></div></div>
+        </section>
+      </div>
+
+      <div class="g2">
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Letzte Buchungen</h2><p>Die jüngsten Einträge im Haushaltsbuch</p></div><a class="btn btn-sm" href="#" data-nav="transaktionen">Alle anzeigen</a></div>
+          <div class="sheet-b" style="padding-top:8px">
+            <ul class="ledger">
+              <li><span class="dot" style="background:var(--c7)"></span><div class="who"><b>Schwimmbad</b><small>26.07.2026 · Alex · Girokonto</small></div><span class="amt neg">−23,00 €</span></li>
+              <li><span class="dot" style="background:var(--c3)"></span><div class="who"><b>Wochenmarkt</b><small>25.07.2026 · Sam · Girokonto</small></div><span class="amt neg">−45,20 €</span></li>
+              <li><span class="dot" style="background:var(--c3)"></span><div class="who"><b>Grill-Einkauf Wochenende <span class="stamp stamp-good">geteilt</span></b><small>22.07.2026 · Alex · Bargeld</small></div><span class="amt neg">−91,40 €</span></li>
+              <li><span class="dot" style="background:var(--rule-strong)"></span><div class="who"><b>Bargeld abgehoben</b><small>20.07.2026 · Alex · Girokonto → Bargeld</small></div><span class="amt">100,00 €</span></li>
+              <li><span class="dot" style="background:var(--c7)"></span><div class="who"><b>Restaurant Il Ponte <span class="stamp stamp-good">geteilt</span></b><small>18.07.2026 · Sam · Bargeld</small></div><span class="amt neg">−51,00 €</span></li>
+              <li><span class="dot" style="background:var(--c3)"></span><div class="who"><b>Gehalt Juli</b><small>01.07.2026 · Alex · Girokonto</small></div><span class="amt pos">+3.400,00 €</span></li>
+            </ul>
+          </div>
+        </section>
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Offene Salden</h2><p>Aus geteilten Ausgaben</p></div></div>
+          <div class="sheet-b" style="padding-top:8px">
+            <ul class="ledger">
+              <li><div class="av" style="background:var(--u-alex)">AL</div><div class="who"><b>Alex</b><small>hat vorgestreckt</small></div><span class="amt pos">+2.011,15 €</span></li>
+              <li><div class="av" style="background:var(--u-sam)">SA</div><div class="who"><b>Sam</b><small>schuldet</small></div><span class="amt neg">−2.011,15 €</span></li>
+            </ul>
+            <div class="sum"><span>Ausgleich: Sam → Alex</span><span class="mono">2.011,15 €</span></div>
+            <div class="row-wrap" style="margin-top:12px"><button class="btn btn-stamp btn-sm" type="button"><svg class="ic"><use href="#i-check"/></svg>Ausgleich verbuchen</button><span class="muted" style="font-size:12px">Bucht eine Umbuchung zwischen den Konten.</span></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ================= Transaktionen ================= -->
+    <main class="view" data-view="transaktionen" hidden>
+      <div class="ph">
+        <div><h1>Transaktionen</h1><p>43 Buchungen · Saldo der Auswahl: <span class="mono">10.152,20 €</span></p></div>
+        <div class="acts">
+          <button class="btn" type="button"><svg class="ic"><use href="#i-dl"/></svg>CSV exportieren</button>
+          <button class="btn" type="button"><svg class="ic"><use href="#i-ul"/></svg>CSV importieren</button>
+          <button class="btn" type="button"><svg class="ic"><use href="#i-fileup"/></svg>CAMT importieren</button>
+          <button class="btn btn-primary" type="button"><svg class="ic"><use href="#i-plus"/></svg>Neue Buchung</button>
+        </div>
+      </div>
+
+      <section class="sheet">
+        <div class="sheet-h"><div><h2>Filter</h2></div></div>
+        <div class="sheet-b">
+          <div class="filters">
+            <label class="input search"><svg class="ic"><use href="#i-search"/></svg><input id="f-search" type="search" placeholder="Suchen…"></label>
+            <button class="input sel" type="button">Alle Typen<svg class="ic"><use href="#i-chev"/></svg></button>
+            <button class="input sel" type="button">Alle Konten<svg class="ic"><use href="#i-chev"/></svg></button>
+            <button class="input sel" type="button">Alle Kategorien<svg class="ic"><use href="#i-chev"/></svg></button>
+            <button class="input sel" type="button">Alle Personen<svg class="ic"><use href="#i-chev"/></svg></button>
+            <button class="input sel" type="button">Alle Tags<svg class="ic"><use href="#i-chev"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet">
+        <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Datum</th><th>Beschreibung</th><th>Kategorie</th><th>Konto</th><th>Person</th><th class="num">Betrag</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="date">26.07.2026</td><td><div class="desc">Schwimmbad</div></td><td><span class="cat"><span class="dot" style="background:var(--c7)"></span>Freizeit</span></td><td>Girokonto</td><td><span class="who2"><span class="dot" style="background:var(--u-alex)"></span>Alex</span></td><td class="num amt neg">−23,00 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">25.07.2026</td><td><div class="desc">Wochenmarkt</div></td><td><span class="cat"><span class="dot" style="background:var(--c3)"></span>Lebensmittel</span></td><td>Girokonto</td><td><span class="who2"><span class="dot" style="background:var(--u-sam)"></span>Sam</span></td><td class="num amt neg">−45,20 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">22.07.2026</td><td><div class="desc">Grill-Einkauf Wochenende</div><div class="chips"><span class="stamp stamp-good">geteilt</span><span class="stamp">bearbeitet</span></div></td><td><span class="cat"><span class="dot" style="background:var(--c3)"></span>Lebensmittel</span></td><td>Bargeld</td><td><span class="who2"><span class="dot" style="background:var(--u-alex)"></span>Alex</span></td><td class="num amt neg">−91,40 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm on" title="2 Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">20.07.2026</td><td><div class="desc">Bargeld abgehoben</div></td><td><span class="muted">—</span></td><td>Girokonto <span class="arrow">→</span> Bargeld</td><td><span class="who2"><span class="dot" style="background:var(--u-alex)"></span>Alex</span></td><td class="num amt">100,00 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">18.07.2026</td><td><div class="desc">Restaurant Il Ponte</div><div class="chips"><span class="stamp stamp-good">geteilt</span></div></td><td><span class="cat"><span class="dot" style="background:var(--c7)"></span>Freizeit</span></td><td>Bargeld</td><td><span class="who2"><span class="dot" style="background:var(--u-sam)"></span>Sam</span></td><td class="num amt neg">−51,00 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">15.07.2026</td><td><div class="desc">Wocheneinkauf Supermarkt</div><div class="chips"><span class="stamp stamp-good">geteilt</span></div></td><td><span class="cat"><span class="dot" style="background:var(--c3)"></span>Lebensmittel</span></td><td>Girokonto</td><td><span class="who2"><span class="dot" style="background:var(--u-alex)"></span>Alex</span></td><td class="num amt neg">−112,30 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm on" title="1 Beleg"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">12.07.2026</td><td><div class="desc">Strom Abschlag</div><div class="chips"><span class="tag"><span class="dot" style="background:var(--c2)"></span>Fixkosten</span></div></td><td><span class="cat"><span class="dot" style="background:var(--c2)"></span>Strom</span></td><td>Girokonto</td><td><span class="who2"><span class="dot" style="background:var(--u-alex)"></span>Alex</span></td><td class="num amt neg">−92,00 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm on" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">09.07.2026</td><td><div class="desc">Mietwagen</div><div class="chips"><span class="stamp stamp-good">geteilt</span><span class="stamp">bearbeitet</span><span class="tag proj">Urlaub 2026</span><span class="tag"><span class="dot" style="background:var(--c8)"></span>Urlaub</span><span class="tag"><span class="dot" style="background:var(--c1)"></span>Online</span></div></td><td><span class="cat"><span class="dot" style="background:var(--c1)"></span>Reisen</span></td><td>Girokonto</td><td><span class="who2"><span class="dot" style="background:var(--u-alex)"></span>Alex</span></td><td class="num amt neg">−210,00 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm on" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">01.07.2026</td><td><div class="desc">Gehalt Juli</div><div class="chips"><span class="stamp stamp-ink">Dauerbuchung</span></div></td><td><span class="cat"><span class="dot" style="background:var(--c6)"></span>Gehalt</span></td><td>Girokonto</td><td><span class="who2"><span class="dot" style="background:var(--u-alex)"></span>Alex</span></td><td class="num amt pos">+3.400,00 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+            <tr><td class="date">01.07.2026</td><td><div class="desc">Gehalt Juli</div><div class="chips"><span class="stamp stamp-ink">Dauerbuchung</span></div></td><td><span class="cat"><span class="dot" style="background:var(--c6)"></span>Gehalt</span></td><td>Girokonto</td><td><span class="who2"><span class="dot" style="background:var(--u-sam)"></span>Sam</span></td><td class="num amt pos">+2.200,00 €</td><td class="acts"><button class="btn btn-ghost btn-icon btn-sm" title="Bearbeiten"><svg class="ic"><use href="#i-pencil"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Tags"><svg class="ic"><use href="#i-tag"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Belege"><svg class="ic"><use href="#i-clip"/></svg></button><button class="btn btn-ghost btn-icon btn-sm" title="Löschen"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>
+          </tbody>
+          <tfoot><tr><td colspan="5">Summe dieser Seite <span class="muted" style="font-weight:400">· 10 von 43 Buchungen</span></td><td class="num amt pos">+4.975,10 €</td><td></td></tr></tfoot>
+        </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================= Bausteine ================= -->
+    <main class="view" data-view="bausteine" hidden>
+      <div class="ph">
+        <div><h1>Bausteine</h1><p>Papier, Tinte, Schrift und die wiederkehrenden Elemente des Entwurfs</p></div>
+      </div>
+
+      <div class="spec">
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Papier &amp; Tinte</h2><p>Zwei Papierstufen, drei Tintenstufen, Farbe nur mit Bedeutung</p></div></div>
+          <div class="sheet-b">
+            <div class="sw"><i style="background:var(--paper)"></i>Unterlage (Seite)<code data-tok="--paper"></code></div>
+            <div class="sw"><i style="background:var(--sheet)"></i>Blatt (Karte, Dialog)<code data-tok="--sheet"></code></div>
+            <div class="sw"><i style="background:var(--sheet-2)"></i>Blatt, vertieft<code data-tok="--sheet-2"></code></div>
+            <div class="sw"><i style="background:var(--ink)"></i>Tinte<code data-tok="--ink"></code></div>
+            <div class="sw"><i style="background:var(--ink-2)"></i>Tinte, sekundär<code data-tok="--ink-2"></code></div>
+            <div class="sw"><i style="background:var(--ink-3)"></i>Tinte, gedämpft<code data-tok="--ink-3"></code></div>
+            <div class="sw"><i style="background:var(--rule)"></i>Linie (Hairline)<code data-tok="--rule"></code></div>
+            <div class="sw"><i style="background:var(--good)"></i>Einnahme · positiv<code data-tok="--good"></code></div>
+            <div class="sw"><i style="background:var(--bad)"></i>Ausgabe · Rotstift<code data-tok="--bad"></code></div>
+            <div class="sw"><i style="background:var(--warn)"></i>Warnung<code data-tok="--warn"></code></div>
+            <div class="sw"><i style="background:var(--stamp)"></i>Stempel (Marke, Fokus)<code data-tok="--stamp"></code></div>
+            <div style="margin-top:12px" class="lab">Buntstifte für Kategorien &amp; Tags</div>
+            <div class="pal" style="margin-top:6px"><i style="background:var(--c1)"></i><i style="background:var(--c2)"></i><i style="background:var(--c3)"></i><i style="background:var(--c4)"></i><i style="background:var(--c5)"></i><i style="background:var(--c6)"></i><i style="background:var(--c7)"></i><i style="background:var(--c8)"></i></div>
+            <p class="muted" style="font-size:12px;margin:8px 0 0">Reihenfolge fest, geprüft auf Unterscheidbarkeit bei Farbsehschwäche (hell und dunkel).</p>
+          </div>
+        </section>
+
+        <section class="sheet type">
+          <div class="sheet-h"><div><h2>Schrift</h2><p>Serife für Titel und Kennzahlen, Sans für die Bedienung, Mono für Beträge</p></div></div>
+          <div class="sheet-b">
+            <p><span class="t-h1">Haushaltsbuch</span><small>Newsreader 600 · 28 px · Seitentitel</small></p>
+            <p><span class="t-h2">Ausgaben nach Kategorie</span><small>Newsreader 600 · 17 px · Kartentitel</small></p>
+            <p><span class="t-h1">18.002,20 €</span><small>Newsreader 600 · 26 px · Kennzahl, Lining-Ziffern</small></p>
+            <p><span class="t-body">Die App läuft auch ohne Verbindung zum Heimserver vollständig weiter.</span><small>IBM Plex Sans 400 · 14 px · Fließtext und Bedienelemente</small></p>
+            <p><span class="t-mono">−1.234,56 €&nbsp;&nbsp;&nbsp;12.07.2026&nbsp;&nbsp;&nbsp;CH93 0076 2011 6238 5295 7</span><small>IBM Plex Mono 400 · 13 px · Beträge, Daten, IBAN, Achsen (tabellarische Ziffern)</small></p>
+            <p><span class="t-lab">Einnahmen (Monat)</span><small>IBM Plex Sans 500 · 11 px · Versalien, Spationierung 8 % · Feldbezeichner</small></p>
+          </div>
+        </section>
+
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Knöpfe &amp; Stempel</h2><p>Ein gefüllter Knopf je Ansicht, alles andere Umriss oder Geist</p></div></div>
+          <div class="sheet-b">
+            <div class="row-wrap"><button class="btn btn-primary" type="button"><svg class="ic"><use href="#i-plus"/></svg>Neue Buchung</button><button class="btn" type="button"><svg class="ic"><use href="#i-dl"/></svg>CSV exportieren</button><button class="btn btn-ghost" type="button">Abbrechen</button><button class="btn btn-stamp" type="button"><svg class="ic"><use href="#i-check"/></svg>Verbuchen</button><button class="btn btn-danger" type="button"><svg class="ic"><use href="#i-trash"/></svg>Löschen</button><button class="btn" type="button" disabled>Deaktiviert</button></div>
+            <div class="row-wrap" style="margin-top:14px"><span class="stamp stamp-good">geteilt</span><span class="stamp">bearbeitet</span><span class="stamp stamp-ink">Dauerbuchung</span><span class="stamp stamp-good">Aktiv</span><span class="stamp stamp-warn">Pausiert</span><span class="stamp stamp-bad">Überzogen</span><span class="stamp stamp-warn">keine Daten</span><span class="stamp stamp-ink stamp-tilt">Archiviert</span></div>
+            <div class="row-wrap" style="margin-top:14px"><span class="tag"><span class="dot" style="background:var(--c2)"></span>Fixkosten</span><span class="tag"><span class="dot" style="background:var(--c8)"></span>Urlaub</span><span class="tag"><span class="dot" style="background:var(--c1)"></span>Online</span><span class="tag proj">Urlaub 2026</span><span class="tag proj" style="border-left-color:var(--c4)">Küche</span></div>
+            <p class="muted" style="font-size:12px;margin:12px 0 0">Stempel = Zustand (Versalien, Umriss). Etikett = Zuordnung (Tag, Projekt). Der schiefe Stempel bleibt Ausnahmen wie „Archiviert" vorbehalten.</p>
+          </div>
+        </section>
+
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Formular</h2><p>Felder als Zeilen auf dem Blatt, Umrisse in Bleistiftgrau</p></div></div>
+          <div class="sheet-b" style="display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))">
+            <div class="field"><label for="b-betrag">Betrag</label><label class="input"><input id="b-betrag" value="91,40" class="mono">€</label></div>
+            <div class="field"><label for="b-datum">Datum</label><label class="input"><input id="b-datum" value="22.07.2026" class="mono"></label></div>
+            <div class="field" style="grid-column:1/-1"><label for="b-notiz">Beschreibung</label><label class="input"><input id="b-notiz" value="Grill-Einkauf Wochenende"></label></div>
+            <div class="field"><label>Konto</label><button class="input sel" type="button" style="width:100%">Bargeld<svg class="ic"><use href="#i-chev"/></svg></button></div>
+            <div class="field"><label>Kategorie</label><button class="input sel" type="button" style="width:100%"><span class="cat"><span class="dot" style="background:var(--c3)"></span>Lebensmittel</span><svg class="ic"><use href="#i-chev"/></svg></button></div>
+            <div class="row-wrap" style="grid-column:1/-1;gap:18px"><span><span class="switch on"></span> Ausgabe teilen</span><span><span class="check on"><svg class="ic" style="width:11px;height:11px"><use href="#i-check"/></svg></span> Alex</span><span><span class="check on"><svg class="ic" style="width:11px;height:11px"><use href="#i-check"/></svg></span> Sam</span><span><span class="switch"></span> Beleg anhängen</span></div>
+          </div>
+        </section>
+
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Budget-Meter</h2><p>Die Spur ist eine Bleistiftlinie, die Füllung Tinte; Rotstift erst beim Überziehen</p></div></div>
+          <div class="sheet-b" style="padding-top:6px">
+            <div class="budget"><div class="row"><span><span class="dot" style="background:var(--c3)"></span> Lebensmittel</span><span class="mono">412,30 / 500,00 €</span></div><div class="meter"><i style="width:82%"></i></div></div>
+            <div class="budget"><div class="row"><span><span class="dot" style="background:var(--c7)"></span> Freizeit <span class="stamp stamp-bad">Überzogen</span></span><span class="mono neg">226,00 / 200,00 €</span></div><div class="meter"><i class="over" style="width:100%"></i></div></div>
+            <div class="budget"><div class="row"><span><span class="dot" style="background:var(--c1)"></span> Mobilität</span><span class="mono">148,00 / 300,00 €</span></div><div class="meter"><i style="width:49%"></i></div></div>
+            <div class="budget"><div class="row"><span><span class="dot" style="background:var(--c2)"></span> Strom <span class="stamp stamp-warn">92 %</span></span><span class="mono">92,00 / 100,00 €</span></div><div class="meter"><i class="warn" style="width:92%"></i></div></div>
+          </div>
+        </section>
+
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Notizzettel</h2><p>Hinweise und Erinnerungen kleben auf dem Blatt, statt als Alert-Box zu stören</p></div></div>
+          <div class="sheet-b" style="display:flex;flex-direction:column;gap:16px">
+            <div class="note"><strong>Zinsbindung läuft ab</strong>Tranche „Festhypothek 10 J." endet am 31.03.2027. Angebote einholen, bevor die Bank verlängert.</div>
+            <div class="note" style="transform:rotate(.5deg)"><strong>Kündigungsfrist Hausrat</strong>Police „Hausrat &amp; Haftpflicht" kann bis 30.09.2026 gekündigt werden.</div>
+            <ul class="rules">
+              <li>Gelber Zettel = Erinnerung mit Datum. Rote Stempel bleiben Zuständen vorbehalten.</li>
+              <li>Fehler beim Speichern erscheinen als Zeile in Rotstift direkt unter dem Feld, nicht als Zettel.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="sheet">
+          <div class="sheet-h"><div><h2>Regeln in Kürze</h2><p>Was den Entwurf zusammenhält</p></div></div>
+          <div class="sheet-b">
+            <ul class="rules">
+              <li><b>Zwei Papierstufen.</b> Unterlage für Seite und Navigation, Blatt für alles, was Inhalt trägt. Kein Blatt auf einem Blatt.</li>
+              <li><b>Linien statt Kästen.</b> Hairlines trennen Zeilen, ein Doppelstrich schließt Summen ab. Rahmen nur um Blätter und Felder.</li>
+              <li><b>Farbe nur mit Bedeutung.</b> Bedienung in Tinte. Grün für Einnahmen, Rotstift für Ausgaben, Buntstifte für Kategorien, ein grüner Stempel für die Marke.</li>
+              <li><b>Ziffern als Kolonne.</b> Beträge und Daten in Mono mit tabellarischen Ziffern, rechtsbündig; Kennzahlen in Serife.</li>
+              <li><b>Ecken 4 px.</b> Geschnittenes Papier, keine Kieselsteine. Runde Formen nur für Avatare und Schalter.</li>
+              <li><b>Körnung 5 %.</b> Eine feste Papierkörnung über der Seite, nie über dem Text der Blätter; abschaltbar.</li>
+            </ul>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <nav class="bnav" aria-label="Schnellzugriff">
+      <a href="#" data-nav="dashboard" aria-current="page"><svg class="ic ic-lg"><use href="#i-dash"/></svg><span>Dashboard</span></a>
+      <a href="#" data-nav="transaktionen"><svg class="ic ic-lg"><use href="#i-swap"/></svg><span>Transaktionen</span></a>
+      <a href="#"><svg class="ic ic-lg"><use href="#i-wallet"/></svg><span>Konten</span></a>
+      <a href="#"><svg class="ic ic-lg"><use href="#i-target"/></svg><span>Budgets</span></a>
+      <a href="#" data-nav="bausteine"><svg class="ic ic-lg"><use href="#i-menu"/></svg><span>Mehr</span></a>
+    </nav>
+  </div>
+</div>
+</div>
+
+<script>
+(function(){
+  var $=function(s,r){return (r||document).querySelector(s)};
+  var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+  var fmt=function(c){return (c/100).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'};
+
+  /* Ansicht */
+  function showView(v){
+    $$('.view').forEach(function(el){el.hidden=el.dataset.view!==v});
+    $$('[data-view-btn]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.viewBtn===v))});
+    $$('[data-nav]').forEach(function(a){if(a.dataset.nav===v)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
+    store.set('ffp-view',v);
+    var f=$('#frame'); if(f.classList.contains('mobile'))f.scrollTop=0;
+  }
+  $$('[data-view-btn]').forEach(function(b){b.addEventListener('click',function(){showView(b.dataset.viewBtn)})});
+  $$('[data-nav]').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();showView(a.dataset.nav)})});
+  $$('a[href="#"]:not([data-nav])').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault()})});
+
+  /* Papier hell/dunkel */
+  function resolved(){var t=document.documentElement.dataset.theme;if(t)return t;return matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}
+  function setTheme(t){
+    var r=document.documentElement; if(t==='system')delete r.dataset.theme;else r.dataset.theme=t;
+    $$('[data-theme-btn]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeBtn===t))});
+    store.set('ffp-theme',t); syncHdr(); fillTokens();
+  }
+  function syncHdr(){var u=$('#hdr-theme use');u.setAttribute('href',resolved()==='dark'?'#i-sun':'#i-moon')}
+  $$('[data-theme-btn]').forEach(function(b){b.addEventListener('click',function(){setTheme(b.dataset.themeBtn)})});
+  $('#hdr-theme').addEventListener('click',function(){setTheme(resolved()==='dark'?'light':'dark')});
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){syncHdr();fillTokens()});
+
+  /* Gerät */
+  function setWidth(w){
+    $('#frame').classList.toggle('mobile',w==='mobile');
+    $$('[data-width-btn]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.widthBtn===w))});
+    store.set('ffp-width',w);
+  }
+  $$('[data-width-btn]').forEach(function(b){b.addEventListener('click',function(){setWidth(b.dataset.widthBtn)})});
+
+  /* Token-Werte in den Bausteinen anzeigen */
+  function fillTokens(){
+    var cs=getComputedStyle(document.documentElement);
+    $$('[data-tok]').forEach(function(c){c.textContent=cs.getPropertyValue(c.dataset.tok).trim()});
+  }
+
+  /* Cashflow: Linien in Tinte, Flächen als Schraffur */
+  function cashflow(){
+    var host=$('#cf'); if(!host)return;
+    /* 1 SVG-Einheit = 1 px: die Schrift bleibt auf jeder Breite 11 px */
+    var W=Math.max(300,Math.round(host.clientWidth||640)),H=Math.round(Math.min(260,Math.max(200,W*.4)));
+    var showEnd=W>=520, pl=54,pr=showEnd?84:16,pt=14,pb=28;
+    var months=['Feb','Mär','Apr','Mai','Jun','Jul'], full=['Februar 2026','März 2026','April 2026','Mai 2026','Juni 2026','Juli 2026'];
+    var inc=[560000,560000,560000,590000,560000,560000], exp=[231000,278000,214500,302000,256000,202380];
+    var ymax=600000;
+    var x=function(i){return pl+i*(W-pl-pr)/(months.length-1)}, y=function(v){return pt+(H-pt-pb)*(1-v/ymax)};
+    var line=function(a){return a.map(function(v,i){return (i?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1)}).join(' ')};
+    var area=function(a){return line(a)+' L'+x(a.length-1).toFixed(1)+','+y(0).toFixed(1)+' L'+x(0).toFixed(1)+','+y(0).toFixed(1)+' Z'};
+    var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Cashflow: Einnahmen und Ausgaben je Monat, Februar bis Juli 2026">';
+    s+='<defs><pattern id="hIn" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="var(--good)" stroke-width="1"/></pattern>';
+    s+='<pattern id="hOut" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(135)"><line x1="0" y1="0" x2="0" y2="6" stroke="var(--bad)" stroke-width="1"/></pattern></defs>';
+    [0,200000,400000,600000].forEach(function(t){
+      s+='<line class="'+(t?'grid':'base')+'" x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y(t).toFixed(1)+'" y2="'+y(t).toFixed(1)+'"/>';
+      s+='<text class="ax" x="'+(pl-8)+'" y="'+(y(t)+4).toFixed(1)+'" text-anchor="end">'+(t/100).toLocaleString('de-DE')+' €</text>';
+    });
+    s+='<path d="'+area(inc)+'" fill="url(#hIn)" opacity=".38"/><path d="'+area(exp)+'" fill="url(#hOut)" opacity=".38"/>';
+    s+='<path d="'+line(inc)+'" fill="none" stroke="var(--good)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    s+='<path d="'+line(exp)+'" fill="none" stroke="var(--bad)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    s+='<line id="cf-x" class="xh" y1="'+pt+'" y2="'+y(0).toFixed(1)+'" x1="0" x2="0"/>';
+    inc.forEach(function(v,i){s+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="4" fill="var(--good)" stroke="var(--sheet)" stroke-width="2"/>'});
+    exp.forEach(function(v,i){s+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="4" fill="var(--bad)" stroke="var(--sheet)" stroke-width="2"/>'});
+    var L=months.length-1;
+    if(showEnd){
+      s+='<text class="lbl" x="'+(x(L)+10).toFixed(1)+'" y="'+(y(inc[L])+4).toFixed(1)+'">'+fmt(inc[L])+'</text>';
+      s+='<text class="lbl" x="'+(x(L)+10).toFixed(1)+'" y="'+(y(exp[L])+4).toFixed(1)+'">'+fmt(exp[L])+'</text>';
+    }
+    months.forEach(function(m,i){s+='<text class="ax" x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle">'+m+'</text>'});
+    s+='<rect id="cf-hit" x="'+pl+'" y="'+pt+'" width="'+(W-pl-pr)+'" height="'+(H-pt-pb)+'" fill="transparent"/></svg><div class="tip" id="cf-tip"></div>';
+    host.innerHTML=s;
+    var svg=$('svg',host), hit=$('#cf-hit'), xh=$('#cf-x'), tip=$('#cf-tip');
+    function move(e){
+      var r=svg.getBoundingClientRect(); var vx=(e.clientX-r.left)/r.width*W;
+      var i=Math.max(0,Math.min(L,Math.round((vx-pl)/((W-pl-pr)/L))));
+      xh.setAttribute('x1',x(i).toFixed(1)); xh.setAttribute('x2',x(i).toFixed(1)); xh.style.visibility='visible';
+      tip.innerHTML='<b>'+full[i]+'</b><div><span><span class="sw" style="background:var(--good)"></span>Einnahmen</span><span class="mono">'+fmt(inc[i])+'</span></div><div><span><span class="sw" style="background:var(--bad)"></span>Ausgaben</span><span class="mono">'+fmt(exp[i])+'</span></div><div style="border-top:1px solid var(--rule);margin-top:4px;padding-top:4px"><span>Sparrate</span><span class="mono">'+fmt(inc[i]-exp[i])+'</span></div>';
+      tip.style.display='block';
+      var px=x(i)/W*r.width; var left=px+12; if(left+tip.offsetWidth>r.width)left=px-tip.offsetWidth-12;
+      tip.style.left=Math.max(0,left)+'px'; tip.style.top='8px';
+    }
+    hit.addEventListener('pointermove',move); hit.addEventListener('pointerdown',move);
+    hit.addEventListener('pointerleave',function(){xh.style.visibility='hidden';tip.style.display='none'});
+  }
+
+  /* Ausgaben nach Kategorie: Ring mit Papierfugen */
+  function donut(){
+    var host=$('#dn'); if(!host)return;
+    var cats=[['Wohnen',118000,'--c2'],['Lebensmittel',41200,'--c3'],['Freizeit',22600,'--c7'],['Mobilität',14800,'--c1'],['Sonstiges',5780,'--c4']];
+    var total=cats.reduce(function(a,c){return a+c[1]},0);
+    var cx=84,cy=84,R=78,r=52,a0=-Math.PI/2;
+    var P=function(rad,a){return (cx+rad*Math.cos(a)).toFixed(2)+','+(cy+rad*Math.sin(a)).toFixed(2)};
+    var s='<svg viewBox="0 0 168 168" role="img" aria-label="Ausgaben nach Kategorie, Juli 2026">';
+    cats.forEach(function(c,i){
+      var a1=a0+c[1]/total*2*Math.PI; var big=(a1-a0)>Math.PI?1:0;
+      s+='<path data-i="'+i+'" d="M'+P(R,a0)+' A'+R+','+R+' 0 '+big+',1 '+P(R,a1)+' L'+P(r,a1)+' A'+r+','+r+' 0 '+big+',0 '+P(r,a0)+' Z" fill="var('+c[2]+')" stroke="var(--sheet)" stroke-width="2"/>';
+      a0=a1;
+    });
+    s+='<text class="ctr" x="84" y="82" text-anchor="middle">'+fmt(total)+'</text><text class="ctr2" x="84" y="98" text-anchor="middle">Juli 2026</text></svg>';
+    s+='<ul class="dl">'+cats.map(function(c,i){return '<li data-i="'+i+'"><span class="dot" style="background:var('+c[2]+')"></span>'+c[0]+'<span class="amt">'+fmt(c[1])+'</span><span class="pct mono">'+Math.round(c[1]/total*100)+' %</span></li>'}).join('')+'</ul>';
+    host.innerHTML=s;
+    var items=$$('[data-i]',host);
+    function hi(i){items.forEach(function(el){el.classList.toggle('dim',i!=null&&el.dataset.i!==String(i))})}
+    items.forEach(function(el){el.addEventListener('pointerenter',function(){hi(el.dataset.i)});el.addEventListener('pointerleave',function(){hi(null)})});
+  }
+
+  showView(store.get('ffp-view')||'dashboard');
+  setTheme(store.get('ffp-theme')||'system');
+  setWidth(store.get('ffp-width')||'desktop');
+  cashflow(); donut(); fillTokens();
+  /* Chart bei Breitenänderung (Fenster, Gerät-Umschalter) neu zeichnen */
+  var raf=0; function redraw(){cancelAnimationFrame(raf);raf=requestAnimationFrame(cashflow)}
+  if(window.ResizeObserver){new ResizeObserver(redraw).observe($('#cf'))}else{window.addEventListener('resize',redraw)}
+})();
+</script>
+<!-- ARTIFACT-BODY-END -->
+</body>
+</html>

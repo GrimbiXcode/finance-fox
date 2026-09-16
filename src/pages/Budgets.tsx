@@ -18,6 +18,8 @@ import { amountPlaceholder, currencySymbol, formatCents, parseEuro } from '@/lib
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { CHART } from '@/lib/chartColors';
+import { pencil } from '@/lib/pencil';
 
 export default function Budgets() {
   const { categories } = useFinanceData();
@@ -65,14 +67,14 @@ export default function Budgets() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Budgets</h1>
+          <h1 className="text-2xl font-semibold">Budgets</h1>
           <p className="text-sm text-muted-foreground">
             {formatCents(totalSpent)} von {formatCents(totalBudget)} ausgegeben
           </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Neues Budget</Button>
+            <Button><Plus className="mr-2 h-4 w-4" /> Neues Budget</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Neues Budget</DialogTitle></DialogHeader>
@@ -126,7 +128,7 @@ export default function Budgets() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={setBudget.isPending}>Speichern</Button>
+              <Button onClick={submit} disabled={setBudget.isPending}>Speichern</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -152,7 +154,7 @@ export default function Budgets() {
               <Card key={b.id}>
                 <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? '#94a3b8' }} />
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />
                     <div className="min-w-0">
                       <CardTitle className="text-base" title={cat?.name}>{cat?.name ?? 'Unbekannt'}</CardTitle>
                       <CardDescription>
@@ -167,12 +169,12 @@ export default function Budgets() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex items-baseline justify-between">
-                    <span className={cn('text-xl font-bold', over && 'text-destructive')}>{formatCents(used)}</span>
-                    <span className={cn('text-sm font-medium', over ? 'text-destructive' : pct >= 80 ? 'text-amber-500' : 'text-muted-foreground')}>
+                    <span className={cn('font-serif text-xl font-semibold', over && 'text-destructive')}>{formatCents(used)}</span>
+                    <span className={cn('text-sm font-medium', over ? 'text-destructive' : pct >= 80 ? 'text-warning' : 'text-muted-foreground')}>
                       {over ? `+${formatCents(used - limit)} überschritten` : `${s.percent} %`}
                     </span>
                   </div>
-                  <Progress value={pct} className={cn('[&>div]:transition-all', over ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-amber-500' : '[&>div]:bg-emerald-600')} />
+                  <Progress value={pct} className={cn('[&>div]:transition-all', over ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-warning' : '')} />
                   <p className="text-xs text-muted-foreground">
                     {over ? 'Budget überschritten' : `Noch ${formatCents(s.remaining)} verfügbar`}
                     {carryover && ' (inkl. Übertrag aus Vormonaten)'}

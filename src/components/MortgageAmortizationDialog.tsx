@@ -317,7 +317,6 @@ function AmortizationForm(
       <DialogFooter>
         <Button variant="outline" onClick={close}>Abbrechen</Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={addAmortization.isPending || updateAmortization.isPending}
         >

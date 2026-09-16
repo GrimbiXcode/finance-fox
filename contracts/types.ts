@@ -31,7 +31,7 @@ export const CURRENCIES = [
 
 export type CurrencyCode = (typeof CURRENCIES)[number]["code"];
 
-export const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [
+export const CURRENCY_CODES = CURRENCIES.map(c => c.code) as [
   CurrencyCode,
   ...CurrencyCode[],
 ];
@@ -113,16 +113,27 @@ export const FORECAST_GRANULARITY_LABELS: Record<ForecastGranularity, string> =
 /* ----------------------------------- Tags ---------------------------------- */
 
 /**
- * Farbpalette für Tags (wie die Kategorien-Palette in den Einstellungen) —
- * die Farbe wird serverseitig automatisch vergeben (am seltensten verwendete).
+ * Buntstift-Palette des Papier-Designs (docs/design/paper-like) — die eine
+ * Farbauswahl für Kategorien, Tags, Projekte, Personen und Sparziele.
+ * Reihenfolge fest und auf Unterscheidbarkeit bei Farbsehschwäche geprüft;
+ * Slot n entspricht dem CSS-Token `--pencil-n` (hell) mit eigener Stufe im
+ * Dunkelmodus. Gespeichert wird der Hex-Wert, dargestellt über
+ * `src/lib/pencil.ts` (`pencil()`), das den Slot wieder auf das Token
+ * abbildet und fremde Farben papiertauglich abtönt.
  */
-export const TAG_COLORS = [
-  "#f43f5e",
-  "#f59e0b",
-  "#3b82f6",
-  "#a855f7",
-  "#ec4899",
-  "#14b8a6",
-  "#94a3b8",
-  "#10b981",
+export const PENCIL_COLORS = [
+  "#2F6FC4", // Blau
+  "#D9692C", // Orange
+  "#1E9B73", // Grün
+  "#D99A12", // Ocker
+  "#D5688F", // Rosa
+  "#2E8B2E", // Laubgrün
+  "#6A4FB8", // Violett
+  "#C9403C", // Rot
 ] as const;
+
+/**
+ * Farbpalette für Tags — die Farbe wird serverseitig automatisch vergeben
+ * (am seltensten verwendete).
+ */
+export const TAG_COLORS = PENCIL_COLORS;

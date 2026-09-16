@@ -18,6 +18,8 @@ import {
 } from '@/components/ui/sheet';
 import QuickAddDialog from '@/components/QuickAddDialog';
 import SyncStatus from '@/components/SyncStatus';
+import BrandMark from '@/components/BrandMark';
+import { pencil } from '@/lib/pencil';
 
 // Menüstruktur (Desktop-Seitenleiste und mobiles „Mehr“-Menü): thematisch
 // gruppiert — Alltag (buchen & teilen), Konten, Planung, Analyse, Verwaltung.
@@ -98,15 +100,13 @@ export default function Layout() {
   }, [appSettings.data?.currency]);
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className={cn('hidden flex-col border-r bg-card transition-all md:sticky md:top-0 md:flex md:h-screen', collapsed ? 'w-16' : 'w-64')}>
+    <div className="flex min-h-screen">
+      <aside className={cn('hidden flex-col border-r transition-all md:sticky md:top-0 md:flex md:h-screen', collapsed ? 'w-16' : 'w-64')}>
         <div className={cn('flex items-center gap-2 border-b py-5', collapsed ? 'justify-center px-2' : 'px-6')}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
-            <PiggyBank className="h-5 w-5" />
-          </div>
+          <BrandMark />
           {!collapsed && (
             <div>
-              <div className="text-sm font-semibold leading-tight">Finance Fox</div>
+              <div className="font-serif text-[15px] font-semibold leading-tight">Finance Fox</div>
               <div className="text-xs text-muted-foreground">Self-hosted &amp; privat</div>
             </div>
           )}
@@ -128,10 +128,10 @@ export default function Layout() {
                   end={item.to === '/'}
                   title={collapsed ? item.label : undefined}
                   className={({ isActive }) => cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-medium transition-colors',
                     collapsed && 'justify-center px-0',
                     isActive
-                      ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                      ? 'border-border bg-card text-foreground shadow-xs [&>svg]:text-stamp'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                   )}
                 >
@@ -145,8 +145,8 @@ export default function Layout() {
         {!collapsed && (
           <div className="border-t px-6 py-4">
             <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
-            <div className={cn('text-lg font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+            <div className={cn('font-serif text-xl font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-stamp">
               <ShieldCheck className="h-3.5 w-3.5" />
               Daten bleiben auf deinem Server
             </div>
@@ -167,10 +167,11 @@ export default function Layout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur md:px-8">
           <div className="flex min-w-0 items-center gap-2 md:hidden">
-            <PiggyBank className="h-5 w-5 shrink-0 text-emerald-600" />
-            <span className="truncate font-semibold">Finance Fox</span>
+            <BrandMark size="sm" />
+            <span className="truncate font-serif text-[15px] font-semibold">Finance Fox</span>
           </div>
-          <div className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">
+          {/* Briefkopf: der Haushalt in Serife kursiv */}
+          <div className="hidden min-w-0 truncate font-serif text-[15px] italic text-foreground/75 md:block">
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}
           </div>
           <div className="flex shrink-0 items-center gap-3">
@@ -192,7 +193,7 @@ export default function Layout() {
                   key={u.id}
                   title={u.name}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-background text-xs font-semibold text-white"
-                  style={{ backgroundColor: u.color }}
+                  style={{ backgroundColor: pencil(u.color) }}
                 >
                   {u.name.slice(0, 2).toUpperCase()}
                 </div>
@@ -221,7 +222,7 @@ export default function Layout() {
               end={item.to === '/'}
               className={({ isActive }) => cn(
                 'flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-1 text-[10px]',
-                isActive ? 'text-emerald-600' : 'text-muted-foreground',
+                isActive ? 'text-stamp' : 'text-muted-foreground',
               )}
             >
               <item.icon className="h-5 w-5 shrink-0" />
@@ -234,7 +235,7 @@ export default function Layout() {
                 type="button"
                 className={cn(
                   'flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-1 text-[10px]',
-                  moreOpen ? 'text-emerald-600' : 'text-muted-foreground',
+                  moreOpen ? 'text-stamp' : 'text-muted-foreground',
                 )}
               >
                 <Menu className="h-5 w-5 shrink-0" />
@@ -259,9 +260,9 @@ export default function Layout() {
                           end={item.to === '/'}
                           onClick={() => setMoreOpen(false)}
                           className={({ isActive }) => cn(
-                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                            'flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium transition-colors',
                             isActive
-                              ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                              ? 'border-border bg-card text-foreground shadow-xs [&>svg]:text-stamp'
                               : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                           )}
                         >

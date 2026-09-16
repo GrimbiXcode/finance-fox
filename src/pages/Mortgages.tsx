@@ -18,6 +18,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
@@ -58,6 +59,12 @@ import {
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { trpc } from "@/providers/trpc";
 import { cn } from "@/lib/utils";
+import { CHART } from "@/lib/chartColors";
+import Note from "@/components/Note";
+import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import { PaperTooltip } from "@/components/ChartParts";
+import { chartDefs } from "@/lib/chartDefs";
+import { pencil } from "@/lib/pencil";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
 type Schedule = inferRouterOutputs<AppRouter>["mortgage"]["forecast"];
@@ -146,7 +153,7 @@ function SetupCard() {
     <Card className="mx-auto max-w-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <House className="h-5 w-5 text-emerald-600" />
+          <House className="h-5 w-5 text-muted-foreground" />
           Wohneigentum erfassen
         </CardTitle>
         <CardDescription>
@@ -159,7 +166,7 @@ function SetupCard() {
       <CardContent>
         <MortgagePropertyDialog
           trigger={
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
+            <Button className="w-full">
               <Plus className="mr-2 h-4 w-4" /> Liegenschaft anlegen
             </Button>
           }
@@ -187,7 +194,7 @@ function Kpi({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">
           {label}
         </CardTitle>
         {icon}
@@ -195,7 +202,7 @@ function Kpi({
       <CardContent>
         <div
           className={cn(
-            "text-2xl font-bold",
+            "font-serif text-2xl font-semibold",
             tone === "warn" && "text-destructive"
           )}
         >
@@ -264,7 +271,7 @@ function OverviewSection({
           label="Monatliche Belastung"
           value={formatCents(totals.monthlyBurden)}
           hint={`davon ${formatCents(totals.monthlyInterest)} Zins`}
-          icon={<TrendingDown className="h-4 w-4 text-rose-500" />}
+          icon={<TrendingDown className="h-4 w-4 text-negative" />}
         />
         <Kpi
           label="Belehnung"
@@ -285,7 +292,7 @@ function OverviewSection({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <PiggyBank className="h-5 w-5 text-emerald-600" />
+              <PiggyBank className="h-5 w-5 text-muted-foreground" />
               Nettovermögen
             </CardTitle>
             <CardDescription>
@@ -293,7 +300,7 @@ function OverviewSection({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
-            <div className="text-2xl font-bold">{formatCents(netWorth)}</div>
+            <div className="font-serif text-2xl font-semibold">{formatCents(netWorth)}</div>
             <div className="flex justify-between gap-2">
               <span className="min-w-0 text-muted-foreground">Kontosalden</span>
               <span className="shrink-0 font-medium">{formatCents(liquid)}</span>
@@ -306,7 +313,7 @@ function OverviewSection({
             </div>
             <div className="flex justify-between gap-2">
               <span className="min-w-0 text-muted-foreground">Restschuld</span>
-              <span className="shrink-0 font-medium text-rose-500">
+              <span className="shrink-0 font-medium text-negative">
                 −{formatCents(totals.debt)}
               </span>
             </div>
@@ -323,7 +330,7 @@ function OverviewSection({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Scale className="h-5 w-5 text-indigo-500" />
+              <Scale className="h-5 w-5 text-muted-foreground" />
               Tragbarkeit
             </CardTitle>
             <CardDescription>
@@ -335,7 +342,7 @@ function OverviewSection({
           <CardContent className="space-y-1.5 text-sm">
             <div
               className={cn(
-                "text-2xl font-bold",
+                "font-serif text-2xl font-semibold",
                 affordability.affordable === false && "text-destructive"
               )}
             >
@@ -387,21 +394,13 @@ function OverviewSection({
       </div>
 
       {schedule.warnings.length > 0 && (
-        <Card className="border-amber-500/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Hinweise
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
-              {schedule.warnings.map((w, i) => (
-                <li key={`${w.kind}-${i}`}>{warningText(w)}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <Note title="Hinweise" icon={AlertTriangle}>
+          <ul className="list-inside list-disc space-y-1">
+            {schedule.warnings.map((w, i) => (
+              <li key={`${w.kind}-${i}`}>{warningText(w)}</li>
+            ))}
+          </ul>
+        </Note>
       )}
 
       {chartData.length > 1 && (
@@ -417,7 +416,8 @@ function OverviewSection({
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  {chartDefs()}
+                  <CartesianGrid {...GRID_PROPS} />
                   {/* Numerische Achse: mit einer Kategorien-Achse liefert die
                       Band-Skala für ReferenceArea keine Koordinaten (NaN) */}
                   <XAxis
@@ -442,43 +442,40 @@ function OverviewSection({
                     }
                     width={80}
                   />
-                  <Tooltip
-                    formatter={(value: number | string, name: string) => [
-                      `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`,
-                      name,
-                    ]}
-                  />
+                  <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                  <Legend iconType="square" iconSize={10} />
                   {bands.map(b => (
                     <ReferenceArea
                       ifOverflow="hidden"
                       key={`${b.name}-${b.year}`}
                       x1={b.year}
                       x2={b.year}
-                      stroke="#f59e0b"
-                      strokeOpacity={0.6}
-                      fill="#f59e0b"
-                      fillOpacity={0.08}
+                      stroke={CHART.warning}
+                      strokeOpacity={0.8}
+                      fill="none"
                       label={{
                         value: `Ablauf ${b.name}`,
                         position: "insideTop",
                         fontSize: 10,
-                        fill: "#64748b",
+                        fill: CHART.muted,
                       }}
                     />
                   ))}
                   <Area
                     type="monotone"
                     dataKey="Restschuld"
-                    stroke="#f43f5e"
-                    fill="#f43f5e"
-                    fillOpacity={0.3}
+                    stroke={CHART.negative}
+                    strokeWidth={2}
+                    fill={hatch("negative")}
+                    fillOpacity={HATCH_OPACITY}
                   />
                   <Area
                     type="monotone"
                     dataKey="Eigenkapital"
-                    stroke="#10b981"
-                    fill="#10b981"
-                    fillOpacity={0.3}
+                    stroke={CHART.positive}
+                    strokeWidth={2}
+                    fill={hatch("positive")}
+                    fillOpacity={HATCH_OPACITY}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -505,7 +502,7 @@ function TranchesSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <Landmark className="h-5 w-5 text-indigo-500" />
+          <Landmark className="h-5 w-5 text-muted-foreground" />
           Tranchen
         </h2>
         <MortgageTrancheDialog
@@ -537,21 +534,21 @@ function TranchesSection({
                     {t.name}
                   </CardTitle>
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="secondary">
+                    <Badge variant="label">
                       {TRANCHE_KIND_LABELS[t.kind] ?? t.kind}
                     </Badge>
                     {t.bankName && (
-                      <Badge variant="outline" className="max-w-full whitespace-normal">
+                      <Badge variant="label" className="max-w-full whitespace-normal">
                         {t.bankName}
                       </Badge>
                     )}
                     {expiring && (
-                      <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                      <Badge variant="stamp" tone="warn">
                         Ablauf nah
                       </Badge>
                     )}
                     {t.interestRecurringId !== null && (
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="stamp" tone="ink">
                         Dauerbuchung
                       </Badge>
                     )}
@@ -590,7 +587,7 @@ function TranchesSection({
                 </div>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
-                <div className="text-xl font-bold">{formatCents(t.principal)}</div>
+                <div className="font-serif text-xl font-semibold">{formatCents(t.principal)}</div>
                 <div className="flex justify-between gap-2">
                   <span className="min-w-0 text-muted-foreground">Zinssatz</span>
                   <span className="shrink-0 font-medium">
@@ -619,7 +616,7 @@ function TranchesSection({
                     <span
                       className={cn(
                         "shrink-0 font-medium",
-                        expiring && "text-amber-600 dark:text-amber-400"
+                        expiring && "text-warning"
                       )}
                     >
                       {formatDate(t.maturityDate)}
@@ -659,7 +656,7 @@ function AmortizationSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <Banknote className="h-5 w-5 text-emerald-600" />
+          <Banknote className="h-5 w-5 text-muted-foreground" />
           Amortisation
         </h2>
         <MortgageAmortizationDialog
@@ -690,12 +687,12 @@ function AmortizationSection({
                     {a.kind === "direct" ? "Direkt" : "Indirekt"}
                   </CardTitle>
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="secondary">
+                    <Badge variant="label">
                       {RECURRING_INTERVAL_LABELS[a.interval]}
                     </Badge>
-                    {!a.active && <Badge variant="outline">Pausiert</Badge>}
+                    {!a.active && <Badge variant="stamp" tone="warn">Pausiert</Badge>}
                     {a.recurringId !== null && (
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="stamp" tone="ink">
                         Dauerbuchung
                       </Badge>
                     )}
@@ -744,7 +741,7 @@ function AmortizationSection({
                 </div>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
-                <div className="text-xl font-bold">{formatCents(a.amount)}</div>
+                <div className="font-serif text-xl font-semibold">{formatCents(a.amount)}</div>
                 {a.kind === "direct" && tranche && (
                   <div className="flex justify-between gap-2">
                     <span className="min-w-0 text-muted-foreground">Tranche</span>
@@ -827,13 +824,13 @@ function HistoryCard() {
               <div key={entry.id} className="space-y-1 border-b pb-3 last:border-0">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Badge variant="secondary">
+                    <Badge variant="label">
                       {ENTITY_LABELS[entry.entity] ?? entry.entity}
                     </Badge>
                     {entry.userName && (
                       <span
                         className="text-xs text-muted-foreground"
-                        style={{ color: entry.userColor ?? undefined }}
+                        style={{ color: pencil(entry.userColor) }}
                       >
                         {entry.userName}
                       </span>
@@ -904,7 +901,7 @@ export default function Mortgages() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">Hypotheken</h1>
+          <h1 className="text-2xl font-semibold">Hypotheken</h1>
           <p className="text-sm text-muted-foreground">
             Wohneigentum, Tranchen und Amortisation im Überblick
           </p>

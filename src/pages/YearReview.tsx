@@ -9,8 +9,12 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { trpc } from '@/providers/trpc';
-import { currencySymbol, formatCents, getUserLocale } from '@/lib/finance';
+import { currencySymbol, formatCents } from '@/lib/finance';
 import { cn } from '@/lib/utils';
+import { CHART } from '@/lib/chartColors';
+import { CURSOR_BAR, GRID_PROPS } from '@/lib/chartTheme';
+import { PaperTooltip } from '@/components/ChartParts';
+import { pencil } from '@/lib/pencil';
 
 /** Differenz Jahr vs. Vorjahr: mehr Ausgaben = negativ (rot), weniger = positiv (grün) */
 function DiffCell({ current, previous }: { current: number; previous: number }) {
@@ -19,7 +23,7 @@ function DiffCell({ current, previous }: { current: number; previous: number }) 
   return (
     <span className={cn(
       'font-medium',
-      diff > 0 ? 'text-rose-500' : diff < 0 ? 'text-emerald-600' : 'text-muted-foreground',
+      diff > 0 ? 'text-negative' : diff < 0 ? 'text-positive' : 'text-muted-foreground',
     )}>
       {diff > 0 ? '+' : ''}{formatCents(diff)}
       {pct !== null && <span className="ml-1 text-xs">({pct > 0 ? '+' : ''}{pct} %)</span>}
@@ -50,7 +54,7 @@ export default function YearReview() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Auswertung</h1>
+          <h1 className="text-2xl font-semibold">Auswertung</h1>
           <p className="text-sm text-muted-foreground">
             Ausgaben {year} im Vergleich zu {year - 1} — pro Oberkategorie
           </p>
@@ -106,7 +110,7 @@ export default function YearReview() {
                 <TableRow key={r.categoryId ?? 'ohne'}>
                   <TableCell>
                     <span className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: r.color }} />
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(r.color) }} />
                       {r.name}
                     </span>
                   </TableCell>
@@ -140,20 +144,17 @@ export default function YearReview() {
             <p className="text-sm text-muted-foreground">Keine Daten für ein Diagramm.</p>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <BarChart data={chartData} margin={{ left: 0, right: 8, top: 8 }} barGap={2}>
+                <CartesianGrid {...GRID_PROPS} />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} />
                 <YAxis
                   tickLine={false} axisLine={false} width={70}
                   tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
                 />
-                <Tooltip
-                  formatter={(value: number | string) =>
-                    `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`}
-                />
-                <Legend />
-                <Bar dataKey={String(year - 1)} fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                <Bar dataKey={String(year)} fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Tooltip content={<PaperTooltip />} cursor={CURSOR_BAR} />
+                <Legend iconType="square" iconSize={10} />
+                <Bar dataKey={String(year - 1)} fill={CHART.muted} radius={[4, 4, 0, 0]} maxBarSize={24} />
+                <Bar dataKey={String(year)} fill={CHART.positive} radius={[4, 4, 0, 0]} maxBarSize={24} />
               </BarChart>
             </ResponsiveContainer>
           )}

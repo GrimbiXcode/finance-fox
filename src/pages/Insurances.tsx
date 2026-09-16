@@ -84,6 +84,7 @@ import {
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { pencil } from "@/lib/pencil";
 
 type Outputs = inferRouterOutputs<AppRouter>;
 type Policy = Outputs["insurance"]["listPolicies"][number];
@@ -173,7 +174,7 @@ function SetupCard() {
     <Card className="mx-auto max-w-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Umbrella className="h-5 w-5 text-emerald-600" />
+          <Umbrella className="h-5 w-5 text-muted-foreground" />
           Versicherungen erfassen
         </CardTitle>
         <CardDescription>
@@ -185,7 +186,7 @@ function SetupCard() {
       <CardContent>
         <InsurancePolicyDialog
           trigger={
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
+            <Button className="w-full">
               <Plus className="mr-2 h-4 w-4" /> Police anlegen
             </Button>
           }
@@ -213,7 +214,7 @@ function Kpi({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">
           {label}
         </CardTitle>
         {icon}
@@ -221,7 +222,7 @@ function Kpi({
       <CardContent>
         <div
           className={cn(
-            "text-2xl font-bold",
+            "font-serif text-2xl font-semibold",
             tone === "warn" && "text-destructive"
           )}
         >
@@ -266,9 +267,9 @@ function GapRow({
   return (
     <div className="flex items-start gap-3 border-b py-2 last:border-0">
       {gap.severity === "warn" ? (
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-negative" />
       ) : (
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
       )}
       <div className="min-w-0 flex-1">
         <p
@@ -283,7 +284,7 @@ function GapRow({
           <p className="text-xs text-muted-foreground">
             {dismissal.note && <span>„{dismissal.note}“ · </span>}
             ausgeblendet von{" "}
-            <span style={{ color: dismissal.userColor ?? undefined }}>
+            <span style={{ color: pencil(dismissal.userColor) }}>
               {dismissal.userName ?? "Unbekannt"}
             </span>{" "}
             am {formatDate(localISO(new Date(dismissal.createdAt)))}
@@ -354,7 +355,7 @@ function GapCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-emerald-600" />
+          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
           Deckungs-Check
         </CardTitle>
         <CardDescription>
@@ -367,7 +368,7 @@ function GapCard() {
           <p className="text-sm text-muted-foreground">Prüfe Deckungen…</p>
         ) : gaps.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 text-positive" />
             Keine Lücken gefunden.
           </p>
         ) : (
@@ -437,7 +438,7 @@ function ComparisonCard({
       <span
         className={cn(
           value === null && "text-muted-foreground",
-          isBest && "font-semibold text-emerald-600"
+          isBest && "font-semibold text-positive"
         )}
       >
         {value ?? "—"}
@@ -475,11 +476,11 @@ function ComparisonCard({
                     <p className="truncate font-medium text-foreground" title={p.name}>
                       {p.name}
                     </p>
-                    <Badge variant="secondary" className="mt-1">
+                    <Badge variant="label" className="mt-1">
                       {INSURANCE_BRANCH_LABELS[p.branch]}
                     </Badge>
                     {p.status === "quote" && (
-                      <Badge variant="outline" className="ml-1 mt-1">
+                      <Badge variant="stamp" tone="ink" className="ml-1 mt-1">
                         Angebot
                       </Badge>
                     )}
@@ -536,11 +537,12 @@ function ComparisonCard({
 
 /* ------------------------------- Policen-Karte ---------------------------- */
 
-const STATUS_BADGE: Record<InsuranceStatus, string> = {
-  active: "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400",
-  cancelled: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  expired: "border-muted bg-muted text-muted-foreground",
-  quote: "border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
+/** Stempelfarbe je Status (Badge variant="stamp") */
+const STATUS_TONE: Record<InsuranceStatus, "good" | "warn" | "neutral" | "ink"> = {
+  active: "good",
+  cancelled: "warn",
+  expired: "neutral",
+  quote: "ink",
 };
 
 function DetailRow({
@@ -558,7 +560,7 @@ function DetailRow({
       <span
         className={cn(
           "shrink-0 font-medium",
-          tone === "warn" && "text-amber-600 dark:text-amber-400",
+          tone === "warn" && "text-warning",
           tone === "danger" && "text-destructive"
         )}
       >
@@ -596,27 +598,27 @@ function PolicyCard({
               {policy.name}
             </CardTitle>
             <div className="mt-2 flex flex-wrap items-center gap-1">
-              <Badge variant="secondary">
+              <Badge variant="label">
                 {INSURANCE_BRANCH_LABELS[policy.branch]}
               </Badge>
-              <Badge variant="outline" className={STATUS_BADGE[policy.status]}>
+              <Badge variant="stamp" tone={STATUS_TONE[policy.status]}>
                 {INSURANCE_STATUS_LABELS[policy.status]}
               </Badge>
               {policy.premiumRecurringId !== null && (
-                <Badge variant="outline">Dauerbuchung</Badge>
+                <Badge variant="stamp" tone="ink">Dauerbuchung</Badge>
               )}
               {policy.personIds.length === 0 ? (
-                <Badge variant="secondary">Gemeinsam</Badge>
+                <Badge variant="label">Gemeinsam</Badge>
               ) : (
                 policy.personIds.map(id => {
                   const u = users.find(x => x.id === id);
                   return (
                     <Badge
                       key={id}
-                      variant="outline"
+                      variant="label"
                       style={{
-                        borderColor: u?.color,
-                        color: u?.color ?? undefined,
+                        borderColor: pencil(u?.color),
+                        color: pencil(u?.color),
                       }}
                     >
                       {u?.name ?? `#${id}`}
@@ -662,7 +664,7 @@ function PolicyCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <p className="text-xl font-bold">{formatCents(policy.premium)}</p>
+          <p className="font-serif text-xl font-semibold">{formatCents(policy.premium)}</p>
           <p className="text-xs text-muted-foreground">
             {
               RECURRING_INTERVAL_LABELS[
@@ -853,13 +855,13 @@ function HistoryCard() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Badge variant="secondary">
+                    <Badge variant="label">
                       {ENTITY_LABELS[entry.entity] ?? entry.entity}
                     </Badge>
                     {entry.userName && (
                       <span
                         className="text-xs text-muted-foreground"
-                        style={{ color: entry.userColor ?? undefined }}
+                        style={{ color: pencil(entry.userColor) }}
                       >
                         {entry.userName}
                       </span>
@@ -996,7 +998,7 @@ export default function Insurances() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">Versicherungen</h1>
+          <h1 className="text-2xl font-semibold">Versicherungen</h1>
           <p className="text-sm text-muted-foreground">
             {summary
               ? `${summary.count} Policen · ${formatCents(summary.premiumMonthly)} pro Monat`
@@ -1005,7 +1007,7 @@ export default function Insurances() {
         </div>
         <InsurancePolicyDialog
           trigger={
-            <Button className="bg-emerald-600 hover:bg-emerald-700">
+            <Button>
               <Plus className="mr-2 h-4 w-4" /> Neue Police
             </Button>
           }

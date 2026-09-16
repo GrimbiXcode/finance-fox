@@ -1,19 +1,23 @@
 import { useMemo } from 'react';
 import { TrendingDown, TrendingUp, Wallet, Scale } from 'lucide-react';
 import {
-  Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFinanceData } from '@/lib/data';
 import {
   currencySymbol, currentMonthKey, expensesByRootCategory, formatCents, formatDate, formatMonth,
-  formatMonthShort, getUserLocale, memberBalances, monthTotals, totalBalance,
+  formatMonthShort, memberBalances, monthTotals, totalBalance,
 } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
+import { CHART } from '@/lib/chartColors';
+import { AXIS_PROPS, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, SHEET, activeDotFor, dotFor, hatch, moneyLabel } from '@/lib/chartTheme';
+import { PaperTooltip } from '@/components/ChartParts';
+import { chartDefs } from '@/lib/chartDefs';
+import { pencil, pencilSlot } from '@/lib/pencil';
 
-const PIE_COLORS = ['#f43f5e', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#94a3b8', '#10b981'];
 
 export default function Dashboard() {
   const { accounts, categories, transactions, users, isLoading } = useFinanceData();
@@ -41,9 +45,10 @@ export default function Dashboard() {
   const categoryData = [...expensesByRootCategory(transactions, month, categories).entries()]
     .map(([catId, amount]) => {
       const cat = categories.find((c) => c.id === catId);
-      return { name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? '#94a3b8' };
+      return { name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? CHART.muted };
     })
     .sort((a, b) => b.value - a.value);
+  const categoryTotal = categoryData.reduce((s, c) => s + c.value, 0);
 
   const balances = memberBalances(transactions, users.map((u) => u.id));
   const recent = transactions.slice(0, 8);
@@ -55,7 +60,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Überblick für {formatMonth(month)}</p>
         </div>
         <TransactionDialog />
@@ -64,11 +69,11 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Gesamtvermögen</CardTitle>
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Gesamtvermögen</CardTitle>
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={cn('text-2xl font-bold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
+            <div className={cn('font-serif text-2xl font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
             <p className="text-xs text-muted-foreground">{accounts.length} Konten</p>
             {mortgage && mortgage.count > 0 && (
               <p className="text-xs text-muted-foreground" title="Kontosalden plus Verkehrswert der Liegenschaften minus Restschuld">
@@ -79,31 +84,31 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Einnahmen (Monat)</CardTitle>
-            <TrendingUp className="h-4 w-4 text-emerald-600" />
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Einnahmen (Monat)</CardTitle>
+            <TrendingUp className="h-4 w-4 text-positive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-emerald-600">{formatCents(totals.income)}</div>
+            <div className="font-serif text-2xl font-semibold text-positive">{formatCents(totals.income)}</div>
             <p className="text-xs text-muted-foreground">{formatMonth(month)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Ausgaben (Monat)</CardTitle>
-            <TrendingDown className="h-4 w-4 text-rose-500" />
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Ausgaben (Monat)</CardTitle>
+            <TrendingDown className="h-4 w-4 text-negative" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-rose-500">{formatCents(totals.expense)}</div>
+            <div className="font-serif text-2xl font-semibold text-negative">{formatCents(totals.expense)}</div>
             <p className="text-xs text-muted-foreground">{formatMonth(month)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Sparrate (Monat)</CardTitle>
+            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Sparrate (Monat)</CardTitle>
             <Scale className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={cn('text-2xl font-bold', savings >= 0 ? 'text-emerald-600' : 'text-rose-500')}>
+            <div className={cn('font-serif text-2xl font-semibold', savings >= 0 ? 'text-positive' : 'text-negative')}>
               {formatCents(savings)}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -122,22 +127,22 @@ export default function Dashboard() {
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={cashflow} margin={{ left: 0, right: 8, top: 8 }}>
-                <defs>
-                  <linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#f43f5e" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v} ${currencySymbol()}`} width={70} />
-                <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
-                <Area type="monotone" dataKey="Einnahmen" stroke="#10b981" fill="url(#gIn)" strokeWidth={2} />
-                <Area type="monotone" dataKey="Ausgaben" stroke="#f43f5e" fill="url(#gOut)" strokeWidth={2} />
+                {chartDefs()}
+                <CartesianGrid {...GRID_PROPS} />
+                <XAxis dataKey="month" {...AXIS_PROPS} />
+                <YAxis {...AXIS_PROPS} tickFormatter={(v: number) => `${v} ${currencySymbol()}`} width={70} />
+                <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                <Legend iconType="square" iconSize={10} />
+                <Area
+                  type="monotone" dataKey="Einnahmen" stroke={CHART.positive} strokeWidth={2}
+                  fill={hatch('positive')} fillOpacity={HATCH_OPACITY}
+                  dot={dotFor(CHART.positive)} activeDot={activeDotFor(CHART.positive)}
+                />
+                <Area
+                  type="monotone" dataKey="Ausgaben" stroke={CHART.negative} strokeWidth={2}
+                  fill={hatch('negative')} fillOpacity={HATCH_OPACITY}
+                  dot={dotFor(CHART.negative)} activeDot={activeDotFor(CHART.negative)}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -148,20 +153,45 @@ export default function Dashboard() {
             <CardTitle>Ausgaben nach Kategorie</CardTitle>
             <CardDescription>{formatMonth(month)}</CardDescription>
           </CardHeader>
-          <CardContent className="h-72">
+          <CardContent>
             {categoryData.length === 0 ? (
               <p className="text-sm text-muted-foreground">Noch keine Ausgaben in diesem Monat.</p>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>
-                    {categoryData.map((entry, idx) => (
-                      <Cell key={entry.name} fill={entry.color || PIE_COLORS[idx % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number | string) => `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="flex flex-col items-center gap-3">
+                {/* Ring mit Papierfugen, Summe in Serife in der Mitte */}
+                <div className="relative h-52 w-52 shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={90} stroke={SHEET} strokeWidth={2}>
+                        {categoryData.map((entry, idx) => (
+                          <Cell key={entry.name} fill={entry.color ? pencil(entry.color) : pencilSlot(idx + 1)} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<PaperTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="font-serif text-[15px] font-semibold">{moneyLabel(categoryTotal)}</span>
+                    <span className="text-[11px] text-muted-foreground">{formatMonth(month)}</span>
+                  </div>
+                </div>
+                {/* Legende mit Betrag und Anteil – die Farbe allein trägt nie die Identität */}
+                <ul className="w-full min-w-0 flex-1 text-xs">
+                  {categoryData.slice(0, 6).map((entry, idx) => (
+                    <li key={entry.name} className="flex items-center gap-2 border-b py-1.5 last:border-0">
+                      <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: entry.color ? pencil(entry.color) : pencilSlot(idx + 1) }} />
+                      <span className="min-w-0 flex-1 truncate" title={entry.name}>{entry.name}</span>
+                      <span className="font-mono tabular-nums">{moneyLabel(entry.value)}</span>
+                      <span className="w-9 shrink-0 text-right font-mono tabular-nums text-muted-foreground">
+                        {categoryTotal > 0 ? Math.round((entry.value / categoryTotal) * 100) : 0} %
+                      </span>
+                    </li>
+                  ))}
+                  {categoryData.length > 6 && (
+                    <li className="py-1.5 text-muted-foreground">+ {categoryData.length - 6} weitere Kategorien</li>
+                  )}
+                </ul>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -185,7 +215,7 @@ export default function Dashboard() {
                 return (
                   <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? '#64748b' }} />
+                      <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{t.note || cat?.name || 'Umbuchung'}</div>
                         <div className="text-xs text-muted-foreground">
@@ -194,8 +224,8 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className={cn(
-                      'shrink-0 text-sm font-semibold',
-                      t.type === 'income' ? 'text-emerald-600' : t.type === 'expense' ? 'text-rose-500' : 'text-muted-foreground',
+                      'shrink-0 font-mono text-sm font-medium tabular-nums',
+                      t.type === 'income' ? 'text-positive' : t.type === 'expense' ? 'text-negative' : 'text-muted-foreground',
                     )}>
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
                     </div>
@@ -218,12 +248,12 @@ export default function Dashboard() {
                 return (
                   <div key={u.id} className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: u.color }}>
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: pencil(u.color) }}>
                         {u.name.slice(0, 2).toUpperCase()}
                       </div>
                       <span className="truncate text-sm font-medium" title={u.name}>{u.name}</span>
                     </div>
-                    <span className={cn('shrink-0 text-sm font-semibold', bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-500' : 'text-muted-foreground')}>
+                    <span className={cn('shrink-0 font-mono text-sm font-medium tabular-nums', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
                       {bal > 0 ? '+' : ''}{formatCents(bal)}
                     </span>
                   </div>

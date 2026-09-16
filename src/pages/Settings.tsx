@@ -58,25 +58,12 @@ import { setAppCurrency, getUserLocale } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/providers/trpc";
 import { toast } from "sonner";
+import { CHART } from "@/lib/chartColors";
+import { PENCIL_COLORS, pencil } from "@/lib/pencil";
 
-const CAT_COLORS = [
-  "#f43f5e",
-  "#f59e0b",
-  "#3b82f6",
-  "#a855f7",
-  "#ec4899",
-  "#14b8a6",
-  "#94a3b8",
-  "#10b981",
-];
-const PROFILE_COLORS = [
-  "#10b981",
-  "#6366f1",
-  "#f59e0b",
-  "#f43f5e",
-  "#0ea5e9",
-  "#a855f7",
-];
+// Buntstifte (docs/design/paper-like) – eine Palette für Kategorien und Profil
+const CAT_COLORS = PENCIL_COLORS;
+const PROFILE_COLORS = PENCIL_COLORS;
 
 // Deutsche Beschreibungen der Audit-Log-Aktionen (Fallback: roher action-Key)
 const AUDIT_ACTION_LABELS: Record<string, string> = {
@@ -272,7 +259,7 @@ function CategoryEditDialog({
                     ? "scale-110 border-foreground"
                     : "border-transparent"
                 )}
-                style={{ backgroundColor: c }}
+                style={{ backgroundColor: pencil(c) }}
               />
             ))}
           </div>
@@ -306,7 +293,6 @@ function CategoryEditDialog({
           Abbrechen
         </Button>
         <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
           onClick={submit}
           disabled={updateCategory.isPending}
         >
@@ -329,7 +315,7 @@ export default function Settings() {
   const [editingCat, setEditingCat] = useState<EditCategory | null>(null);
   const [tagName, setTagName] = useState("");
   const [profileName, setProfileName] = useState(user?.name ?? "");
-  const [profileColor, setProfileColor] = useState(user?.color ?? "#10b981");
+  const [profileColor, setProfileColor] = useState(user?.color ?? PENCIL_COLORS[2]);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const appSettings = trpc.finance.getAppSettings.useQuery();
@@ -579,15 +565,15 @@ export default function Settings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Einstellungen</h1>
+        <h1 className="text-2xl font-semibold">Einstellungen</h1>
         <p className="text-sm text-muted-foreground">
           Profil, Kategorien und Datenverwaltung
         </p>
       </div>
 
-      <Card className="border-emerald-600/30 bg-emerald-600/5">
+      <Card className="border-positive/30 bg-positive/5">
         <CardContent className="flex items-start gap-3 py-4">
-          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-positive" />
           <div className="text-sm">
             <span className="font-semibold">Datenschutz:</span> Alle Daten
             liegen in einer SQLite-Datenbank auf deinem eigenen Server — nichts
@@ -621,7 +607,7 @@ export default function Settings() {
                     key={c}
                     type="button"
                     className={`h-8 w-8 rounded-full border-2 ${profileColor === c ? "border-foreground" : "border-transparent"}`}
-                    style={{ backgroundColor: c }}
+                    style={{ backgroundColor: pencil(c) }}
                     onClick={() => setProfileColor(c)}
                     title={c}
                   />
@@ -843,7 +829,7 @@ export default function Settings() {
             <CardTitle className="flex items-center gap-2">
               <Smartphone className="h-5 w-5" /> Zwei-Faktor-Authentifizierung
             </CardTitle>
-            <Badge variant={user?.totpEnabled ? "default" : "secondary"}>
+            <Badge variant="stamp" tone={user?.totpEnabled ? "good" : "neutral"}>
               {user?.totpEnabled ? "Aktiviert" : "Deaktiviert"}
             </Badge>
           </div>
@@ -968,10 +954,10 @@ export default function Settings() {
           <div className="space-y-1.5">
             {catRoots.map(root => (
               <div key={root.id} className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1">
+                <Badge variant="label" className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1">
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: root.color }}
+                    style={{ backgroundColor: pencil(root.color) }}
                   />
                   {root.name}
                   <button
@@ -994,13 +980,13 @@ export default function Settings() {
                 {catChildrenOf(root.id).map(child => (
                   <Badge
                     key={child.id}
-                    variant="secondary"
+                    variant="label"
                     className="ml-4 max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                   >
                     <span className="text-muted-foreground">└</span>
                     <span
                       className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: child.color }}
+                      style={{ backgroundColor: pencil(child.color) }}
                     />
                     {child.name}
                     <button
@@ -1120,12 +1106,12 @@ export default function Settings() {
             {tags.map(tag => (
               <Badge
                 key={tag.id}
-                variant="secondary"
+                variant="label"
                 className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
               >
                 <span
                   className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: tag.color }}
+                  style={{ backgroundColor: pencil(tag.color) }}
                 />
                 {tag.name}
                 <button
@@ -1184,12 +1170,12 @@ export default function Settings() {
               {accountTypes.map(t => (
                 <Badge
                   key={t.id}
-                  variant="secondary"
+                  variant="label"
                   className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                 >
                   {t.name}
                   {t.builtin && (
-                    <Badge variant="outline" className="ml-1 text-[10px]">
+                    <Badge variant="label" className="ml-1">
                       Standard
                     </Badge>
                   )}
@@ -1218,7 +1204,7 @@ export default function Settings() {
               {banks.map(b => (
                 <Badge
                   key={b.id}
-                  variant="secondary"
+                  variant="label"
                   className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1"
                 >
                   {b.name}
@@ -1405,7 +1391,7 @@ export default function Settings() {
                 <span className="flex shrink-0 items-center gap-1.5 font-medium">
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: e.userColor ?? "#94a3b8" }}
+                    style={{ backgroundColor: pencil(e.userColor) ?? CHART.muted }}
                   />
                   {e.userName ?? "System"}
                 </span>

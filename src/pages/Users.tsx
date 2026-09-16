@@ -14,8 +14,9 @@ import {
 import { useAuth } from '@/providers/auth';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import { PENCIL_COLORS, pencil } from '@/lib/pencil';
 
-const COLORS = ['#6366f1', '#f59e0b', '#f43f5e', '#0ea5e9', '#a855f7', '#14b8a6', '#10b981'];
+const COLORS = PENCIL_COLORS;
 
 export default function UsersPage() {
   const { user } = useAuth();
@@ -65,7 +66,7 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Personen</h1>
+          <h1 className="text-2xl font-semibold">Personen</h1>
           <p className="text-sm text-muted-foreground">
             {usersQuery.data?.length ?? 0} Benutzerkonten im Haushalt
           </p>
@@ -73,7 +74,7 @@ export default function UsersPage() {
         {user?.role === 'admin' && (
           <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setInviteLink(''); setName(''); setEmail(''); } }}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="mr-2 h-4 w-4" /> Person hinzufügen</Button>
+              <Button><Plus className="mr-2 h-4 w-4" /> Person hinzufügen</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -123,11 +124,11 @@ export default function UsersPage() {
               )}
               <DialogFooter>
                 {inviteLink ? (
-                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setOpen(false)}>Fertig</Button>
+                  <Button onClick={() => setOpen(false)}>Fertig</Button>
                 ) : (
                   <>
                     <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={createUser.isPending}>
+                    <Button onClick={submit} disabled={createUser.isPending}>
                       Einladung erzeugen
                     </Button>
                   </>
@@ -143,7 +144,7 @@ export default function UsersPage() {
           <Card key={u.id} className={!u.active ? 'opacity-60' : ''}>
             <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ backgroundColor: u.color }}>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ backgroundColor: pencil(u.color) }}>
                   {u.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0">
@@ -151,15 +152,15 @@ export default function UsersPage() {
                   <CardDescription className="text-xs">{u.email}</CardDescription>
                 </div>
               </div>
-              <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className={u.role === 'admin' ? 'bg-emerald-600' : ''}>
+              <Badge variant="stamp" tone={u.role === 'admin' ? 'brand' : 'neutral'}>
                 {u.role === 'admin' ? 'Admin' : 'Mitglied'}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2 text-xs">
-                {!u.active && <Badge variant="destructive">Deaktiviert</Badge>}
-                {!u.hasPassword && <Badge variant="outline">Passwort noch nicht gesetzt</Badge>}
-                {u.id === user?.id && <Badge variant="secondary">Das bist du</Badge>}
+                {!u.active && <Badge variant="stamp" tone="bad">Deaktiviert</Badge>}
+                {!u.hasPassword && <Badge variant="stamp" tone="warn">Passwort noch nicht gesetzt</Badge>}
+                {u.id === user?.id && <Badge variant="label">Das bist du</Badge>}
               </div>
               {user?.role === 'admin' && u.id !== user.id && (
                 <div className="flex gap-2">

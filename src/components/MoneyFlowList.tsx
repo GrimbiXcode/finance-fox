@@ -72,7 +72,7 @@ function FlowGroup({
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-1.5 text-xs font-semibold">
-        <Icon className={cn('h-3.5 w-3.5', tone === 'in' ? 'text-emerald-600' : 'text-rose-500')} />
+        <Icon className={cn('h-3.5 w-3.5', tone === 'in' ? 'text-positive' : 'text-negative')} />
         {title}
         <span className="ml-auto tabular-nums">{formatCents(total)}/Monat</span>
       </div>
@@ -202,7 +202,7 @@ export function MoneyFlowList({
                 aria-expanded={open}
                 onClick={() => onFocusNodeChange(open ? null : nodeId)}
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-600/10 text-emerald-600">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-positive/10 text-positive">
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -214,12 +214,12 @@ export function MoneyFlowList({
                 </div>
                 <div className="shrink-0 text-right text-xs tabular-nums">
                   <div
-                    className={cn(flows.inTotal > 0 ? 'text-emerald-600' : 'text-muted-foreground')}
+                    className={cn(flows.inTotal > 0 ? 'text-positive' : 'text-muted-foreground')}
                   >
                     +{formatCents(flows.inTotal)}
                   </div>
                   <div
-                    className={cn(flows.outTotal > 0 ? 'text-rose-500' : 'text-muted-foreground')}
+                    className={cn(flows.outTotal > 0 ? 'text-negative' : 'text-muted-foreground')}
                   >
                     −{formatCents(flows.outTotal)}
                   </div>

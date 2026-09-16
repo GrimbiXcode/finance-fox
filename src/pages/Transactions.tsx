@@ -30,6 +30,7 @@ import CamtImportDialog from '@/components/CamtImportDialog';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { pencil } from '@/lib/pencil';
 
 export default function Transactions() {
   const { accounts, banks, categories, transactions, users, projects, tags } = useFinanceData();
@@ -119,7 +120,7 @@ export default function Transactions() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Transaktionen</h1>
+          <h1 className="text-2xl font-semibold">Transaktionen</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} Buchungen · Saldo der Auswahl: {formatCents(sum)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -236,21 +237,21 @@ export default function Transactions() {
                   t.type === 'income' ? `−${formatCents(t.amount)}` : `+${formatCents(t.amount)}`;
                 return (
                   <TableRow key={t.id} className={cn((isStorno || isReversed) && 'opacity-60')}>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(t.date)}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">{formatDate(t.date)}</TableCell>
                     <TableCell>
                       <div className="font-medium">{t.note || (t.type === 'transfer' ? 'Umbuchung' : '—')}</div>
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {isStorno && <Badge variant="outline" className="text-[10px]">Storno</Badge>}
-                        {isReversed && <Badge variant="outline" className="text-[10px]">Storniert</Badge>}
-                        {t.splits.length > 0 && <Badge variant="secondary" className="text-[10px]">geteilt</Badge>}
+                        {isStorno && <Badge variant="stamp" tone="ink">Storno</Badge>}
+                        {isReversed && <Badge variant="stamp" tone="ink">Storniert</Badge>}
+                        {t.splits.length > 0 && <Badge variant="stamp" tone="good">geteilt</Badge>}
                         {t.changeCount > 0 && (
                           <TransactionHistoryDialog
                             transactionId={t.id}
                             note={t.note}
                             trigger={
                               <Badge
-                                variant="secondary"
-                                className="cursor-pointer text-[10px] hover:bg-muted"
+                                variant="stamp"
+                                className="cursor-pointer hover:bg-muted"
                                 title="Änderungsverlauf anzeigen"
                               >
                                 bearbeitet
@@ -259,13 +260,13 @@ export default function Transactions() {
                           />
                         )}
                         {project && (
-                          <Badge variant="secondary" className="text-[10px]" style={{ borderLeft: `3px solid ${project.color}` }}>
+                          <Badge variant="label" style={{ borderLeft: `3px solid ${pencil(project.color)}` }}>
                             {project.name}
                           </Badge>
                         )}
                         {t.tags.map((tag) => (
-                          <Badge key={tag.id} variant="secondary" className="gap-1 text-[10px]">
-                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                          <Badge key={tag.id} variant="label" className="gap-1">
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pencil(tag.color) }} />
                             {tag.name}
                           </Badge>
                         ))}
@@ -274,7 +275,7 @@ export default function Transactions() {
                     <TableCell className="hidden md:table-cell">
                       {cat ? (
                         <span className="inline-flex items-center gap-1.5 text-sm">
-                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(cat.color) }} />
                           {cat.name}
                         </span>
                       ) : <span className="text-muted-foreground">—</span>}
@@ -285,14 +286,14 @@ export default function Transactions() {
                     <TableCell className="hidden sm:table-cell">
                       {user && (
                         <span className="inline-flex items-center gap-1.5 text-sm">
-                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: user.color }} />
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(user.color) }} />
                           {user.name}
                         </span>
                       )}
                     </TableCell>
                     <TableCell className={cn(
-                      'whitespace-nowrap text-right font-semibold',
-                      t.type === 'income' ? 'text-emerald-600' : t.type === 'expense' ? 'text-rose-500' : 'text-muted-foreground',
+                      'whitespace-nowrap text-right font-mono font-medium tabular-nums',
+                      t.type === 'income' ? 'text-positive' : t.type === 'expense' ? 'text-negative' : 'text-muted-foreground',
                     )}>
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
                     </TableCell>
@@ -317,7 +318,7 @@ export default function Transactions() {
                             <Button variant="ghost" size="icon" title="Tags bearbeiten">
                               <Tag className={cn(
                                 'h-4 w-4',
-                                t.tags.length > 0 ? 'text-emerald-600' : 'text-muted-foreground',
+                                t.tags.length > 0 ? 'text-stamp' : 'text-muted-foreground',
                               )} />
                             </Button>
                           </PopoverTrigger>
@@ -338,9 +339,9 @@ export default function Transactions() {
                                       onClick={() => toggleTag(t, tag.id)}
                                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
                                     >
-                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(tag.color) }} />
                                       <span className="flex-1 text-left">{tag.name}</span>
-                                      {active && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                                      {active && <Check className="h-3.5 w-3.5 text-positive" />}
                                     </button>
                                   );
                                 })}
@@ -356,10 +357,10 @@ export default function Transactions() {
                             <Button variant="ghost" size="icon" className="relative" title="Belege">
                               <Paperclip className={cn(
                                 'h-4 w-4',
-                                t.attachments.length > 0 ? 'text-emerald-600' : 'text-muted-foreground',
+                                t.attachments.length > 0 ? 'text-stamp' : 'text-muted-foreground',
                               )} />
                               {t.attachments.length > 0 && (
-                                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-semibold text-white">
+                                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-stamp px-1 text-[10px] font-semibold text-stamp-foreground">
                                   {t.attachments.length}
                                 </span>
                               )}

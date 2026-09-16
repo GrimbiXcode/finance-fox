@@ -19,6 +19,7 @@ import {
 import QuickAddDialog from '@/components/QuickAddDialog';
 import SyncStatus from '@/components/SyncStatus';
 import BrandMark from '@/components/BrandMark';
+import { pencil } from '@/lib/pencil';
 
 // Menüstruktur (Desktop-Seitenleiste und mobiles „Mehr“-Menü): thematisch
 // gruppiert — Alltag (buchen & teilen), Konten, Planung, Analyse, Verwaltung.
@@ -192,7 +193,7 @@ export default function Layout() {
                   key={u.id}
                   title={u.name}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-background text-xs font-semibold text-white"
-                  style={{ backgroundColor: u.color }}
+                  style={{ backgroundColor: pencil(u.color) }}
                 >
                   {u.name.slice(0, 2).toUpperCase()}
                 </div>

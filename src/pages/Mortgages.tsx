@@ -64,6 +64,7 @@ import Note from "@/components/Note";
 import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
+import { pencil } from "@/lib/pencil";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
 type Schedule = inferRouterOutputs<AppRouter>["mortgage"]["forecast"];
@@ -829,7 +830,7 @@ function HistoryCard() {
                     {entry.userName && (
                       <span
                         className="text-xs text-muted-foreground"
-                        style={{ color: entry.userColor ?? undefined }}
+                        style={{ color: pencil(entry.userColor) }}
                       >
                         {entry.userName}
                       </span>

@@ -309,7 +309,31 @@ steht es hier.
   (Phasen-Bänder in `paper-deep` statt Farbe), Jahresvergleich (Balken ≤ 24 px
   mit 2-px-Fuge). Die Geldfluss-Grafik ist eigenes SVG und war schon in Phase
   2 auf Tokens umgestellt.
-- Phase 5 steht aus.
+- **Phase 5 ist umgesetzt** (Buntstifte, Icons, Screenshots):
+  `PENCIL_COLORS` in `contracts/types.ts` ist die eine Palette für
+  Kategorien, Tags (`TAG_COLORS` zeigt darauf), Projekte, Personen, Profil
+  und Sparziele; alle Auswahl-Paletten in Dialogen und Einstellungen nutzen
+  sie. **Keine Datenbank-Migration**: gespeicherte Hex-Werte bleiben, wie sie
+  sind – `src/lib/pencil.ts` (`pencil()`) bildet einen Buntstift beim
+  Rendern auf sein Token `hsl(var(--pencil-n))` ab (eigene Stufe im
+  Dunkelmodus) und tönt jede andere Farbe (alte Neon-Palette, frei gewählt)
+  mit `color-mix()` zur Tinte hin ab: hell dunkler und gedeckter, dunkel
+  heller. So sehen bestehende Haushalte Papierfarben, ohne dass zwei
+  verschiedene Farben zusammenfallen, und der Abgleich mit den Geräten
+  bleibt unberührt. Alle 41 Render-Stellen (Farbpunkte, Avatare, Etiketten-
+  Kanten, Kreis-Segmente, Sparziel-Balken) laufen durch `pencil()`; die
+  Herkunftsbalken der Sparziele und die Kreis-Fallbacks nutzen `pencilSlot()`.
+  `public/icons/icon.svg` und die PNGs (192, 512, Apple-Touch) zeigen den
+  Fuchs als Stempel auf Blatt (Rahmen innerhalb der sicheren Zone für
+  maskierbare Icons). `docs/screenshots/` ist mit dem Papier-Design neu
+  aufgenommen (1440 × 900 bei doppelter Auflösung, Beispielhaushalt
+  Alex & Sam). Ausgelassen: der PDF-Bericht bleibt vorerst, wie er ist – der
+  eigene PDF-Writer bringt nur Standardschriften mit, eine Serife dort wäre
+  ein eigenes Vorhaben.
+
+Damit sind alle fünf Phasen umgesetzt. Offen bleiben die Geschmacks-
+entscheidungen aus „Offene Fragen“ (Serife auf dem Handy, warmes Anthrazit
+statt OLED-Schwarz), die man am besten auf echten Geräten prüft.
 
 ## Umsetzung in Phasen
 

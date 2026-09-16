@@ -84,6 +84,7 @@ import {
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { pencil } from "@/lib/pencil";
 
 type Outputs = inferRouterOutputs<AppRouter>;
 type Policy = Outputs["insurance"]["listPolicies"][number];
@@ -283,7 +284,7 @@ function GapRow({
           <p className="text-xs text-muted-foreground">
             {dismissal.note && <span>„{dismissal.note}“ · </span>}
             ausgeblendet von{" "}
-            <span style={{ color: dismissal.userColor ?? undefined }}>
+            <span style={{ color: pencil(dismissal.userColor) }}>
               {dismissal.userName ?? "Unbekannt"}
             </span>{" "}
             am {formatDate(localISO(new Date(dismissal.createdAt)))}
@@ -616,8 +617,8 @@ function PolicyCard({
                       key={id}
                       variant="label"
                       style={{
-                        borderColor: u?.color,
-                        color: u?.color ?? undefined,
+                        borderColor: pencil(u?.color),
+                        color: pencil(u?.color),
                       }}
                     >
                       {u?.name ?? `#${id}`}
@@ -860,7 +861,7 @@ function HistoryCard() {
                     {entry.userName && (
                       <span
                         className="text-xs text-muted-foreground"
-                        style={{ color: entry.userColor ?? undefined }}
+                        style={{ color: pencil(entry.userColor) }}
                       >
                         {entry.userName}
                       </span>

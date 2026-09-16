@@ -17,10 +17,10 @@ import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { amountPlaceholder, currencySymbol, formatCents, formatDate, formatMonth, parseEuro } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import { pencilSlot , pencil } from '@/lib/pencil';
 
 /** Farben der Herkunfts-Segmente (Konto-Quellen nach Index, Bestand grau) */
-const SOURCE_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#6366f1'];
-const LEGACY_COLOR = '#94a3b8';
+const LEGACY_COLOR = 'hsl(var(--muted-foreground))';
 
 type Goal = ReturnType<typeof useFinanceData>['goals'][number];
 type Account = ReturnType<typeof useFinanceData>['accounts'][number];
@@ -82,7 +82,7 @@ function GoalCard({ goal, accounts, banks, forecast }: {
 
   // Farbe je Quelle: Konto-Quellen nach Index, Bestand grau
   const colorOf = (index: number, kind: 'account' | 'legacy') =>
-    kind === 'legacy' ? LEGACY_COLOR : SOURCE_COLORS[index % SOURCE_COLORS.length];
+    kind === 'legacy' ? LEGACY_COLOR : pencilSlot(index + 1);
   // Balkenbreiten: mit Zielbetrag als Anteil am Ziel (Summe auf 100 % gedeckelt),
   // beim offenen Ziel als Anteil an der Gesamtmenge
   const widthOf = (cents: number) =>
@@ -137,7 +137,7 @@ function GoalCard({ goal, accounts, banks, forecast }: {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-baseline justify-between">
-          <span className="font-serif text-xl font-semibold" style={{ color: goal.color }}>{formatCents(total)}</span>
+          <span className="font-serif text-xl font-semibold" style={{ color: pencil(goal.color) }}>{formatCents(total)}</span>
           {open ? (
             <Badge variant="stamp">offenes Ziel</Badge>
           ) : (
@@ -237,7 +237,7 @@ function GoalCard({ goal, accounts, banks, forecast }: {
                 {contribs.map((c) => (
                   <li key={c.id} className="flex items-center justify-between gap-2 text-sm">
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c.userColor }} />
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: pencil(c.userColor) }} />
                       <span className="truncate">
                         {c.userName}
                         {c.note ? ` — ${c.note}` : ''}

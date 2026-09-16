@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
 import { CURSOR_BAR, GRID_PROPS } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
+import { pencil } from '@/lib/pencil';
 
 /** Differenz Jahr vs. Vorjahr: mehr Ausgaben = negativ (rot), weniger = positiv (grün) */
 function DiffCell({ current, previous }: { current: number; previous: number }) {
@@ -109,7 +110,7 @@ export default function YearReview() {
                 <TableRow key={r.categoryId ?? 'ohne'}>
                   <TableCell>
                     <span className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: r.color }} />
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(r.color) }} />
                       {r.name}
                     </span>
                   </TableCell>

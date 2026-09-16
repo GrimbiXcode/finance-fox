@@ -18,6 +18,7 @@ import { amountPlaceholder, currencySymbol, formatAmountInput, formatCents, pars
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import { pencil } from '@/lib/pencil';
 
 /** Konto, wie es finance.listAccounts liefert (nur die hier benötigten Felder) */
 export interface DialogAccount {
@@ -356,7 +357,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
                         onCheckedChange={(checked) => toggleOwner(u.id, checked === true)}
                       />
                       <Label htmlFor={`owner-${u.id}`} className="cursor-pointer">
-                        <span style={{ color: u.color }}>{u.name}</span>
+                        <span style={{ color: pencil(u.color) }}>{u.name}</span>
                       </Label>
                     </div>
                   ))}
@@ -382,7 +383,7 @@ function AccountDialogForm({ account, close }: { account?: DialogAccount; close:
                   )}
                   {members.map((u) => (
                     <div key={u.id} className="flex items-center justify-between gap-3">
-                      <span className="text-sm" style={{ color: u.color }}>{u.name}</span>
+                      <span className="text-sm" style={{ color: pencil(u.color) }}>{u.name}</span>
                       <Select
                         value={permLevel(u.id)}
                         disabled={setPermission.isPending}

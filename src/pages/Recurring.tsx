@@ -30,6 +30,7 @@ import {
   RECURRING_INTERVAL_LABELS, RECURRING_INTERVALS, type RecurringInterval,
 } from '@contracts/types';
 import { toast } from 'sonner';
+import { pencil } from '@/lib/pencil';
 
 type Interval = RecurringInterval;
 const intervalLabel = RECURRING_INTERVAL_LABELS;
@@ -615,7 +616,7 @@ export default function Recurring() {
                         const owner = users.find((u) => u.id === r.userId);
                         return owner ? (
                           <span className="flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: owner.color }} />
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(owner.color) }} />
                             {owner.name}
                           </span>
                         ) : '—';

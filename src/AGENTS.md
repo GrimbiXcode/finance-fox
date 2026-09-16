@@ -429,6 +429,12 @@ Code steht:
   neue Badges verwenden. `Button variant="stamp"` (grün gefüllt) nur für die
   eine Aktion, die etwas verbucht; `destructive` ist ein Umriss, die
   Bestätigung in der Gefahrenzone bekommt die Füllung per className.
+  **Gespeicherte Farben** (Kategorien, Tags, Projekte, Personen, Sparziele)
+  nie roh in `style`/`fill` setzen, sondern durch `pencil()` aus
+  `lib/pencil.ts` – ein Buntstift wird zum Token (Dunkelmodus-Stufe), jede
+  andere Farbe wird zur Tinte hin abgetönt. Auswahl-Paletten nur aus
+  `PENCIL_COLORS` (`contracts/types.ts`); Reihen ohne gespeicherte Farbe
+  über `pencilSlot(n)`. Keine Migration alter Hex-Werte nötig.
   **Diagramme (recharts)**: Konstanten aus `lib/chartTheme.ts`
   (`GRID_PROPS`, `AXIS_PROPS`, `CURSOR_LINE`/`CURSOR_BAR`, `dotFor`,
   `HATCH_OPACITY`, `hatch('positive'|'negative'|'pencil-1'|'pencil-7'|

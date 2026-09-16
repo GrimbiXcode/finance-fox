@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { moneyLabel } from "@/lib/chartTheme";
+import { pencil } from "@/lib/pencil";
 
 /**
  * Tooltip des Papier-Designs für recharts – ein kleines Blatt. Konstanten und
@@ -52,7 +53,7 @@ export function PaperTooltip({
             <span className="flex min-w-0 items-center gap-1.5">
               <span
                 className="h-2 w-2 shrink-0 rounded-[2px]"
-                style={{ backgroundColor: item.color ?? item.payload?.fill }}
+                style={{ backgroundColor: pencil(item.color) ?? item.payload?.fill }}
               />
               <span className="truncate">{String(item.name ?? "")}</span>
             </span>

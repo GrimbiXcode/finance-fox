@@ -14,8 +14,9 @@ import {
 import { useAuth } from '@/providers/auth';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import { PENCIL_COLORS, pencil } from '@/lib/pencil';
 
-const COLORS = ['#6366f1', '#f59e0b', '#f43f5e', '#0ea5e9', '#a855f7', '#14b8a6', '#10b981'];
+const COLORS = PENCIL_COLORS;
 
 export default function UsersPage() {
   const { user } = useAuth();
@@ -143,7 +144,7 @@ export default function UsersPage() {
           <Card key={u.id} className={!u.active ? 'opacity-60' : ''}>
             <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ backgroundColor: u.color }}>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ backgroundColor: pencil(u.color) }}>
                   {u.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0">

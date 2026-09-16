@@ -16,8 +16,8 @@ import { CHART } from '@/lib/chartColors';
 import { AXIS_PROPS, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, SHEET, activeDotFor, dotFor, hatch, moneyLabel } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { chartDefs } from '@/lib/chartDefs';
+import { pencil, pencilSlot } from '@/lib/pencil';
 
-const PIE_COLORS = ['#f43f5e', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#94a3b8', '#10b981'];
 
 export default function Dashboard() {
   const { accounts, categories, transactions, users, isLoading } = useFinanceData();
@@ -164,7 +164,7 @@ export default function Dashboard() {
                     <PieChart>
                       <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={90} stroke={SHEET} strokeWidth={2}>
                         {categoryData.map((entry, idx) => (
-                          <Cell key={entry.name} fill={entry.color || PIE_COLORS[idx % PIE_COLORS.length]} />
+                          <Cell key={entry.name} fill={entry.color ? pencil(entry.color) : pencilSlot(idx + 1)} />
                         ))}
                       </Pie>
                       <Tooltip content={<PaperTooltip />} />
@@ -179,7 +179,7 @@ export default function Dashboard() {
                 <ul className="w-full min-w-0 flex-1 text-xs">
                   {categoryData.slice(0, 6).map((entry, idx) => (
                     <li key={entry.name} className="flex items-center gap-2 border-b py-1.5 last:border-0">
-                      <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: entry.color || PIE_COLORS[idx % PIE_COLORS.length] }} />
+                      <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: entry.color ? pencil(entry.color) : pencilSlot(idx + 1) }} />
                       <span className="min-w-0 flex-1 truncate" title={entry.name}>{entry.name}</span>
                       <span className="font-mono tabular-nums">{moneyLabel(entry.value)}</span>
                       <span className="w-9 shrink-0 text-right font-mono tabular-nums text-muted-foreground">
@@ -215,7 +215,7 @@ export default function Dashboard() {
                 return (
                   <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? CHART.muted }} />
+                      <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{t.note || cat?.name || 'Umbuchung'}</div>
                         <div className="text-xs text-muted-foreground">
@@ -248,7 +248,7 @@ export default function Dashboard() {
                 return (
                   <div key={u.id} className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: u.color }}>
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: pencil(u.color) }}>
                         {u.name.slice(0, 2).toUpperCase()}
                       </div>
                       <span className="truncate text-sm font-medium" title={u.name}>{u.name}</span>

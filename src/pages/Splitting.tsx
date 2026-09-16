@@ -9,9 +9,10 @@ import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { trpc } from '@/providers/trpc';
 import { computeSettlements, formatCents, formatDate, memberBalances, todayISO } from '@/lib/finance';
 import { cn } from '@/lib/utils';
+import { PENCIL_COLORS, pencil } from '@/lib/pencil';
 
 // Kleine Farbpalette für neue Projekte (wie die Kategorien-Palette im Dialog)
-const PROJECT_COLORS = ['#3b82f6', '#f59e0b', '#14b8a6', '#a855f7', '#ec4899', '#f43f5e', '#10b981', '#94a3b8'];
+const PROJECT_COLORS = PENCIL_COLORS;
 
 /** Projekt-Filter: 'all' = alles, 'household' = ohne Projekt, sonst Projekt-ID als Zahl */
 type ProjectFilter = 'all' | 'household' | number;
@@ -95,7 +96,7 @@ export default function Splitting() {
 
   // Projekt-Verwaltung (kleine Sektion unten auf der Seite)
   const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectColor, setNewProjectColor] = useState(PROJECT_COLORS[0]);
+  const [newProjectColor, setNewProjectColor] = useState<string>(PROJECT_COLORS[0]);
 
   const addProject = () => {
     const name = newProjectName.trim();
@@ -141,7 +142,7 @@ export default function Splitting() {
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(p.color) }} />
               {p.name}
             </button>
           ))}
@@ -160,7 +161,7 @@ export default function Splitting() {
               return (
                 <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border px-4 py-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: u.color }}>
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: pencil(u.color) }}>
                       {u.name.slice(0, 2).toUpperCase()}
                     </div>
                     <span className="truncate font-medium" title={u.name}>{u.name}</span>
@@ -192,12 +193,12 @@ export default function Splitting() {
                 return (
                   <div key={idx} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: from?.color }}>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: pencil(from?.color) }}>
                         {from?.name.slice(0, 2).toUpperCase()}
                       </span>
                       {from?.name}
                       <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: to?.color }}>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: pencil(to?.color) }}>
                         {to?.name.slice(0, 2).toUpperCase()}
                       </span>
                       {to?.name}
@@ -248,7 +249,7 @@ export default function Splitting() {
                   <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                     {t.note || 'Ausgabe'}
                     {project && (
-                      <Badge variant="label" style={{ borderLeft: `3px solid ${project.color}` }}>
+                      <Badge variant="label" style={{ borderLeft: `3px solid ${pencil(project.color)}` }}>
                         {project.name}
                       </Badge>
                     )}
@@ -262,7 +263,7 @@ export default function Splitting() {
                     {t.splits.map((s) => {
                       const u = userById(s.userId);
                       return (
-                        <Badge key={s.userId} variant="label" style={{ borderLeft: `3px solid ${u?.color ?? '#999'}` }}>
+                        <Badge key={s.userId} variant="label" style={{ borderLeft: `3px solid ${pencil(u?.color) ?? '#999'}` }}>
                           {u?.name}: {formatCents(s.amount)}
                         </Badge>
                       );
@@ -291,7 +292,7 @@ export default function Splitting() {
             {projects.map((p) => (
               <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border px-4 py-2">
                 <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(p.color) }} />
                   {p.name}
                 </span>
                 <Button
@@ -332,7 +333,7 @@ export default function Splitting() {
                     'h-6 w-6 rounded-full border-2 transition-transform',
                     newProjectColor === c ? 'scale-110 border-foreground' : 'border-transparent',
                   )}
-                  style={{ backgroundColor: c }}
+                  style={{ backgroundColor: pencil(c) }}
                 />
               ))}
             </div>

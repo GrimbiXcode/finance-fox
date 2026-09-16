@@ -4,6 +4,7 @@ import {
 } from '@/components/ui/dialog';
 import { trpc } from '@/providers/trpc';
 import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
+import { pencil } from '@/lib/pencil';
 
 /** Deutsche Feldnamen der Änderungshistorie (Server liefert die Feld-Keys) */
 const FIELD_LABELS: Record<string, string> = {
@@ -71,7 +72,7 @@ export default function TransactionHistoryDialog({
               <div key={entry.id} className="space-y-1 border-b pb-3 last:border-0">
                 <div className="flex items-center justify-between gap-2 text-sm">
                   <span className="inline-flex items-center gap-1.5 font-medium">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.userColor }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(entry.userColor) }} />
                     {entry.userName}
                   </span>
                   <span className="text-xs text-muted-foreground">

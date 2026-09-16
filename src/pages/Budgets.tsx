@@ -19,6 +19,7 @@ import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { CHART } from '@/lib/chartColors';
+import { pencil } from '@/lib/pencil';
 
 export default function Budgets() {
   const { categories } = useFinanceData();
@@ -153,7 +154,7 @@ export default function Budgets() {
               <Card key={b.id}>
                 <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cat?.color ?? CHART.muted }} />
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />
                     <div className="min-w-0">
                       <CardTitle className="text-base" title={cat?.name}>{cat?.name ?? 'Unbekannt'}</CardTitle>
                       <CardDescription>

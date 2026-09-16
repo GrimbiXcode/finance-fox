@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
 import { AXIS_PROPS, CURSOR_LINE, GRID_PROPS, activeDotFor, dotFor } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
+import { pencil } from '@/lib/pencil';
 
 export default function Forecasts() {
   const [months, setMonths] = useState('12');
@@ -270,7 +271,7 @@ export default function Forecasts() {
                 <div key={b.categoryId} className="space-y-1.5">
                   <div className="flex flex-wrap items-center justify-between gap-x-2 text-sm">
                     <span className="flex min-w-0 items-center gap-2 font-medium">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: b.color }} />
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(b.color) }} />
                       {b.categoryName}
                     </span>
                     <span className={cn('font-semibold', b.willExceed ? 'text-destructive' : 'text-muted-foreground')}>
@@ -326,7 +327,7 @@ export default function Forecasts() {
                     </span>
                   </div>
                   {!open && (
-                    <Progress value={pct} style={{ ['--progress-color' as string]: g.color }} className="[&>div]:bg-[var(--progress-color)]" />
+                    <Progress value={pct} style={{ ['--progress-color' as string]: pencil(g.color) }} className="[&>div]:bg-[var(--progress-color)]" />
                   )}
                   <p className="text-xs text-muted-foreground">
                     {open ? `Bisher ${formatCents(g.total)} angespart` : `Noch ${formatCents(g.remaining ?? 0)} offen`}

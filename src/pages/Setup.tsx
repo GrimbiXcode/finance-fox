@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import BrandMark from '@/components/BrandMark';
+import { PENCIL_COLORS } from '@/lib/pencil';
 
 interface InvitedUser {
   id: number;
@@ -17,7 +18,7 @@ interface InvitedUser {
   inviteLink: string;
 }
 
-const COLORS = ['#6366f1', '#f59e0b', '#f43f5e', '#0ea5e9', '#a855f7', '#14b8a6'];
+const COLORS = PENCIL_COLORS;
 
 /** Ersteinrichtungs-Wizard: Admin anlegen → weitere Personen einladen → ggf. lokale Daten importieren */
 export default function Setup() {

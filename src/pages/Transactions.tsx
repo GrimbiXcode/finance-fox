@@ -30,6 +30,7 @@ import CamtImportDialog from '@/components/CamtImportDialog';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { pencil } from '@/lib/pencil';
 
 export default function Transactions() {
   const { accounts, banks, categories, transactions, users, projects, tags } = useFinanceData();
@@ -259,13 +260,13 @@ export default function Transactions() {
                           />
                         )}
                         {project && (
-                          <Badge variant="label" style={{ borderLeft: `3px solid ${project.color}` }}>
+                          <Badge variant="label" style={{ borderLeft: `3px solid ${pencil(project.color)}` }}>
                             {project.name}
                           </Badge>
                         )}
                         {t.tags.map((tag) => (
                           <Badge key={tag.id} variant="label" className="gap-1">
-                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pencil(tag.color) }} />
                             {tag.name}
                           </Badge>
                         ))}
@@ -274,7 +275,7 @@ export default function Transactions() {
                     <TableCell className="hidden md:table-cell">
                       {cat ? (
                         <span className="inline-flex items-center gap-1.5 text-sm">
-                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(cat.color) }} />
                           {cat.name}
                         </span>
                       ) : <span className="text-muted-foreground">—</span>}
@@ -285,7 +286,7 @@ export default function Transactions() {
                     <TableCell className="hidden sm:table-cell">
                       {user && (
                         <span className="inline-flex items-center gap-1.5 text-sm">
-                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: user.color }} />
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(user.color) }} />
                           {user.name}
                         </span>
                       )}
@@ -338,7 +339,7 @@ export default function Transactions() {
                                       onClick={() => toggleTag(t, tag.id)}
                                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
                                     >
-                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(tag.color) }} />
                                       <span className="flex-1 text-left">{tag.name}</span>
                                       {active && <Check className="h-3.5 w-3.5 text-positive" />}
                                     </button>

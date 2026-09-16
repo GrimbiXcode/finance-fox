@@ -51,6 +51,7 @@ import {
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { trpc } from "@/providers/trpc";
 import { toast } from "sonner";
+import { pencil } from "@/lib/pencil";
 
 /** Police, wie sie insurance.listPolicies liefert */
 export interface DialogPolicy {
@@ -492,7 +493,7 @@ function PolicyForm({
                 />
                 <span
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: u.color }}
+                  style={{ backgroundColor: pencil(u.color) }}
                 />
                 <span className="min-w-0 truncate">{u.name}</span>
               </label>

@@ -59,25 +59,11 @@ import { cn } from "@/lib/utils";
 import { trpc } from "@/providers/trpc";
 import { toast } from "sonner";
 import { CHART } from "@/lib/chartColors";
+import { PENCIL_COLORS, pencil } from "@/lib/pencil";
 
-const CAT_COLORS = [
-  "#f43f5e",
-  "#f59e0b",
-  "#3b82f6",
-  "#a855f7",
-  "#ec4899",
-  "#14b8a6",
-  "#94a3b8",
-  "#10b981",
-];
-const PROFILE_COLORS = [
-  "#10b981",
-  "#6366f1",
-  "#f59e0b",
-  "#f43f5e",
-  "#0ea5e9",
-  "#a855f7",
-];
+// Buntstifte (docs/design/paper-like) – eine Palette für Kategorien und Profil
+const CAT_COLORS = PENCIL_COLORS;
+const PROFILE_COLORS = PENCIL_COLORS;
 
 // Deutsche Beschreibungen der Audit-Log-Aktionen (Fallback: roher action-Key)
 const AUDIT_ACTION_LABELS: Record<string, string> = {
@@ -273,7 +259,7 @@ function CategoryEditDialog({
                     ? "scale-110 border-foreground"
                     : "border-transparent"
                 )}
-                style={{ backgroundColor: c }}
+                style={{ backgroundColor: pencil(c) }}
               />
             ))}
           </div>
@@ -329,7 +315,7 @@ export default function Settings() {
   const [editingCat, setEditingCat] = useState<EditCategory | null>(null);
   const [tagName, setTagName] = useState("");
   const [profileName, setProfileName] = useState(user?.name ?? "");
-  const [profileColor, setProfileColor] = useState(user?.color ?? "#10b981");
+  const [profileColor, setProfileColor] = useState(user?.color ?? PENCIL_COLORS[2]);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const appSettings = trpc.finance.getAppSettings.useQuery();
@@ -621,7 +607,7 @@ export default function Settings() {
                     key={c}
                     type="button"
                     className={`h-8 w-8 rounded-full border-2 ${profileColor === c ? "border-foreground" : "border-transparent"}`}
-                    style={{ backgroundColor: c }}
+                    style={{ backgroundColor: pencil(c) }}
                     onClick={() => setProfileColor(c)}
                     title={c}
                   />
@@ -971,7 +957,7 @@ export default function Settings() {
                 <Badge variant="label" className="max-w-full gap-1.5 whitespace-normal py-1 pl-2 pr-1">
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: root.color }}
+                    style={{ backgroundColor: pencil(root.color) }}
                   />
                   {root.name}
                   <button
@@ -1000,7 +986,7 @@ export default function Settings() {
                     <span className="text-muted-foreground">└</span>
                     <span
                       className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: child.color }}
+                      style={{ backgroundColor: pencil(child.color) }}
                     />
                     {child.name}
                     <button
@@ -1125,7 +1111,7 @@ export default function Settings() {
               >
                 <span
                   className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: tag.color }}
+                  style={{ backgroundColor: pencil(tag.color) }}
                 />
                 {tag.name}
                 <button
@@ -1405,7 +1391,7 @@ export default function Settings() {
                 <span className="flex shrink-0 items-center gap-1.5 font-medium">
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: e.userColor ?? CHART.muted }}
+                    style={{ backgroundColor: pencil(e.userColor) ?? CHART.muted }}
                   />
                   {e.userName ?? "System"}
                 </span>

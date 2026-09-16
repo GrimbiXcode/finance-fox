@@ -21,6 +21,7 @@ import { sharesFromWeights, type ShareWeight } from '@contracts/splitShares';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import { PENCIL_COLORS , pencil } from '@/lib/pencil';
 
 type TxType = 'income' | 'expense' | 'transfer';
 
@@ -42,7 +43,7 @@ export type EditableTransaction = {
 };
 
 // Farbpalette wie in der Kategorien-Verwaltung (Einstellungen)
-const CAT_COLORS = ['#f43f5e', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#94a3b8', '#10b981'];
+const CAT_COLORS = PENCIL_COLORS;
 
 /** Locale-konforme Betragsanzeige ohne Währungssymbol/Tausendertrenner (für Eingabefelder) */
 const shareFormatter = new Intl.NumberFormat(getUserLocale(), {
@@ -561,7 +562,7 @@ export default function TransactionDialog({
                   <div className="grid gap-3 sm:grid-cols-2">
                     {users.map((u) => (
                       <div key={u.id} className="space-y-1">
-                        <Label className="text-xs" style={{ color: u.color }}>{u.name} ({currencySymbol()})</Label>
+                        <Label className="text-xs" style={{ color: pencil(u.color) }}>{u.name} ({currencySymbol()})</Label>
                         <Input
                           inputMode="decimal"
                           placeholder={amountPlaceholder}
@@ -665,7 +666,7 @@ export default function TransactionDialog({
                                 : 'bg-muted/40 text-muted-foreground hover:text-foreground',
                             )}
                           >
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(tag.color) }} />
                             {tag.name}
                           </button>
                         );

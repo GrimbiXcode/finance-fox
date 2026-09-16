@@ -33,6 +33,7 @@ import { trpc } from "@/providers/trpc";
 import { accountLabel } from "@/lib/data";
 import { formatCents, formatMonth, formatMonthYearShort } from "@/lib/finance";
 import { cn } from "@/lib/utils";
+import { pencil } from "@/lib/pencil";
 
 /**
  * Prognose-Tabelle: Kontosalden, Sparziel-Fortschritt, Ein-/Ausgaben und
@@ -294,7 +295,7 @@ export function ForecastTable({ scenario }: ForecastTableProps) {
                     <span className="flex items-center gap-2">
                       <span
                         className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: g.color }}
+                        style={{ backgroundColor: pencil(g.color) }}
                       />
                       {/* min-w-0, sonst schrumpft der Name im Flex nicht und
                           die Badges werden abgeschnitten statt der Name */}

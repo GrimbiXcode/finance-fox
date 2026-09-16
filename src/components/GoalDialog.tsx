@@ -14,9 +14,10 @@ import { amountPlaceholder, currencySymbol, formatAmountInput, parseEuro } from 
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
+import { PENCIL_COLORS, pencil } from '@/lib/pencil';
 
 /** Farbpalette für Sparziele (wie bisher auf der Ziele-Seite) */
-const GOAL_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#6366f1'];
+const GOAL_COLORS = PENCIL_COLORS;
 
 /** Sparziel, wie es finance.listGoals liefert (nur die hier benötigten Felder) */
 export interface DialogGoal {
@@ -132,7 +133,7 @@ function GoalDialogForm({ goal, close }: { goal?: DialogGoal; close: () => void 
                   'h-6 w-6 rounded-full border-2 transition-transform',
                   color === c ? 'scale-110 border-foreground' : 'border-transparent',
                 )}
-                style={{ backgroundColor: c }}
+                style={{ backgroundColor: pencil(c) }}
               />
             ))}
           </div>

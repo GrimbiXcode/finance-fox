@@ -25,31 +25,53 @@ import { rawClient } from "../../../api/lib/sync/store";
  */
 const memory = new Map<string, Uint8Array>();
 
+/** Zustand einer Datei in `sync_blobs` (siehe `noteBlob`) */
+export type BlobState = "pending-upload" | "present" | "lost";
+
 /** Laufende Schreib-/Löschvorgänge nach IndexedDB */
 let pending: Promise<unknown> = Promise.resolve();
+/**
+ * Fehler eines *Schreibvorgangs*. Er darf nicht bloß im Protokoll landen:
+ * Schlägt das Schreiben fehl (kein Platz, Speicher gesperrt), hätte der
+ * Aufrufer sonst eine erfolgreiche Antwort geschickt, obwohl die Datei
+ * nirgends liegt — der Beleg wäre weg, ohne dass es jemand merkt. Ein
+ * fehlgeschlagenes *Löschen* zählt bewusst nicht dazu: Es hinterlässt
+ * höchstens eine verwaiste Datei, kein verlorenes Dokument, und dürfte die
+ * ansonsten geglückte Änderung nicht zum Fehlschlag erklären.
+ */
+let writeError: unknown = null;
 
-function enqueue(task: () => Promise<unknown>) {
+function enqueue(task: () => Promise<unknown>, critical = false) {
+  // Die Kette läuft nach einem Fehler weiter (sonst bliebe jeder spätere
+  // Schreibvorgang hängen); gemerkt wird er trotzdem.
   pending = pending.then(task, task).catch(err => {
     console.error("[Finance Fox] Anhang nicht gespeichert:", err);
+    if (critical) writeError = err;
   });
 }
 
-/** Auf alle ausstehenden Anhang-Schreibvorgänge warten */
+/**
+ * Auf alle ausstehenden Anhang-Schreibvorgänge warten. Wirft, wenn einer
+ * davon fehlgeschlagen ist — der Aufrufer darf die Änderung dann nicht als
+ * gespeichert melden.
+ */
 export async function flushAttachmentWrites(): Promise<void> {
   await pending;
+  if (writeError !== null) {
+    const err = writeError;
+    writeError = null;
+    throw err;
+  }
 }
 
 /**
  * Zustand einer Datei vermerken. `pending-upload` heißt: Sie ist hier
  * entstanden und muss beim nächsten Abgleich zum Heimserver; `present` heißt:
- * Sie liegt hier **und** dort. Ohne diesen Vermerk wüsste der Abgleich nicht,
- * welche Dateien noch fehlen — die Metadaten-Zeile sagt darüber nichts.
+ * Sie liegt hier **und** dort; `lost` heißt: Sie ist hier verschwunden, bevor
+ * sie je hinüberkam. Ohne diesen Vermerk wüsste der Abgleich nicht, welche
+ * Dateien noch fehlen — die Metadaten-Zeile sagt darüber nichts.
  */
-function noteBlob(
-  storedName: string,
-  state: "pending-upload" | "present",
-  sizeBytes: number
-) {
+function noteBlob(storedName: string, state: BlobState, sizeBytes: number) {
   try {
     rawClient(getDb())
       .prepare(
@@ -71,7 +93,7 @@ export function storeSyncedBlob(storedName: string, bytes: Uint8Array) {
   enqueue(async () => {
     await idbSet("blobs", storedName, bytes);
     memory.delete(storedName);
-  });
+  }, true);
   noteBlob(storedName, "present", bytes.byteLength);
 }
 
@@ -91,7 +113,9 @@ export async function readAttachmentBlob(
 
 /** Alle Anhang-Dateien verwerfen (Benutzerwechsel, Zurücksetzen) */
 export async function clearAttachmentBlobs(): Promise<void> {
-  await flushAttachmentWrites();
+  // Ein alter Schreibfehler darf das Aufräumen nicht aufhalten — genau dann
+  // (kein Platz) will man es ja.
+  await flushAttachmentWrites().catch(() => {});
   memory.clear();
   const names = await idbKeys("blobs");
   await Promise.all(names.map(name => idbDelete("blobs", name)));
@@ -124,7 +148,7 @@ export function writeAttachmentFile(storedName: string, bytes: Uint8Array) {
   enqueue(async () => {
     await idbSet("blobs", storedName, bytes);
     memory.delete(storedName);
-  });
+  }, true);
   // Hier entstanden — muss beim nächsten Abgleich zum Heimserver.
   noteBlob(storedName, "pending-upload", bytes.byteLength);
 }

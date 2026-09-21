@@ -228,8 +228,8 @@ export default function TransactionDialog({
     if (next.length > 0) setFiles((f) => [...f, ...next]);
   };
 
-  /** Einzelnen Beleg hochladen; true bei Erfolg */
-  const uploadAttachment = async (transactionId: number, file: File): Promise<boolean> => {
+  /** Einzelnen Beleg hochladen; null bei Erfolg, sonst der Grund */
+  const uploadAttachment = async (transactionId: number, file: File): Promise<string | null> => {
     try {
       const res = await fetch(`/api/attachments?transactionId=${transactionId}`, {
         method: 'POST',
@@ -239,9 +239,13 @@ export default function TransactionDialog({
         },
         body: file,
       });
-      return res.ok;
+      if (res.ok) return null;
+      // Den Grund des Servers durchreichen: Auf dem Telefon ist er oft die
+      // einzige Chance zu erfahren, warum der Beleg nicht ankam.
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      return data.error ?? 'Der Beleg konnte nicht hochgeladen werden.';
     } catch {
-      return false;
+      return 'Der Beleg konnte nicht hochgeladen werden.';
     }
   };
 
@@ -300,9 +304,9 @@ export default function TransactionDialog({
         tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
       });
       for (const file of files) {
-        const ok = await uploadAttachment(created.id, file);
-        if (!ok) {
-          toast.warning(`Buchung gespeichert, aber Beleg „${file.name}" konnte nicht hochgeladen werden.`);
+        const reason = await uploadAttachment(created.id, file);
+        if (reason) {
+          toast.warning(`Buchung gespeichert, aber Beleg „${file.name}": ${reason}`);
         }
       }
       toast.success('Buchung gespeichert.');

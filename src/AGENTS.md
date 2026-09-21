@@ -507,6 +507,21 @@ Server-Seite steht in `api/AGENTS.md` unter „Abgleich".
   übernehmen lassen, kein Hinweis, kein Neuladen. Neue Version: Toast „Neue
   Version verfügbar" mit „Jetzt laden"; nach der Übernahme lädt die Seite neu
   (`controllerchange`), damit sie zu den frisch gecachten Dateien passt.
+- **Dauerhafter Speicher**: `registerServiceWorker()` fragt einmalig
+  `navigator.storage.persist()` an. Ohne diese Zusage liegen Replik **und**
+  die noch nicht übertragenen Beleg-Dateien im aufräumbaren Topf — iOS leert
+  ihn bei Platzmangel und nach sieben Tagen ohne Benutzung, was gerade eine
+  installierte App am Homescreen trifft. Genau so verschwanden hochgeladene
+  Belege, bevor sie je beim Heimserver ankamen.
+- **Verlorene Anhang-Dateien**: Kann `syncBlobs()` die Bytes eines
+  `pending-upload` nicht mehr lesen, wird der Vermerk **nicht** gelöscht,
+  sondern auf `lost` gesetzt (`sync_blobs.state`). Sonst reiste die
+  Metadaten-Zeile weiter zum Heimserver und der Beleg stünde überall in der
+  Liste, ohne dass je eine Datei dahinter käme. `SyncStatus.lostFiles` bringt
+  die Zahl in die Kopfzeile („N Belege ohne Datei"). Aus demselben Grund
+  wirft `flushAttachmentWrites()` jetzt, wenn ein IndexedDB-Schreibvorgang
+  fehlschlug — der Upload meldet dann einen Fehler statt eines falschen
+  Erfolgs.
 - `src/components/SyncStatus.tsx` (Kopfzeile) und `src/pages/Sync.tsx`
   (`/abgleich`): Status, Konflikte feldweise entscheiden, Merge-Protokoll.
   Die deutschen Beschriftungen für Tabellen, Spalten und Werte stehen in

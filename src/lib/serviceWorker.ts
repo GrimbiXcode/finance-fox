@@ -133,6 +133,8 @@ export function syncNow(reason: SyncReason): void {
 export async function registerServiceWorker(): Promise<void> {
   if (offlineUnsupportedReason() !== null) return;
 
+  void requestPersistentStorage();
+
   navigator.serviceWorker.addEventListener("message", event => {
     const message = event.data as WorkerToPageMessage | undefined;
     if (!message || typeof message.type !== "string") return;
@@ -182,6 +184,39 @@ export async function registerServiceWorker(): Promise<void> {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void checkForUpdate();
   });
+}
+
+let persistenceAsked = false;
+
+/**
+ * Dauerhaften Speicher anfordern.
+ *
+ * Ohne diese Zusage liegt alles, was die App im Browser hält, im
+ * „aufräumbaren" Topf: die SQLite-Replik **und** die Anhang-Dateien, die noch
+ * auf den Heimserver warten. iOS löscht diesen Topf bei Platzmangel und
+ * ohnehin nach sieben Tagen ohne Benutzung — gerade eine installierte App am
+ * Homescreen trifft das, weil sie tagelang unbenutzt bleibt. Ein hochgeladener
+ * Beleg wäre dann verschwunden, bevor er je beim Heimserver ankam.
+ *
+ * Für installierte Web-Apps gewähren Safari und Chrome die Zusage; wird sie
+ * abgelehnt, läuft alles wie bisher weiter — nur eben angreifbar durch das
+ * Aufräumen, weshalb der Grund im Protokoll landet.
+ */
+async function requestPersistentStorage(): Promise<void> {
+  if (persistenceAsked || !navigator.storage?.persist) return;
+  persistenceAsked = true;
+  try {
+    if (await navigator.storage.persisted()) return;
+    const granted = await navigator.storage.persist();
+    if (!granted) {
+      console.warn(
+        "[Finance Fox] Kein dauerhafter Speicher zugesagt — der Browser darf " +
+          "die lokale Kopie samt noch nicht übertragener Belege aufräumen."
+      );
+    }
+  } catch (err) {
+    console.warn("[Finance Fox] Dauerhafter Speicher nicht anforderbar:", err);
+  }
 }
 
 /** Auf eine neue Version prüfen (still, wenn der Server nicht erreichbar ist) */

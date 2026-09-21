@@ -28,10 +28,17 @@ export default function SyncStatus() {
 
   const conflicts = status.conflicts;
   const pending = status.pending;
+  const lost = status.lostFiles;
+  // Ausformuliert statt im JSX zusammengestückelt: JSX fügt zwischen Text und
+  // Ausdruck über Zeilenumbrüche hinweg Leerzeichen ein („ging en").
+  const lostText =
+    lost === 1
+      ? "Ein Beleg ging auf diesem Gerät verloren, bevor er beim Heimserver ankam — bitte erneut hochladen."
+      : `${lost} Belege gingen auf diesem Gerät verloren, bevor sie beim Heimserver ankamen — bitte erneut hochladen.`;
 
   const icon = status.syncing ? (
     <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-  ) : conflicts > 0 ? (
+  ) : conflicts > 0 || lost > 0 ? (
     <AlertTriangle className="h-4 w-4 text-warning" />
   ) : pending > 0 ? (
     <UploadCloud className="h-4 w-4 text-muted-foreground" />
@@ -45,21 +52,23 @@ export default function SyncStatus() {
     ? "Abgleich läuft"
     : conflicts > 0
       ? `${conflicts} Konflikt${conflicts === 1 ? "" : "e"} zu entscheiden`
-      : pending > 0
-        ? `${pending} Änderung${pending === 1 ? "" : "en"} warten auf das Heimnetz`
-        : status.reachable
-          ? "Alles abgeglichen"
-          : "Offline — Änderungen werden gesammelt";
+      : lost > 0
+        ? `${lost} Beleg${lost === 1 ? "" : "e"} ohne Datei`
+        : pending > 0
+          ? `${pending} Änderung${pending === 1 ? "" : "en"} warten auf das Heimnetz`
+          : status.reachable
+            ? "Alles abgeglichen"
+            : "Offline — Änderungen werden gesammelt";
 
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" title={label} className="relative">
           {icon}
-          {(conflicts > 0 || pending > 0) && (
+          {(conflicts > 0 || lost > 0 || pending > 0) && (
             <span
               className={`absolute right-1 top-1 h-2 w-2 rounded-full ${
-                conflicts > 0 ? "bg-warning" : "bg-pencil-1"
+                conflicts > 0 || lost > 0 ? "bg-warning" : "bg-pencil-1"
               }`}
             />
           )}
@@ -92,6 +101,13 @@ export default function SyncStatus() {
               entscheiden
             </span>
           </Link>
+        )}
+
+        {lost > 0 && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 p-2 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <span className="min-w-0">{lostText}</span>
+          </div>
         )}
 
         <Button

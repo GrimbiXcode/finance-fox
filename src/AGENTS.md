@@ -93,6 +93,12 @@ wäre UX-Rauschen. Alle SelectTrigger bekommen Truncation (`min-w-0
 `title`-Attribut mit dem Label der gewählten Option (SearchableSelect bringt
 beides eingebaut mit).
 
+Das Popover von `SearchableSelect` läuft bewusst als `modal` (wie Radix
+Select). Ohne das fängt der Scroll-Lock eines umgebenden Dialogs die Wheel-
+und Touch-Events ab, weil das Popover per Portal ausserhalb des Dialogs
+hängt — die Optionsliste liesse sich dann z. B. im Buchungs-Dialog nicht
+scrollen.
+
 ## Mobile Breite: kein seitliches Scrollen der Seite
 
 Die Seite selbst darf nie horizontal scrollen — seitwärts scrollt nur der

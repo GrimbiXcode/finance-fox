@@ -38,7 +38,11 @@ export function SearchableSelect({
   const selected = options.find((o) => o.value === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal` ist nötig, damit die Liste auch in einem Dialog scrollbar bleibt:
+    // der Scroll-Lock des Dialogs würde Wheel-/Touch-Events im (per Portal
+    // ausgelagerten) Popover sonst abfangen. Nur das oberste Lock ist aktiv,
+    // also übernimmt das Popover mit `modal` selbst — wie bei Radix Select.
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <button
           type="button"

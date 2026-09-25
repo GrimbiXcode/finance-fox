@@ -9,10 +9,10 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { trpc } from '@/providers/trpc';
-import { currencySymbol, formatCents } from '@/lib/finance';
+import { formatCents } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
-import { CURSOR_BAR, GRID_PROPS } from '@/lib/chartTheme';
+import { AXIS_MONEY_WIDTH, CURSOR_BAR, GRID_PROPS, axisMoney } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { pencil } from '@/lib/pencil';
 
@@ -146,10 +146,16 @@ export default function YearReview() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ left: 0, right: 8, top: 8 }} barGap={2}>
                 <CartesianGrid {...GRID_PROPS} />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                {/* Schräg und gekürzt: waagrecht liefen lange Kategorienamen
+                    ineinander („LebensmittelFreizeit…“) */}
+                <XAxis
+                  dataKey="name" tickLine={false} axisLine={false}
+                  interval={0} angle={-35} textAnchor="end" height={72} fontSize={11}
+                  tickFormatter={(v: string) => (v.length > 14 ? `${v.slice(0, 13)}…` : v)}
+                />
                 <YAxis
-                  tickLine={false} axisLine={false} width={70}
-                  tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
+                  tickLine={false} axisLine={false} width={AXIS_MONEY_WIDTH}
+                  tickFormatter={axisMoney}
                 />
                 <Tooltip content={<PaperTooltip />} cursor={CURSOR_BAR} />
                 <Legend iconType="square" iconSize={10} />

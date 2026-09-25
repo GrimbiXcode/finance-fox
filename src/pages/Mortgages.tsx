@@ -49,7 +49,6 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../api/router";
 import { useFinanceData } from "@/lib/data";
 import {
-  currencySymbol,
   formatBp,
   formatCents,
   formatDate,
@@ -61,7 +60,7 @@ import { trpc } from "@/providers/trpc";
 import { cn } from "@/lib/utils";
 import { CHART } from "@/lib/chartColors";
 import Note from "@/components/Note";
-import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, hatch } from "@/lib/chartTheme";
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
 import { pencil } from "@/lib/pencil";
@@ -202,7 +201,7 @@ function Kpi({
       <CardContent>
         <div
           className={cn(
-            "font-serif text-2xl font-semibold",
+            "font-serif text-2xl font-semibold tabular-nums",
             tone === "warn" && "text-destructive"
           )}
         >
@@ -300,7 +299,7 @@ function OverviewSection({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
-            <div className="font-serif text-2xl font-semibold">{formatCents(netWorth)}</div>
+            <div className="font-serif text-2xl font-semibold tabular-nums">{formatCents(netWorth)}</div>
             <div className="flex justify-between gap-2">
               <span className="min-w-0 text-muted-foreground">Kontosalden</span>
               <span className="shrink-0 font-medium">{formatCents(liquid)}</span>
@@ -342,7 +341,7 @@ function OverviewSection({
           <CardContent className="space-y-1.5 text-sm">
             <div
               className={cn(
-                "font-serif text-2xl font-semibold",
+                "font-serif text-2xl font-semibold tabular-nums",
                 affordability.affordable === false && "text-destructive"
               )}
             >
@@ -437,10 +436,8 @@ function OverviewSection({
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(v: number) =>
-                      `${(v / 1000).toFixed(0)}k ${currencySymbol()}`
-                    }
-                    width={80}
+                    tickFormatter={axisMoney}
+                    width={AXIS_MONEY_WIDTH}
                   />
                   <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                   <Legend iconType="square" iconSize={10} />
@@ -587,7 +584,7 @@ function TranchesSection({
                 </div>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
-                <div className="font-serif text-xl font-semibold">{formatCents(t.principal)}</div>
+                <div className="font-serif text-xl font-semibold tabular-nums">{formatCents(t.principal)}</div>
                 <div className="flex justify-between gap-2">
                   <span className="min-w-0 text-muted-foreground">Zinssatz</span>
                   <span className="shrink-0 font-medium">
@@ -741,7 +738,7 @@ function AmortizationSection({
                 </div>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
-                <div className="font-serif text-xl font-semibold">{formatCents(a.amount)}</div>
+                <div className="font-serif text-xl font-semibold tabular-nums">{formatCents(a.amount)}</div>
                 {a.kind === "direct" && tranche && (
                   <div className="flex justify-between gap-2">
                     <span className="min-w-0 text-muted-foreground">Tranche</span>

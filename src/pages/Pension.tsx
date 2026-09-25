@@ -106,7 +106,7 @@ import { useAuth } from "@/providers/auth";
 import { toast } from "sonner";
 import { CHART } from "@/lib/chartColors";
 import Note from "@/components/Note";
-import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, hatch } from "@/lib/chartTheme";
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
 
@@ -447,7 +447,7 @@ function OverviewSection({
                 <div className="text-xs text-muted-foreground">
                   Monatliches Einkommen im Alter
                 </div>
-                <div className="font-serif text-xl font-semibold text-positive">
+                <div className="font-serif text-xl font-semibold tabular-nums text-positive">
                   {formatCents(forecast.monthlyRetirementIncome)}
                 </div>
               </div>
@@ -646,10 +646,8 @@ function OverviewSection({
                     <YAxis
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(v: number) =>
-                        `${(v / 1000).toFixed(0)}k ${currencySymbol()}`
-                      }
-                      width={80}
+                      tickFormatter={axisMoney}
+                    width={AXIS_MONEY_WIDTH}
                     />
                     <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                     <Legend iconType="square" iconSize={10} />
@@ -1146,7 +1144,7 @@ function SalarySection({
           </div>
           <div className="text-right">
             <div className="text-xs text-muted-foreground">Aktuelles Netto</div>
-            <div className="font-serif text-lg font-semibold text-positive">
+            <div className="font-serif text-lg font-semibold tabular-nums text-positive">
               {currentNet != null ? formatCents(currentNet) : "—"}
             </div>
           </div>
@@ -1808,7 +1806,7 @@ function AhvCalculation() {
           <div className="text-xs text-muted-foreground">
             Berechnete Monatsrente
           </div>
-          <div className="font-serif text-2xl font-semibold">
+          <div className="font-serif text-2xl font-semibold tabular-nums">
             {formatCents(d.monthlyPension)}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -2102,7 +2100,7 @@ function FundsSection({
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="font-serif text-xl font-semibold">
+                  <span className="font-serif text-xl font-semibold tabular-nums">
                     {formatCents(f.currentCapital)}
                   </span>
                 </div>
@@ -2206,7 +2204,7 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="font-serif text-xl font-semibold">
+                  <span className="font-serif text-xl font-semibold tabular-nums">
                     {formatCents(balance)}
                   </span>
                 </div>

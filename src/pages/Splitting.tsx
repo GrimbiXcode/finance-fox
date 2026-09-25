@@ -166,7 +166,7 @@ export default function Splitting() {
                     </div>
                     <span className="truncate font-medium" title={u.name}>{u.name}</span>
                   </div>
-                  <span className={cn('shrink-0 font-serif text-lg font-semibold', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
+                  <span className={cn('shrink-0 font-serif text-lg font-semibold tabular-nums', bal > 0 ? 'text-positive' : bal < 0 ? 'text-negative' : 'text-muted-foreground')}>
                     {bal > 0 ? '+' : ''}{formatCents(bal)}
                   </span>
                 </div>
@@ -204,7 +204,7 @@ export default function Splitting() {
                       {to?.name}
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <span className="font-serif text-lg font-semibold">{formatCents(s.amount)}</span>
+                      <span className="font-serif text-lg font-semibold tabular-nums">{formatCents(s.amount)}</span>
                       <Button
                         size="sm"
                         variant="stamp"

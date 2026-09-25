@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { CalendarClock, ChevronDown, ChevronUp, Link2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Link } from 'react-router';
+import { CalendarClock, ChevronDown, ChevronUp, Link2, Pencil, Plus, Repeat, Trash2 } from 'lucide-react';
+import { requiredMonthlyRate } from '@contracts/planning';
 import GoalDialog from '@/components/GoalDialog';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +16,7 @@ import {
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
-import { amountPlaceholder, currencySymbol, formatCents, formatDate, formatMonth, parseEuro } from '@/lib/finance';
+import { amountPlaceholder, currencySymbol, formatCents, formatDate, formatMonth, parseEuro, todayISO } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import { pencilSlot , pencil } from '@/lib/pencil';
@@ -96,6 +98,23 @@ function GoalCard({ goal, accounts, banks, forecast }: {
   );
   const linkableAccounts = accounts.filter((a) => !linkedAccountIds.has(a.id));
 
+  // Nötige Monatsrate bis zum Stichtag, wenn die Dauerbuchungen nicht reichen.
+  // „Sparrate einrichten“ bietet eine Umbuchung auf ein ganz verknüpftes Konto
+  // an — bei Anteilen (fix/Prozent) würde eine Einzahlung das Ziel nicht oder
+  // nur teilweise erhöhen.
+  const rateHint = (() => {
+    if (open || done || !goal.deadline || !goal.targetAmount) return null;
+    if (forecast?.etaMonth && forecast.etaMonth <= goal.deadline.slice(0, 7)) return null;
+    const required = requiredMonthlyRate(goal.targetAmount - total, goal.deadline, todayISO());
+    if (required === null) return null;
+    const fullSource = goal.sources.find((s) => s.kind === 'account' && s.mode === 'full');
+    return {
+      required,
+      current: Math.max(0, forecast?.monthlyRate ?? 0),
+      sourceAccountId: fullSource?.accountId ?? null,
+    };
+  })();
+
   const submitLink = () => {
     const accountId = Number(linkAccount);
     if (!accountId) { toast.error('Konto wählen.'); return; }
@@ -137,7 +156,7 @@ function GoalCard({ goal, accounts, banks, forecast }: {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-baseline justify-between">
-          <span className="font-serif text-xl font-semibold" style={{ color: pencil(goal.color) }}>{formatCents(total)}</span>
+          <span className="font-serif text-xl font-semibold tabular-nums" style={{ color: pencil(goal.color) }}>{formatCents(total)}</span>
           {open ? (
             <Badge variant="stamp">offenes Ziel</Badge>
           ) : (
@@ -160,11 +179,11 @@ function GoalCard({ goal, accounts, banks, forecast }: {
         )}
         {!open && (
           <>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{done ? 'Erreicht! 🎉' : `${pct} %`}</span>
+            <div className="flex items-start justify-between gap-3">
+              <span className="shrink-0 whitespace-nowrap text-sm font-medium tabular-nums">{done ? 'Erreicht! 🎉' : `${pct} %`}</span>
               {!done && forecast && (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CalendarClock className="h-3.5 w-3.5" />
+                <span className="flex min-w-0 items-start gap-1.5 text-right text-xs text-muted-foreground">
+                  <CalendarClock className="mt-px h-3.5 w-3.5 shrink-0" />
                   {forecast.etaMonth
                     ? `Voraussichtlich erreicht: ${formatMonth(forecast.etaMonth)}`
                     : 'Mit aktuellen Dauerbuchungen nicht erreichbar'}
@@ -173,6 +192,34 @@ function GoalCard({ goal, accounts, banks, forecast }: {
               )}
             </div>
           </>
+        )}
+        {rateHint && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
+            <span className="min-w-0">
+              Für den Stichtag nötig:{' '}
+              <span className="whitespace-nowrap font-semibold tabular-nums text-foreground">
+                {formatCents(rateHint.required)}/Monat
+              </span>
+              {rateHint.current > 0 && (
+                <span className="text-muted-foreground"> (heute +{formatCents(rateHint.current)})</span>
+              )}
+            </span>
+            {rateHint.sourceAccountId !== null && (
+              <Button variant="outline" size="sm" className="h-7" asChild>
+                <Link
+                  to={`/wiederkehrend?${new URLSearchParams({
+                    neu: '1',
+                    typ: 'transfer',
+                    nach: String(rateHint.sourceAccountId),
+                    betrag: String(rateHint.required - rateHint.current),
+                    notiz: `Sparziel ${goal.name}`,
+                  })}`}
+                >
+                  <Repeat className="mr-1.5 h-3.5 w-3.5" /> Sparrate einrichten
+                </Link>
+              </Button>
+            )}
+          </div>
         )}
         {goal.hasHiddenSources && (
           <p className="text-xs italic text-muted-foreground">Enthält verborgene Quellen</p>

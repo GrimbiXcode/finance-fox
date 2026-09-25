@@ -112,7 +112,10 @@ export default function TransactionDialog({
   // Gewählte Beleg-Dateien (werden nach dem Speichern der Buchung hochgeladen)
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  // „Speichern & weitere“: Anzahl der in diesem Durchgang erfassten Buchungen
+  const [savedCount, setSavedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const amountInput = useRef<HTMLInputElement>(null);
 
   const createTx = trpc.finance.createTransaction.useMutation();
   const updateTx = trpc.finance.updateTransaction.useMutation();
@@ -245,7 +248,19 @@ export default function TransactionDialog({
     }
   };
 
-  const submit = async () => {
+  /** Dialog öffnen/schließen — der Zähler gilt nur für einen Durchgang */
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    if (!next) setSavedCount(0);
+  };
+
+  /**
+   * Speichern. Mit `keepOpen` (nur beim Anlegen) bleibt der Dialog offen:
+   * Art, Datum, Konto, Person und Projekt bleiben stehen, Betrag, Notiz,
+   * Kategorie, Aufteilung, Tags und Belege werden für die nächste Buchung
+   * geleert — so lässt sich ein Stapel Belege in einem Zug nachtragen.
+   */
+  const submit = async (keepOpen = false) => {
     const cents = parseEuro(amount);
     if (cents <= 0) { toast.error('Bitte einen gültigen Betrag eingeben.'); return; }
     if (!effectiveAccountId) { toast.error('Bitte zuerst ein Konto anlegen.'); return; }
@@ -287,7 +302,7 @@ export default function TransactionDialog({
         });
         toast.success('Buchung aktualisiert.');
         invalidate();
-        setOpen(false);
+        changeOpen(false);
         return;
       }
       // Erst die Buchung speichern, dann die Belege zur neuen ID hochladen
@@ -307,11 +322,17 @@ export default function TransactionDialog({
       }
       toast.success('Buchung gespeichert.');
       invalidate();
-      setOpen(false);
       setAmount(''); setNote(''); setCategoryId(''); setSplitEnabled(false); setShares({});
-      setProjectId(''); setSaveTplOpen(false); setSaveTplName('');
+      setSaveTplOpen(false); setSaveTplName('');
       setSelectedTagIds([]); setNewTagOpen(false); setNewTagName('');
       setFiles([]);
+      if (keepOpen) {
+        setSavedCount((n) => n + 1);
+        amountInput.current?.focus();
+        return;
+      }
+      changeOpen(false);
+      setProjectId('');
       setDate(todayISO());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Die Buchung konnte nicht gespeichert werden.');
@@ -374,7 +395,7 @@ export default function TransactionDialog({
   const isTransfer = type === 'transfer';
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
         {trigger ?? (
           <Button>
@@ -382,13 +403,24 @@ export default function TransactionDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        onKeyDown={(e) => {
+          // ⌘/Strg+Enter speichert, mit Umschalt „Speichern & weitere“
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !saving) {
+            e.preventDefault();
+            void submit(e.shiftKey && !isEdit);
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Buchung bearbeiten' : 'Neue Buchung'}</DialogTitle>
           <DialogDescription>
             {isEdit
               ? 'Bestehende Buchung anpassen — jede Änderung wird protokolliert.'
-              : 'Einnahme, Ausgabe oder Umbuchung zwischen Konten erfassen.'}
+              : savedCount > 0
+                ? `${savedCount} ${savedCount === 1 ? 'Buchung' : 'Buchungen'} erfasst — Datum, Konto und Person bleiben für die nächste stehen.`
+                : 'Einnahme, Ausgabe oder Umbuchung zwischen Konten erfassen.'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -416,7 +448,7 @@ export default function TransactionDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="amount">Betrag ({currencySymbol()})</Label>
-              <Input id="amount" inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input ref={amountInput} id="amount" inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="date">Datum</Label>
@@ -762,10 +794,23 @@ export default function TransactionDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
+          <Button variant="outline" onClick={() => changeOpen(false)}>
+            {savedCount > 0 ? 'Fertig' : 'Abbrechen'}
+          </Button>
+          {!isEdit && (
+            <Button
+              variant="outline"
+              onClick={() => void submit(true)}
+              disabled={saving}
+              title="Speichern und direkt die nächste Buchung erfassen (⌘/Strg+Umschalt+Enter)"
+            >
+              Speichern &amp; weitere
+            </Button>
+          )}
           <Button
-            onClick={submit}
+            onClick={() => void submit()}
             disabled={saving}
+            title="⌘/Strg+Enter"
           >
             {saving ? 'Speichern…' : isEdit ? 'Änderungen speichern' : 'Speichern'}
           </Button>

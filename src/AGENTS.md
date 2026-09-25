@@ -139,7 +139,38 @@ der Antwort.
 Darstellungsart der Konten-Seite (Karten/Tabelle) unter dem Key
 `ff-accounts-view`, der Dauerbuchungen-Seite unter `ff-recurring-view`;
 eingeklappte Seitenleiste unter `ff-sidebar-collapsed`; gewählte
-Berichts-Abschnitte unter `ff-report-sections`.
+Berichts-Abschnitte unter `ff-report-sections`; ausgeblendete „Erste
+Schritte“ unter `ff-getting-started-hidden`.
+
+## UI-State in der URL
+
+Filter, die man teilen oder verlinken will, stehen als Query-Parameter im
+Hash-Router (`useSearchParams`), nicht in `useState`:
+
+- **Transaktionen**: `monat` (`YYYY-MM`), `typ`, `konto`, `kategorie`
+  (eine Oberkategorie schließt ihre Unterkategorien ein), `person`, `tag`,
+  `q` (Suche). Andere Seiten verlinken damit direkt auf eine gefilterte
+  Liste (Dashboard-Kennzahlen und Kategorien-Legende → Monat + Kategorie).
+- **Dashboard**: `monat` (fehlt = aktueller Monat).
+- **Wiederkehrend**: `neu=1` öffnet den Anlegen-Dialog, vorbefüllt aus
+  `typ`, `von`, `nach`, `kategorie`, `betrag` (Cent), `notiz`; die Parameter
+  werden danach entfernt. So schlägt z. B. die Sparziel-Karte eine
+  Sparrate vor.
+
+## Beträge und Achsen
+
+- Kennzahlen tragen `tabular-nums`; zusammen mit `font-mono` setzt
+  `index.css` dort `overflow-wrap: normal` — Beträge brechen nie mitten im
+  Wert um, obwohl `body` sonst `overflow-wrap: anywhere` hat.
+- Geld-Achsen in recharts: `tickFormatter={axisMoney}` und
+  `width={AXIS_MONEY_WIDTH}` aus `lib/chartTheme.ts` („14k“, „1,2 Mio.“) —
+  nicht „14000 EUR“, das in der Achse umbricht.
+- Reine Planungsrechnungen (Monatsverschiebung, nötige Sparrate,
+  Budget-Tempo, Prozentveränderung) liegen in `contracts/planning.ts` und
+  sind in `api/planning.test.ts` getestet; Startkategorien in
+  `contracts/defaultCategories.ts` (Endpunkt `finance.addDefaultCategories`,
+  Auswahl `components/DefaultCategoriesPicker.tsx` im Wizard, in den
+  Einstellungen und in `components/GettingStarted.tsx`).
 
 ## Seiten-Besonderheiten
 

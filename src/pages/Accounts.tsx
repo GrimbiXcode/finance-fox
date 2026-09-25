@@ -11,10 +11,10 @@ import AccountDialog from '@/components/AccountDialog';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
-import { currencySymbol, formatCents, formatDate } from '@/lib/finance';
+import { formatCents, formatDate } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
-import { CURSOR_LINE, HATCH_OPACITY, hatch } from '@/lib/chartTheme';
+import { AXIS_MONEY_WIDTH, CURSOR_LINE, HATCH_OPACITY, axisMoney, hatch } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { chartDefs } from '@/lib/chartDefs';
 
@@ -119,12 +119,13 @@ function BalanceHistory({ accountId }: { accountId: number }) {
               {chartDefs()}
               <XAxis
                 dataKey="date" tickLine={false} axisLine={false} fontSize={11}
+                minTickGap={28}
                 tickFormatter={(v: string) => formatDate(v)}
               />
               <YAxis
-                tickLine={false} axisLine={false} width={64} fontSize={11}
+                tickLine={false} axisLine={false} width={AXIS_MONEY_WIDTH} fontSize={11}
                 domain={['auto', 'auto']}
-                tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
+                tickFormatter={axisMoney}
               />
               <Tooltip
                 content={<PaperTooltip labelFormatter={(label) => formatDate(String(label))} />}
@@ -323,7 +324,7 @@ export default function Accounts() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className={cn('font-serif text-2xl font-semibold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
+                <div className={cn('font-serif text-2xl font-semibold tabular-nums', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant="label">{txCount} Buchungen</Badge>
                   {a.owners.length > 0 && <Badge variant="stamp" tone="ink">Privat</Badge>}

@@ -222,7 +222,7 @@ function Kpi({
       <CardContent>
         <div
           className={cn(
-            "font-serif text-2xl font-semibold",
+            "font-serif text-2xl font-semibold tabular-nums",
             tone === "warn" && "text-destructive"
           )}
         >
@@ -664,7 +664,7 @@ function PolicyCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <p className="font-serif text-xl font-semibold">{formatCents(policy.premium)}</p>
+          <p className="font-serif text-xl font-semibold tabular-nums">{formatCents(policy.premium)}</p>
           <p className="text-xs text-muted-foreground">
             {
               RECURRING_INTERVAL_LABELS[

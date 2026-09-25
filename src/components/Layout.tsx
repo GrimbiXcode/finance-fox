@@ -145,7 +145,7 @@ export default function Layout() {
         {!collapsed && (
           <div className="border-t px-6 py-4">
             <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
-            <div className={cn('font-serif text-xl font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
+            <div className={cn('font-serif text-xl font-semibold tabular-nums', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
             <div className="mt-2 flex items-center gap-1.5 text-xs text-stamp">
               <ShieldCheck className="h-3.5 w-3.5" />
               Daten bleiben auf deinem Server

@@ -40,10 +40,15 @@ import {
   CURRENCY_CODES,
   DEFAULT_CURRENCY,
   RECURRING_INTERVAL_LABELS,
+  PENCIL_COLORS,
   RECURRING_INTERVALS,
   TAG_COLORS,
 } from "@contracts/types";
 import type { ShareWeight } from "@contracts/splitShares";
+import {
+  DEFAULT_CATEGORIES,
+  DEFAULT_CATEGORY_KEYS,
+} from "@contracts/defaultCategories";
 import { runRecurringJob } from "./lib/recurringJob";
 import {
   CSV_HEADER,
@@ -949,6 +954,80 @@ export const financeRouter = createRouter({
         input.name
       );
       return { ok: true };
+    }),
+
+  /**
+   * Startkategorien aus `DEFAULT_CATEGORIES` anlegen (Wizard und
+   * Einstellungen). Idempotent: Eine vorhandene Oberkategorie gleichen Namens
+   * und Typs wird wiederverwendet und nur um fehlende Unterkategorien
+   * ergänzt — mehrfaches Aufrufen dupliziert nichts. Liefert die Anzahl neu
+   * angelegter Kategorien.
+   */
+  addDefaultCategories: authedQuery
+    .input(z.object({ keys: z.array(z.enum(DEFAULT_CATEGORY_KEYS)).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const wanted = new Set(input.keys);
+      const existing = await db.select().from(categories);
+      const same = (a: string, b: string) =>
+        a.trim().toLowerCase() === b.trim().toLowerCase();
+      let created = 0;
+      db.transaction(tx => {
+        DEFAULT_CATEGORIES.forEach((def, index) => {
+          if (!wanted.has(def.key)) return;
+          let root = existing.find(
+            c =>
+              c.parentId === null &&
+              c.type === def.type &&
+              same(c.name, def.name)
+          );
+          if (!root) {
+            const color = PENCIL_COLORS[index % PENCIL_COLORS.length];
+            const row = tx
+              .insert(categories)
+              .values({ name: def.name, type: def.type, color, parentId: null })
+              .returning()
+              .all()[0];
+            root = row;
+            created += 1;
+            logAudit(
+              tx,
+              ctx.user.id,
+              "category.created",
+              "category",
+              row.id,
+              def.name
+            );
+          }
+          for (const child of def.children) {
+            if (
+              existing.some(c => c.parentId === root.id && same(c.name, child))
+            ) {
+              continue;
+            }
+            const row = tx
+              .insert(categories)
+              .values({
+                name: child,
+                type: def.type,
+                color: root.color,
+                parentId: root.id,
+              })
+              .returning()
+              .all()[0];
+            created += 1;
+            logAudit(
+              tx,
+              ctx.user.id,
+              "category.created",
+              "category",
+              row.id,
+              child
+            );
+          }
+        });
+      });
+      return { created };
     }),
 
   /**

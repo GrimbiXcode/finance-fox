@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router';
 import {
   ArrowRight, LayoutGrid, Pause, Pencil, Play, Plus, Table as TableIcon, Zap,
 } from 'lucide-react';
@@ -22,7 +23,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
 import { useAuth } from '@/providers/auth';
-import { amountPlaceholder, currencySymbol, formatCents, formatDate, parseEuro, todayISO } from '@/lib/finance';
+import {
+  amountPlaceholder, currencySymbol, formatAmountInput, formatCents, formatDate, parseEuro, todayISO,
+} from '@/lib/finance';
+import { monthlyAmount } from '@/lib/moneyflow';
 import { isRecurringArchived, sortRecurring } from '@/lib/recurring';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
@@ -73,9 +77,29 @@ const emptyForm = (): RecurringFormValues => ({
   userId: '', note: '', interval: 'monthly', nextDate: todayISO(), endDate: '',
 });
 
+/**
+ * Vorbefüllung aus der URL (`#/wiederkehrend?neu=1&typ=transfer&nach=3&betrag=46000&notiz=…`)
+ * — so können andere Seiten (z. B. Sparziele: „Sparrate einrichten“) eine
+ * passende Dauerbuchung vorschlagen, ohne das Formular selbst zu kennen.
+ * Betrag in Cent.
+ */
+const formFromParams = (params: URLSearchParams): RecurringFormValues => {
+  const typ = params.get('typ');
+  const cents = Number(params.get('betrag'));
+  return {
+    ...emptyForm(),
+    type: typ === 'income' || typ === 'transfer' ? typ : 'expense',
+    amount: cents > 0 ? formatAmountInput(cents) : '',
+    accountId: params.get('von') ?? '',
+    toAccountId: params.get('nach') ?? '',
+    categoryId: params.get('kategorie') ?? '',
+    note: params.get('notiz') ?? '',
+  };
+};
+
 const formFromRow = (r: RecurringRow): RecurringFormValues => ({
   type: r.type,
-  amount: (r.amount / 100).toString(),
+  amount: formatAmountInput(r.amount),
   accountId: String(r.accountId),
   toAccountId: r.toAccountId ? String(r.toAccountId) : '',
   categoryId: r.categoryId ? String(r.categoryId) : '',
@@ -228,7 +252,17 @@ export default function Recurring() {
   const { user } = useAuth();
   const { accounts, banks, categories, recurring, users } = useFinanceData();
   const invalidate = useInvalidateFinance();
-  const [open, setOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Mit `?neu=1` direkt den vorbefüllten Anlegen-Dialog öffnen
+  const [open, setOpen] = useState(() => searchParams.get('neu') === '1');
+  const [createInitial, setCreateInitial] = useState<RecurringFormValues>(() =>
+    searchParams.get('neu') === '1' ? formFromParams(searchParams) : emptyForm(),
+  );
+  // Die Parameter sind nach dem Öffnen verbraucht — ein Neuladen soll den
+  // Dialog nicht erneut aufmachen
+  useEffect(() => {
+    if (searchParams.get('neu') === '1') setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [editing, setEditing] = useState<RecurringRow | null>(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [accountFilter, setAccountFilter] = useState('all');
@@ -342,6 +376,19 @@ export default function Recurring() {
     return true;
   });
 
+  // Monatssummen der laufenden Dauerbuchungen der aktuellen Auswahl (wie im
+  // Geldfluss auf einen Monat normalisiert; pausierte/archivierte zählen nicht)
+  const running = filtered.filter((r) => r.active && !isArchived(r));
+  const monthlySum = (type: RecType) =>
+    running.filter((r) => r.type === type).reduce((s, r) => s + monthlyAmount(r.amount, r.interval), 0);
+  const sums = {
+    income: monthlySum('income'),
+    expense: monthlySum('expense'),
+    transfer: monthlySum('transfer'),
+  };
+  const balance = sums.income - sums.expense;
+  const fixedShare = sums.income > 0 ? Math.round((sums.expense / sums.income) * 100) : null;
+
   // Laufende Dauerbuchungen (nach nächster Fälligkeit) zuerst, archivierte ans Ende
   const displayed = sortRecurring(filtered, today);
 
@@ -391,14 +438,20 @@ export default function Recurring() {
           <Button variant="stamp" onClick={() => runNow.mutate()} disabled={runNow.isPending}>
             <Zap className="mr-2 h-4 w-4" /> Jetzt verbuchen
           </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog
+            open={open}
+            onOpenChange={(o) => {
+              setOpen(o);
+              if (!o) setCreateInitial(emptyForm());
+            }}
+          >
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader><DialogTitle>Neue wiederkehrende Buchung</DialogTitle></DialogHeader>
               <RecurringForm
-                initial={emptyForm()}
+                initial={createInitial}
                 editMode={false}
                 isPending={createRecurring.isPending}
                 submitLabel="Anlegen"
@@ -480,6 +533,27 @@ export default function Recurring() {
         </div>
       </div>
 
+      {running.length > 0 && (
+        <Card>
+          <CardContent className="grid grid-cols-2 gap-4 py-4 sm:grid-cols-4">
+            <SumStat label="Einnahmen pro Monat" value={sums.income} tone="positive" />
+            <SumStat
+              label="Ausgaben pro Monat"
+              value={sums.expense}
+              tone="negative"
+              hint={fixedShare !== null ? `${fixedShare} % der Einnahmen` : undefined}
+            />
+            <SumStat label="Umbuchungen pro Monat" value={sums.transfer} hint="Sparen & Übertrag zwischen Konten" />
+            <SumStat
+              label="Einnahmen − Ausgaben"
+              value={balance}
+              tone={balance >= 0 ? 'positive' : 'negative'}
+              hint={`${formatCents(balance * 12)} pro Jahr`}
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {recurring.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
@@ -532,7 +606,7 @@ export default function Recurring() {
                 <CardContent className="space-y-3">
                   <div className="flex items-baseline justify-between">
                     <span className={cn(
-                      'font-serif text-xl font-semibold',
+                      'font-serif text-xl font-semibold tabular-nums',
                       r.type === 'income' && 'text-positive',
                       r.type === 'expense' && 'text-negative',
                     )}>
@@ -708,6 +782,30 @@ export default function Recurring() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Kennzahl der Summenzeile (Beträge pro Monat) */
+function SumStat({
+  label, value, tone, hint,
+}: {
+  label: string;
+  value: number;
+  tone?: 'positive' | 'negative';
+  hint?: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={cn(
+        'font-serif text-lg font-semibold tabular-nums',
+        tone === 'positive' && 'text-positive',
+        tone === 'negative' && 'text-negative',
+      )}>
+        {formatCents(value)}
+      </div>
+      {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
     </div>
   );
 }

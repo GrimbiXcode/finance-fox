@@ -6,6 +6,7 @@ import {
   Pencil,
   Plus,
   ShieldCheck,
+  Sparkles,
   Smartphone,
   Trash2,
   Upload,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import OfflineCard from "@/components/OfflineCard";
+import DefaultCategoriesPicker from "@/components/DefaultCategoriesPicker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +42,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -313,6 +316,7 @@ export default function Settings() {
   const [catParent, setCatParent] = useState("");
   // Aktuell im Bearbeiten-Dialog geöffnete Kategorie (null = kein Dialog)
   const [editingCat, setEditingCat] = useState<EditCategory | null>(null);
+  const [defaultsOpen, setDefaultsOpen] = useState(false);
   const [tagName, setTagName] = useState("");
   const [profileName, setProfileName] = useState(user?.name ?? "");
   const [profileColor, setProfileColor] = useState(user?.color ?? PENCIL_COLORS[2]);
@@ -945,9 +949,31 @@ export default function Settings() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Kategorien</CardTitle>
-          <CardDescription>{categories.length} Kategorien</CardDescription>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle>Kategorien</CardTitle>
+            <CardDescription>{categories.length} Kategorien</CardDescription>
+          </div>
+          <Dialog open={defaultsOpen} onOpenChange={setDefaultsOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Sparkles className="mr-2 h-4 w-4" /> Vorschläge ergänzen
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Kategorie-Vorschläge</DialogTitle>
+                <DialogDescription>
+                  Ein erprobtes Set für den Haushalt. Vorhandene Kategorien
+                  bleiben, es werden nur fehlende ergänzt.
+                </DialogDescription>
+              </DialogHeader>
+              <DefaultCategoriesPicker
+                submitLabel="Gewählte ergänzen"
+                onDone={() => setDefaultsOpen(false)}
+              />
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent className="space-y-3">
           {/* Baum-Ansicht: Oberkategorien mit eingerückten Unterkategorien */}

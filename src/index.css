@@ -165,6 +165,14 @@
        weiterhin der jeweilige Container. */
     overflow-wrap: anywhere;
   }
+  /* Beträge, Kennzahlen, Daten und IBANs brechen nie mitten im Wert um
+     („EUR 234'2 / 61.29“). Sie tragen `tabular-nums` bzw. `font-mono`;
+     reicht der Platz nicht, schrumpft die Schrift oder der Container
+     scrollt — nie die Zahl. */
+  .tabular-nums,
+  .font-mono {
+    overflow-wrap: normal;
+  }
 
   /* Papier-Design: Titel in Serife (Newsreader), Kennzahlen mit
      Lining-Ziffern. Utility-Klassen (text-sm, font-sans) gewinnen weiterhin,

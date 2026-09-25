@@ -291,6 +291,11 @@ anlegen — dann liegt das `Caddyfile` daneben und das normale
 npm install
 npm run db:push   # Schema anwenden
 npm run dev       # http://localhost:3000 (Frontend + API mit HMR)
+
+# Mit Musterhaushalt zum Durchklicken:
+npm run dev:agent # Dev-Server mit passwortlosem Entwicklungs-Login
+npm run seed:demo # zweites Terminal: füllt die leere Dev-DB mit Beispieldaten
+# danach http://localhost:3000/api/dev/login öffnen
 ```
 
 Wichtige Befehle: `npm run check` (Type-Check), `npm run build` (Produktion),

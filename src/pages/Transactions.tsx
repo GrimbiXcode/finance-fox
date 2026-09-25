@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Check, Download, Paperclip, Pencil, Search, Tag, Trash2, Undo2 } from 'lucide-react';
+import { useSearchParams } from 'react-router';
+import {
+  Check, ChevronLeft, ChevronRight, Download, Paperclip, Pencil, Search, Tag, Trash2, Undo2, X,
+} from 'lucide-react';
+import { shiftMonth } from '@contracts/planning';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,7 +25,7 @@ import {
 } from '@/components/ui/table';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { saveBlobAsFile } from '@/lib/download';
-import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
+import { currentMonthKey, formatCents, formatDate, formatMonth, getUserLocale } from '@/lib/finance';
 import TransactionDialog from '@/components/TransactionDialog';
 import TransactionAttachmentsDialog from '@/components/TransactionAttachmentsDialog';
 import TransactionHistoryDialog from '@/components/TransactionHistoryDialog';
@@ -35,12 +39,33 @@ import { pencil } from '@/lib/pencil';
 export default function Transactions() {
   const { accounts, banks, categories, transactions, users, projects, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [accountFilter, setAccountFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [userFilter, setUserFilter] = useState('all');
-  const [tagFilter, setTagFilter] = useState('all');
+  // Filter stehen in der URL (`#/transaktionen?monat=2026-08&kategorie=12`):
+  // teilbar, überleben ein Neuladen, und andere Seiten können direkt auf
+  // eine gefilterte Liste verlinken (Dashboard → Kategorie des Monats).
+  const [params, setParams] = useSearchParams();
+  const param = (key: string) => params.get(key) ?? 'all';
+  const setParam = (key: string, value: string) =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (!value || value === 'all') next.delete(key);
+      else next.set(key, value);
+      return next;
+    }, { replace: true });
+  const search = params.get('q') ?? '';
+  const setSearch = (v: string) => setParam('q', v);
+  const typeFilter = param('typ');
+  const setTypeFilter = (v: string) => setParam('typ', v);
+  const accountFilter = param('konto');
+  const setAccountFilter = (v: string) => setParam('konto', v);
+  const categoryFilter = param('kategorie');
+  const setCategoryFilter = (v: string) => setParam('kategorie', v);
+  const userFilter = param('person');
+  const setUserFilter = (v: string) => setParam('person', v);
+  const tagFilter = param('tag');
+  const setTagFilter = (v: string) => setParam('tag', v);
+  const monthParam = params.get('monat');
+  const monthFilter = monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : null;
+  const hasFilter = [...params.keys()].length > 0;
 
   const deleteTx = trpc.finance.deleteTransaction.useMutation({
     onSuccess: () => invalidate(),
@@ -81,12 +106,20 @@ export default function Transactions() {
     }
   };
 
+  // Eine Oberkategorie im Filter schließt ihre Unterkategorien ein
+  const categoryIds = useMemo(() => {
+    if (categoryFilter === 'all') return null;
+    const id = Number(categoryFilter);
+    return new Set([id, ...categories.filter((c) => c.parentId === id).map((c) => c.id)]);
+  }, [categories, categoryFilter]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return transactions.filter((t) => {
+      if (monthFilter && !t.date.startsWith(monthFilter)) return false;
       if (typeFilter !== 'all' && t.type !== typeFilter) return false;
       if (accountFilter !== 'all' && t.accountId !== Number(accountFilter) && t.toAccountId !== Number(accountFilter)) return false;
-      if (categoryFilter !== 'all' && t.categoryId !== Number(categoryFilter)) return false;
+      if (categoryIds && (t.categoryId === null || !categoryIds.has(t.categoryId))) return false;
       if (userFilter !== 'all' && t.userId !== Number(userFilter)) return false;
       if (tagFilter !== 'all' && !t.tags.some((tag) => tag.id === Number(tagFilter))) return false;
       if (term) {
@@ -96,7 +129,7 @@ export default function Transactions() {
       }
       return true;
     });
-  }, [transactions, categories, search, typeFilter, accountFilter, categoryFilter, userFilter, tagFilter]);
+  }, [transactions, categories, search, monthFilter, typeFilter, accountFilter, categoryIds, userFilter, tagFilter]);
 
   const sum = filtered.reduce((acc, t) => {
     if (t.type === 'income') return acc + t.amount;
@@ -134,8 +167,43 @@ export default function Transactions() {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-base">Filter</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {monthFilter ? (
+              <div className="flex items-center rounded-md border bg-card">
+                <Button
+                  variant="ghost" size="icon" className="h-8 w-8" title="Vorheriger Monat"
+                  onClick={() => setParam('monat', shiftMonth(monthFilter, -1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="px-1 text-sm font-medium tabular-nums">{formatMonth(monthFilter)}</span>
+                <Button
+                  variant="ghost" size="icon" className="h-8 w-8" title="Nächster Monat"
+                  disabled={monthFilter >= currentMonthKey()}
+                  onClick={() => setParam('monat', shiftMonth(monthFilter, 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost" size="icon" className="h-8 w-8" title="Alle Monate anzeigen"
+                  onClick={() => setParam('monat', '')}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setParam('monat', currentMonthKey())}>
+                Nur dieser Monat
+              </Button>
+            )}
+            {hasFilter && (
+              <Button variant="ghost" size="sm" onClick={() => setParams({}, { replace: true })}>
+                Filter zurücksetzen
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">

@@ -13,10 +13,10 @@ import {
 } from '@/components/ui/table';
 import type { DialogFund } from '@/components/PensionFundDialog';
 import {
-  currencySymbol, formatBp, formatCents, formatDate, todayISO,
+  formatBp, formatCents, formatDate, todayISO,
 } from '@/lib/finance';
 import { CHART } from '@/lib/chartColors';
-import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from '@/lib/chartTheme';
+import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, hatch } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { chartDefs } from '@/lib/chartDefs';
 
@@ -203,8 +203,8 @@ export default function PensionFundStatement({
                     <YAxis
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k ${currencySymbol()}`}
-                      width={80}
+                      tickFormatter={axisMoney}
+                      width={AXIS_MONEY_WIDTH}
                     />
                     <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                     {phases.map((p, i) => (

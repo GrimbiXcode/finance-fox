@@ -6,6 +6,28 @@ Nutzer, Zeit oder Erkenntnis?** Jede Beobachtung mündet in eine User Story mit
 Akzeptanzkriterien und einem Prüfschritt, damit sich Lücken nachvollziehbar
 finden und geschlossene Lücken abhaken lassen.
 
+## Umsetzungsstand
+
+Welle 1 ist umgesetzt (Stand: Branch `claude/app-usability-analysis-d06w62`):
+
+| Story          | Umsetzung                                                                                                            |
+| -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| K2             | `npm run seed:demo` (`scripts/seed-demo.mjs`) — Musterhaushalt über die tRPC-API                                     |
+| J1             | Kennzahlen mit `tabular-nums`, Beträge brechen nicht mehr um (`index.css`)                                           |
+| J2, J3 (teils) | Kompakte Geld-Achsen `axisMoney`; schräge Kategorie-Labels in der Auswertung; weniger Datums-Ticks im Konten-Verlauf |
+| J5             | Prozentwerte der Sparziele ohne Umbruch                                                                              |
+| A1             | Startkategorien: Wizard-Schritt, „Vorschläge ergänzen“ in den Einstellungen, idempotenter Endpunkt mit Tests         |
+| A2             | „Erste Schritte“-Zettel auf dem Dashboard mit direkten Aktionen                                                      |
+| A6 (teils)     | Filter der Transaktionen und Monat des Dashboards in der URL                                                         |
+| B2             | „Speichern & weitere“ im Buchungsdialog, ⌘/Strg+Enter speichert                                                      |
+| D1             | Monatswechsel auf dem Dashboard, Vergleich zu Vormonat und Vorjahresmonat                                            |
+| D4 (teils)     | Kennzahlen, Kategorien-Legende und „Alle anzeigen“ führen zur gefilterten Transaktionsliste                          |
+| C1 (teils)     | Monatsfilter mit Vor/Zurück in der Transaktionsliste                                                                 |
+| E1             | Budget-Tempo: Zeitmarke im Balken, „im Plan / zu schnell“, Betrag pro Tag bzw. Monat                                 |
+| E2, E4         | Budget bearbeiten, Löschen mit Bestätigung, Monats- und Jahresbudgets getrennt summiert                              |
+| G1             | Summenzeile der Dauerbuchungen (Einnahmen, Ausgaben, Umbuchungen, Saldo pro Monat)                                   |
+| G4             | Nötige Monatsrate je Sparziel mit Stichtag, „Sparrate einrichten“ öffnet die vorbefüllte Dauerbuchung                |
+
 ## 1. Kurzfassung
 
 Finance Fox hat funktional mehr an Bord als die meisten Haushalts-Apps: sechs

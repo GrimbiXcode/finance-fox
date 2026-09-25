@@ -1043,7 +1043,15 @@ export const syncConflicts = sqliteTable(
  */
 export const syncBlobs = sqliteTable("sync_blobs", {
   storedName: text("stored_name").primaryKey(),
-  state: text("state", { enum: ["pending-upload", "present"] }).notNull(),
+  /**
+   * `pending-upload`: hier entstanden, muss noch zum Heimserver.
+   * `present`: liegt hier und dort.
+   * `lost`: hier verschwunden (Speicher geräumt), bevor sie hinüberkam — die
+   * Metadaten-Zeile gibt es noch, die Datei nicht mehr.
+   */
+  state: text("state", {
+    enum: ["pending-upload", "present", "lost"],
+  }).notNull(),
   sizeBytes: integer("size_bytes").notNull().default(0),
   touchedAt: integer("touched_at").notNull().default(0),
 });

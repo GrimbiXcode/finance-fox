@@ -69,15 +69,32 @@ function missingBlobs(): AttachmentRow[] {
 export function blobBytesStored(): number {
   return Number(
     rawClient(getDb())
-      .prepare("SELECT IFNULL(SUM(size_bytes), 0) AS n FROM sync_blobs")
+      .prepare(
+        // `lost` zählt nicht mit: Diese Dateien liegen hier gerade nicht mehr.
+        "SELECT IFNULL(SUM(size_bytes), 0) AS n FROM sync_blobs WHERE state <> 'lost'"
+      )
       .get()?.n ?? 0
   );
 }
 
 export function blobCount(): number {
   return Number(
-    rawClient(getDb()).prepare("SELECT COUNT(*) AS n FROM sync_blobs").get()
-      ?.n ?? 0
+    rawClient(getDb())
+      .prepare("SELECT COUNT(*) AS n FROM sync_blobs WHERE state <> 'lost'")
+      .get()?.n ?? 0
+  );
+}
+
+/**
+ * Belege, deren Datei auf diesem Gerät verloren ging, bevor sie beim
+ * Heimserver ankam. Sie sind nicht mehr zu retten — aber der Haushalt muss
+ * davon erfahren, statt eine Liste mit leeren Belegen vorzufinden.
+ */
+export function lostBlobCount(): number {
+  return Number(
+    rawClient(getDb())
+      .prepare("SELECT COUNT(*) AS n FROM sync_blobs WHERE state = 'lost'")
+      .get()?.n ?? 0
   );
 }
 
@@ -91,10 +108,16 @@ export async function syncBlobs(): Promise<boolean> {
   for (const row of pendingUploads()) {
     const bytes = await readAttachmentBlob(row.stored_name);
     if (!bytes) {
-      // Datei ist weg (Speicher geleert) — der Vermerk hilft nicht weiter.
+      // Die Datei ist hier verschwunden, bevor sie je beim Heimserver ankam
+      // (Speicher geräumt, Schreibvorgang fehlgeschlagen). Den Vermerk dafür
+      // einfach zu löschen wäre das Schlimmste: Die Metadaten-Zeile reist
+      // trotzdem hinüber, der Beleg stünde überall in der Liste — und niemand
+      // erführe je, dass hinter ihm keine Datei mehr steckt. Also als `lost`
+      // festhalten; `lostBlobCount()` bringt es in die Abgleich-Anzeige.
       rawClient(getDb())
-        .prepare("DELETE FROM sync_blobs WHERE stored_name = ?")
+        .prepare("UPDATE sync_blobs SET state = 'lost' WHERE stored_name = ?")
         .run(row.stored_name);
+      changed = true;
       continue;
     }
     const res = await fetch(

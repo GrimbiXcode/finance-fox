@@ -88,6 +88,10 @@ export async function handleApiRequest(
   if (isAttachment) {
     const response = await attachmentApp.fetch(request);
     if (request.method !== "GET") {
+      // Reihenfolge mit Absicht: erst die Datei, dann die Datenbank. Wirft das
+      // Schreiben der Datei (kein Platz, Speicher gesperrt), bleibt die
+      // Metadaten-Zeile ungesichert und der Aufrufer bekommt einen Fehler —
+      // besser als ein „Beleg hochgeladen", hinter dem keine Datei steckt.
       await flushAttachmentWrites();
       await flushDatabase();
     }

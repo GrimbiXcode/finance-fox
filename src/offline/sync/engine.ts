@@ -31,7 +31,7 @@ import {
   saveDevice,
   saveLastSync,
 } from "../state";
-import { blobBytesStored, blobCount, syncBlobs } from "./blobs";
+import { blobBytesStored, blobCount, lostBlobCount, syncBlobs } from "./blobs";
 import { clearAttachmentBlobs } from "../shims/attachmentStore";
 import {
   applyRemoteRow,
@@ -108,12 +108,14 @@ export async function currentStatus(): Promise<SyncStatus> {
   let conflicts = 0;
   let files = 0;
   let bytes = 0;
+  let lostFiles = 0;
   if (dbReady) {
     await dbReady;
     pending = pendingCount();
     conflicts = conflictCount();
     files = blobCount();
     bytes = blobBytesStored();
+    lostFiles = lostBlobCount();
   }
   return {
     offline: !identity
@@ -127,6 +129,7 @@ export async function currentStatus(): Promise<SyncStatus> {
     pending,
     conflicts,
     error: lastError,
+    lostFiles,
     storage: { files, bytes, budget: await loadBlobBudget() },
   };
 }

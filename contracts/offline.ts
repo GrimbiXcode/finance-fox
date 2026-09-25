@@ -141,6 +141,12 @@ export type SyncStatus = {
   conflicts: number;
   /** Letzter Fehler in Klartext (deutsch), sonst null */
   error: string | null;
+  /**
+   * Belege, deren Datei auf diesem Gerät verschwand, bevor sie beim
+   * Heimserver ankam. Ihre Metadaten-Zeile ist überall zu sehen, die Datei
+   * gibt es nirgends mehr — das muss die Anzeige sagen können.
+   */
+  lostFiles: number;
   /** Belegte und erlaubte Größe der Anhang-Dateien auf diesem Gerät */
   storage: { files: number; bytes: number; budget: number };
 };

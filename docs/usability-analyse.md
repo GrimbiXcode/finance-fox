@@ -8,7 +8,13 @@ finden und geschlossene Lücken abhaken lassen.
 
 ## Umsetzungsstand
 
-Welle 1 ist umgesetzt (Stand: Branch `claude/app-usability-analysis-d06w62`):
+**Alle fünf Wellen sind umgesetzt und je einmal unabhängig geprüft** (Branch
+`claude/app-usability-analysis-d06w62`). Die Entscheidungen samt geprüfter
+Alternativen und die Review-Befunde stehen in Abschnitt 8. Bewusst offen
+bleibt eine eigene Buchungsart „Ausgleich“ (siehe dort, „Offen“). Die
+„Status heute“-Zeilen der Stories beschreiben den Stand vor der Umsetzung.
+
+Welle 1 ist umgesetzt:
 
 | Story          | Umsetzung                                                                                                            |
 | -------------- | -------------------------------------------------------------------------------------------------------------------- |

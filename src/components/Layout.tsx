@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useTheme } from 'next-themes';
 import {
-  LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
-  Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn, Landmark,
-  PanelLeftClose, PanelLeftOpen, GitBranch, House, Menu, Umbrella, FileDown,
-  RefreshCw,
+  ShieldCheck, LogOut, Sun, Moon, PanelLeftClose, PanelLeftOpen, Menu, Search,
 } from 'lucide-react';
+import { navGroups } from '@/lib/navigation';
+import { useActions } from '@/providers/actions';
+import CommandPalette from '@/components/CommandPalette';
+import ShortcutsDialog from '@/components/ShortcutsDialog';
+import TransactionDialog from '@/components/TransactionDialog';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
 import { formatCents, setAppCurrency } from '@/lib/finance';
@@ -21,52 +23,7 @@ import SyncStatus from '@/components/SyncStatus';
 import BrandMark from '@/components/BrandMark';
 import { pencil } from '@/lib/pencil';
 
-// Menüstruktur (Desktop-Seitenleiste und mobiles „Mehr“-Menü): thematisch
-// gruppiert — Alltag (buchen & teilen), Konten, Planung, Analyse, Verwaltung.
-const navGroups = [
-  {
-    label: 'Alltag',
-    items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/transaktionen', label: 'Transaktionen', icon: ArrowLeftRight },
-      { to: '/wiederkehrend', label: 'Wiederkehrend', icon: Repeat },
-      { to: '/aufteilung', label: 'Aufteilung', icon: Users },
-    ],
-  },
-  {
-    label: 'Konten',
-    items: [
-      { to: '/konten', label: 'Konten', icon: Wallet },
-      { to: '/geldfluss', label: 'Geldfluss', icon: GitBranch },
-    ],
-  },
-  {
-    label: 'Planung',
-    items: [
-      { to: '/budgets', label: 'Budgets', icon: Target },
-      { to: '/sparziele', label: 'Sparziele', icon: PiggyBank },
-      { to: '/vorsorge', label: 'Vorsorge', icon: Landmark },
-      { to: '/hypotheken', label: 'Hypotheken', icon: House },
-      { to: '/versicherungen', label: 'Versicherungen', icon: Umbrella },
-    ],
-  },
-  {
-    label: 'Analyse',
-    items: [
-      { to: '/prognosen', label: 'Prognosen', icon: TrendingUp },
-      { to: '/auswertung', label: 'Auswertung', icon: ChartColumn },
-      { to: '/bericht', label: 'Bericht', icon: FileDown },
-    ],
-  },
-  {
-    label: 'Verwaltung',
-    items: [
-      { to: '/personen', label: 'Personen', icon: UserCog },
-      { to: '/abgleich', label: 'Abgleich', icon: RefreshCw },
-      { to: '/einstellungen', label: 'Einstellungen', icon: Settings },
-    ],
-  },
-];
+// Menüstruktur: `lib/navigation.ts` (geteilt mit der Befehlspalette)
 
 // Mobile Schnellzugriffe in der unteren Leiste — alles Weitere über „Mehr“.
 const mobilePrimary = ['/', '/transaktionen', '/konten', '/budgets'];
@@ -78,6 +35,7 @@ const SIDEBAR_KEY = 'ff-sidebar-collapsed';
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const actions = useActions();
   const { accounts, users } = useFinanceData();
   const { resolvedTheme, setTheme } = useTheme();
   // Salden rechnet listAccounts serverseitig — dieselbe Zahl wie auf der Kontenseite
@@ -176,6 +134,15 @@ export default function Layout() {
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            <Button
+              variant="outline" size="sm" className="gap-1.5 text-muted-foreground"
+              title="Suchen und Befehle (⌘K / Strg+K)"
+              onClick={() => actions.show('palette')}
+            >
+              <Search className="h-4 w-4" />
+              <span className="hidden lg:inline">Suchen</span>
+              <kbd className="hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline">⌘K</kbd>
+            </Button>
             <QuickAddDialog />
             <SyncStatus />
             <Button
@@ -215,6 +182,16 @@ export default function Layout() {
         <main className="min-w-0 flex-1 overflow-x-clip px-4 py-6 md:px-8">
           <Outlet />
         </main>
+        {/* Global geöffnete Dialoge: Befehlspalette, Kürzel-Hilfe, „N“ */}
+        <CommandPalette />
+        <ShortcutsDialog />
+        {/* key: jedes Öffnen beginnt mit frischem Formular (heutiges Datum) */}
+        <TransactionDialog
+          key={actions.seq}
+          open={actions.open === 'transaction'}
+          onOpenChange={(o) => (o ? actions.show('transaction') : actions.close())}
+          onCloseAutoFocus={actions.restoreFocus}
+        />
         <nav className="sticky bottom-0 z-10 flex justify-around border-t bg-background py-2 md:hidden">
           {mobilePrimaryItems.map((item) => (
             <NavLink

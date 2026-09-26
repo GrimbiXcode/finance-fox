@@ -6,6 +6,7 @@ import { getDb, initDb } from "./queries/connection";
 import { accountOwners, accounts, users } from "@db/schema";
 import { localISO } from "./lib/recurringSchedule";
 import { shiftMonth } from "@contracts/planning";
+import { monthLastDay } from "@contracts/period";
 import type { SessionUser, TrpcContext } from "./context";
 
 const admin: SessionUser = { id: 1, email: "a@example.com", name: "Anna", role: "admin", color: "#10b981" };
@@ -139,3 +140,51 @@ describe("analysis.projectSummary", () => {
     expect(s.categories.map(c => c.categoryId)).toEqual([fun, -1]);
   });
 });
+
+describe("analysis.fixedCosts", () => {
+  it("rechnet aktive Dauerbuchungen auf den Monat um und zeigt Schwankungen", async () => {
+    const f = await analysis(admin).fixedCosts();
+    // wöchentlich 200'000 → 200'000 × 52 / 12
+    expect(f.fixedExpense).toBe(Math.round((200_000 * 52) / 12));
+    expect(f.top[0].note).toBe("Wöchentlich");
+    // Sechs abgeschlossene Monate; nur der Vormonat hat Buchungen
+    expect(f.to).toBe(lastMonth);
+    expect(f.averageExpense).toBe(Math.round(35_000 / 6));
+    const foodRow = f.variable.find(v => v.categoryId === food);
+    expect(foodRow).toMatchObject({ min: 0, max: 35_000 });
+  });
+});
+
+describe("analysis.breakdown", () => {
+  const range = { from: `${lastMonth}-01`, to: monthLastDay(lastMonth) };
+
+  it("summiert nach Dimension und vergleicht mit dem Zeitraum davor", async () => {
+    const byCat = await analysis(admin).breakdown({ dimension: "category", ...range });
+    expect(byCat.total).toBe(35_000);
+    expect(byCat.rows).toEqual([
+      expect.objectContaining({ key: food, amount: 35_000, count: 2, previous: 0 }),
+    ]);
+    expect(byCat.previousRange?.to).toBe(shiftDaysIso(range.from, -1));
+    const byPerson = await analysis(admin).breakdown({ dimension: "person", ...range });
+    expect(byPerson.rows[0]).toMatchObject({ key: admin.id, name: "Anna", amount: 35_000 });
+    const byTag = await analysis(admin).breakdown({ dimension: "tag", ...range });
+    expect(byTag.rows[0]).toMatchObject({ key: -1, name: "Ohne Tag" });
+    const income = await analysis(admin).breakdown({ dimension: "account", type: "income", ...range });
+    expect(income.rows[0]).toMatchObject({ key: shared, amount: 500_000 });
+  });
+
+  it("zählt fremde Privatkonten nicht mit", async () => {
+    const month = { from: `${thisMonth}-01`, to: monthLastDay(thisMonth) };
+    const a = await analysis(admin).breakdown({ dimension: "account", ...month });
+    const m = await analysis(member).breakdown({ dimension: "account", ...month });
+    expect(a.rows.some(r => r.key === privateAdmin)).toBe(true);
+    expect(m.rows.some(r => r.key === privateAdmin)).toBe(false);
+    expect(a.total - m.total).toBe(9_000);
+  });
+});
+
+function shiftDaysIso(iso: string, days: number) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}

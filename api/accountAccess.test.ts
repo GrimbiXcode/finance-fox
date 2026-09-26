@@ -146,6 +146,16 @@ describe("listAccounts (Sichtbarkeit)", () => {
     expect(byId(strangerList)).toBeUndefined();
   });
 
+  it("accountVisibility verrät nur, dass die Summe nicht alles ist", async () => {
+    const forStranger = await callerFor(stranger).finance.accountVisibility();
+    expect(forStranger).toEqual({ hasHidden: true, readOnly: 0 });
+    const forAdmin = await callerFor(admin).finance.accountVisibility();
+    expect(forAdmin.hasHidden).toBe(false);
+    expect(forAdmin.readOnly).toBeGreaterThan(0);
+    const forOwner = await callerFor(owner).finance.accountVisibility();
+    expect(forOwner.readOnly).toBe(0);
+  });
+
   it("createAccount mit private: true setzt den Besitzer", async () => {
     await callerFor(owner).finance.createAccount({
       name: "Privates Anlagekonto",

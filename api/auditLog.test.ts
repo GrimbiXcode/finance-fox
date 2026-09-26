@@ -139,4 +139,39 @@ describe("Audit-Log", () => {
     const all = await callerFor(member).finance.listAuditLog();
     expect(all.some(e => e.userId === null && e.userName === null)).toBe(true);
   });
+
+  it("othersOnly blendet eigene Einträge und System-Einträge aus", async () => {
+    const all = await callerFor(member).finance.listAuditLog();
+    expect(all.some(e => e.userId === admin.id)).toBe(true);
+    const forMember = await callerFor(member).finance.listAuditLog({
+      othersOnly: true,
+    });
+    expect(forMember.length).toBeGreaterThan(0);
+    expect(
+      forMember.every(e => e.userId !== null && e.userId !== member.id)
+    ).toBe(true);
+    // Für den Admin selbst: alles stammt von ihm oder vom System → leer
+    const forAdmin = await callerFor(admin).finance.listAuditLog({
+      othersOnly: true,
+    });
+    expect(forAdmin.every(e => e.userId !== admin.id)).toBe(true);
+  });
+
+  it("filtert nach Zeitfenster (since/until in Epoch-ms)", async () => {
+    const all = await callerFor(member).finance.listAuditLog();
+    const newest = new Date(all[0].createdAt).getTime();
+    const future = await callerFor(member).finance.listAuditLog({
+      since: newest + 60_000,
+    });
+    expect(future).toHaveLength(0);
+    const past = await callerFor(member).finance.listAuditLog({
+      until: newest - 24 * 3600_000,
+    });
+    expect(past).toHaveLength(0);
+    const window = await callerFor(member).finance.listAuditLog({
+      since: newest - 60_000,
+      until: newest + 60_000,
+    });
+    expect(window.length).toBe(all.length);
+  });
 });

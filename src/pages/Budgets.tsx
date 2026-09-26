@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BudgetMeter from '@/components/BudgetMeter';
+import BudgetDetail from '@/components/BudgetDetail';
+import { Link } from 'react-router';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -44,10 +46,13 @@ type BudgetStatus = {
  */
 function BudgetDialog({
   budget,
+  initialCategoryId,
   usedCategoryIds,
   trigger,
 }: {
   budget?: BudgetStatus['budget'];
+  /** Vorauswahl beim Anlegen (z. B. aus „Ohne Budget“) */
+  initialCategoryId?: number;
   usedCategoryIds: Set<number>;
   trigger: ReactNode;
 }) {
@@ -55,15 +60,32 @@ function BudgetDialog({
   const invalidate = useInvalidateFinance();
   const isEdit = budget !== undefined;
   const [open, setOpen] = useState(false);
-  const [categoryId, setCategoryId] = useState(budget ? String(budget.categoryId) : '');
+  const initialCategory = budget?.categoryId ?? initialCategoryId;
+  const [categoryId, setCategoryId] = useState(initialCategory ? String(initialCategory) : '');
   const [amount, setAmount] = useState(budget ? formatAmountInput(budget.amount) : '');
   const [period, setPeriod] = useState<Period>(budget?.period ?? 'monthly');
   const [rollover, setRollover] = useState(budget?.rollover ?? false);
 
   const reset = () => {
     if (isEdit) return;
-    setCategoryId(''); setAmount(''); setPeriod('monthly'); setRollover(false);
+    setCategoryId(initialCategoryId ? String(initialCategoryId) : '');
+    setAmount(''); setPeriod('monthly'); setRollover(false);
   };
+
+  // Vorschläge aus den bisherigen Ausgaben: ein Budget, das nie passt, wird
+  // ignoriert — eines unter dem Durchschnitt ist nach einer Woche rot
+  const stats = trpc.analysis.categoryStats.useQuery(
+    { categoryId: Number(categoryId) },
+    { enabled: open && Number(categoryId) > 0 },
+  );
+  const factor = period === 'yearly' ? 12 : 1;
+  const suggestions = stats.data && stats.data.average6 > 0
+    ? [
+        { label: 'Ø 3 Monate', value: stats.data.average3 * factor },
+        { label: 'Ø 6 Monate', value: stats.data.average6 * factor },
+        { label: 'Höchster Monat', value: stats.data.max * factor },
+      ].filter((x) => x.value > 0)
+    : [];
 
   const setBudget = trpc.finance.setBudget.useMutation({
     onSuccess: () => {
@@ -139,6 +161,30 @@ function BudgetDialog({
               <Input inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
           </div>
+          {suggestions.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">
+                Bisher ausgegeben{period === 'yearly' ? ' (hochgerechnet aufs Jahr)' : ''} — antippen zum Übernehmen:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestions.map((x) => (
+                  <Button
+                    key={x.label}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setAmount(formatAmountInput(x.value))}
+                  >
+                    {x.label}: <span className="ml-1 font-mono tabular-nums">{formatCents(x.value)}</span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          {stats.data && stats.data.average6 === 0 && (
+            <p className="text-xs text-muted-foreground">In den letzten sechs Monaten keine Ausgaben in dieser Kategorie.</p>
+          )}
           {period === 'monthly' && (
             <div className="flex items-center gap-2">
               <Checkbox
@@ -177,6 +223,7 @@ function BudgetCard({
 }) {
   const { categories } = useFinanceData();
   const invalidate = useInvalidateFinance();
+  const [showDetail, setShowDetail] = useState(false);
   const deleteBudget = trpc.finance.deleteBudget.useMutation({
     onSuccess: () => { toast.success('Budget gelöscht.'); invalidate(); },
     onError: (err) => toast.error(err.message),
@@ -273,6 +320,18 @@ function BudgetCard({
           )}
           {carryover && ' (inkl. Übertrag aus Vormonaten)'}
         </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-7 px-2 text-xs text-muted-foreground"
+          aria-expanded={showDetail}
+          onClick={() => setShowDetail((v) => !v)}
+        >
+          <ChevronDown className={cn('mr-1 h-3.5 w-3.5 transition-transform', showDetail && 'rotate-180')} />
+          {showDetail ? 'Weniger' : 'Verlauf & Details'}
+        </Button>
+        {/* Query erst beim Aufklappen */}
+        {showDetail && <BudgetDetail budgetId={b.id} categoryId={b.categoryId} />}
       </CardContent>
     </Card>
   );
@@ -282,6 +341,59 @@ function sumLine(list: BudgetStatus[]) {
   const spent = list.reduce((s, x) => s + x.spent, 0);
   const limit = list.reduce((s, x) => s + x.effectiveLimit, 0);
   return `${formatCents(spent)} von ${formatCents(limit)}`;
+}
+
+/**
+ * Wie viel der Ausgaben dieses Monats deckt kein Budget ab? Budgets helfen
+ * nur dort, wo sie existieren — die größten Lücken mit Direkt-Anlage.
+ */
+function CoverageCard({ usedCategoryIds }: { usedCategoryIds: Set<number> }) {
+  const { categories } = useFinanceData();
+  const query = trpc.analysis.budgetCoverage.useQuery();
+  const d = query.data;
+  if (!d || d.total === 0) return null;
+  const share = Math.round((d.uncovered / d.total) * 100);
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Ohne Budget</CardTitle>
+        <CardDescription className="tabular-nums">
+          {d.uncovered === 0
+            ? `Alle Ausgaben dieses Monats (${formatCents(d.total)}) liegen in Kategorien mit Budget.`
+            : `${formatCents(d.uncovered)} von ${formatCents(d.total)} (${share} %) der Ausgaben dieses Monats liegen in keinem Budget.`}
+        </CardDescription>
+      </CardHeader>
+      {d.top.length > 0 && (
+        <CardContent>
+          <ul className="divide-y text-sm">
+            {d.top.map((row) => {
+              const cat = categories.find((c) => c.id === row.categoryId);
+              const link = `/transaktionen?${new URLSearchParams({ monat: d.month, typ: 'expense', kategorie: String(row.categoryId) })}`;
+              return (
+                <li key={row.categoryId} className="flex items-center gap-2 py-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />
+                  <Link to={link} className="min-w-0 flex-1 truncate hover:underline" title={row.name}>{row.name}</Link>
+                  <span className="shrink-0 font-mono tabular-nums">{formatCents(row.amount)}</span>
+                  {/* Ohne Kategorie lässt sich kein Budget anlegen */}
+                  {row.categoryId > 0 && cat?.type === 'expense' ? (
+                    <BudgetDialog
+                      initialCategoryId={row.categoryId}
+                      usedCategoryIds={usedCategoryIds}
+                      trigger={
+                        <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs text-stamp">
+                          <Plus className="mr-1 h-3.5 w-3.5" /> Budget
+                        </Button>
+                      }
+                    />
+                  ) : <span className="w-[4.75rem] shrink-0" />}
+                </li>
+              );
+            })}
+          </ul>
+        </CardContent>
+      )}
+    </Card>
+  );
 }
 
 export default function Budgets() {
@@ -300,7 +412,8 @@ export default function Budgets() {
         <h2 className="text-lg font-semibold">{title}</h2>
         <span className="text-sm text-muted-foreground tabular-nums">{sumLine(list)} ausgegeben</span>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* items-start: ein aufgeklappter Verlauf streckt die Nachbarkarten nicht */}
+      <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {list.map((s) => (
           <BudgetCard key={s.budget.id} status={s} usedCategoryIds={usedCategoryIds} today={today} />
         ))}
@@ -347,6 +460,8 @@ export default function Budgets() {
           {section('Jahresbudgets', yearly)}
         </>
       )}
+      {/* Auch ohne Budgets: zeigt, wo die Ausgaben liegen, mit Direkt-Anlage */}
+      {!statusQuery.isLoading && <CoverageCard usedCategoryIds={usedCategoryIds} />}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
 } from "./lib/accountAccess";
 import { computeBudgetStatuses } from "./lib/budgets";
 import { progressFromBalances } from "./lib/goalProgress";
+import { withoutReversals } from "@contracts/flows";
 import { localISO } from "./lib/recurringSchedule";
 import {
   addMonths, aggregatePeriods, monthDelta, monthEndISO, monthKey,
@@ -49,7 +50,9 @@ async function excludedCategories(
  * in der Simulation).
  */
 function averageVariable(
-  txs: {
+  allTxs: {
+    id: number;
+    stornoOfId: number | null;
     type: "income" | "expense" | "transfer";
     date: string;
     amount: number;
@@ -58,6 +61,8 @@ function averageVariable(
   recurringIds: Set<number>,
   currentKey: string
 ): { income: number; expense: number } {
+  // Stornierte Buchungen samt Gegenbuchung zählen nicht (contracts/flows.ts)
+  const txs = withoutReversals(allTxs);
   let income = 0;
   let expense = 0;
   let countedMonths = 0;

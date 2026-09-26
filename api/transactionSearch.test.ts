@@ -97,6 +97,14 @@ describe("finance.searchTransactions", () => {
     expect(res.expense).toBe(5_800);
   });
 
+  it("liefert per id genau eine Buchung — nur, wenn sie sichtbar ist", async () => {
+    const all = await asAdmin().finance.searchTransactions({ limit: 500 });
+    const priv = all.items.find(t => t.accountId === privateAdmin)!;
+    const one = await asAdmin().finance.searchTransactions({ id: priv.id });
+    expect(one.items.map(t => t.id)).toEqual([priv.id]);
+    expect((await asMember().finance.searchTransactions({ id: priv.id })).total).toBe(0);
+  });
+
   it("schließt Unterkategorien beim Kategoriefilter ein", async () => {
     const res = await asAdmin().finance.searchTransactions({ categoryId: food });
     expect(res.items.map(t => t.note).sort()).toEqual(["Bäckerei Steiner", "Coop Wocheneinkauf", "Migros"]);

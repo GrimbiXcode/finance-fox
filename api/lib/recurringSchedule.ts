@@ -11,27 +11,12 @@
  * Dauerbuchungen liefen in den Prognosen endlos weiter.
  */
 
-import { MONTHS_PER_INTERVAL, type RecurringInterval } from "@contracts/types";
+import type { RecurringInterval } from "@contracts/types";
+import { advanceDate } from "@contracts/planning";
 
-/** Datum als lokales `YYYY-MM-DD` (kein UTC-Versatz wie bei toISOString) */
-export function localISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/**
- * Nächster Termin einer Dauerbuchung. Monatsschritte laufen über
- * `setMonth` — der 31. eines Monats rutscht dadurch in kürzeren Monaten
- * in den Folgemonat (bestehendes Verhalten, bewusst unverändert).
- */
-export function advanceDate(
-  dateISO: string,
-  interval: RecurringInterval
-): string {
-  const d = new Date(`${dateISO}T12:00:00`);
-  if (interval === "weekly") d.setDate(d.getDate() + 7);
-  else d.setMonth(d.getMonth() + MONTHS_PER_INTERVAL[interval]);
-  return localISO(d);
-}
+// `localISO` und `advanceDate` liegen in contracts/planning.ts, damit auch
+// das Frontend („Wiederkehrend machen“) exakt die Termine des Crons rechnet
+export { advanceDate, localISO } from "@contracts/planning";
 
 /** Die Felder einer Dauerbuchung, die die Terminrechnung braucht */
 export interface RecurrenceWindow {

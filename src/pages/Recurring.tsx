@@ -22,6 +22,7 @@ import { SearchableSelect } from '@/components/SearchableSelect';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
+import UpcomingCard from '@/components/UpcomingCard';
 import { useAuth } from '@/providers/auth';
 import {
   amountPlaceholder, currencySymbol, formatAmountInput, formatCents, formatDate, parseEuro, todayISO,
@@ -79,13 +80,16 @@ const emptyForm = (): RecurringFormValues => ({
 
 /**
  * Vorbefüllung aus der URL (`#/wiederkehrend?neu=1&typ=transfer&nach=3&betrag=46000&notiz=…`)
- * — so können andere Seiten (z. B. Sparziele: „Sparrate einrichten“) eine
- * passende Dauerbuchung vorschlagen, ohne das Formular selbst zu kennen.
- * Betrag in Cent.
+ * — so können andere Seiten (z. B. Sparziele: „Sparrate einrichten“, das
+ * Buchungs-Detail: „Wiederkehrend machen“) eine passende Dauerbuchung
+ * vorschlagen, ohne das Formular selbst zu kennen. Betrag in Cent; dazu
+ * optional `person`, `start` (nächste Fälligkeit) und `quelle`
+ * (Ursprungsbuchung, nur fürs Aktivitäten-Log).
  */
 const formFromParams = (params: URLSearchParams): RecurringFormValues => {
   const typ = params.get('typ');
   const cents = Number(params.get('betrag'));
+  const start = params.get('start');
   return {
     ...emptyForm(),
     type: typ === 'income' || typ === 'transfer' ? typ : 'expense',
@@ -93,7 +97,9 @@ const formFromParams = (params: URLSearchParams): RecurringFormValues => {
     accountId: params.get('von') ?? '',
     toAccountId: params.get('nach') ?? '',
     categoryId: params.get('kategorie') ?? '',
+    userId: params.get('person') ?? '',
     note: params.get('notiz') ?? '',
+    nextDate: start && /^\d{4}-\d{2}-\d{2}$/.test(start) ? start : todayISO(),
   };
 };
 
@@ -258,6 +264,9 @@ export default function Recurring() {
   const [createInitial, setCreateInitial] = useState<RecurringFormValues>(() =>
     searchParams.get('neu') === '1' ? formFromParams(searchParams) : emptyForm(),
   );
+  const [sourceTxId, setSourceTxId] = useState<number | undefined>(() =>
+    searchParams.get('neu') === '1' ? Number(searchParams.get('quelle')) || undefined : undefined,
+  );
   // Die Parameter sind nach dem Öffnen verbraucht — ein Neuladen soll den
   // Dialog nicht erneut aufmachen
   useEffect(() => {
@@ -332,6 +341,7 @@ export default function Recurring() {
       userId: Number(v.userId) || user?.id || 0,
       note: v.note.trim(), interval: v.interval, nextDate: v.nextDate,
       endDate: v.endDate || undefined,
+      sourceTransactionId: sourceTxId,
     });
   };
 
@@ -442,7 +452,10 @@ export default function Recurring() {
             open={open}
             onOpenChange={(o) => {
               setOpen(o);
-              if (!o) setCreateInitial(emptyForm());
+              if (!o) {
+                setCreateInitial(emptyForm());
+                setSourceTxId(undefined);
+              }
             }}
           >
             <DialogTrigger asChild>
@@ -553,6 +566,9 @@ export default function Recurring() {
           </CardContent>
         </Card>
       )}
+
+      {/* Kalender-Sicht: was kommt wann, reicht das Geld auf dem Konto? */}
+      {recurring.some((r) => r.active && !isArchived(r)) && <UpcomingCard />}
 
       {recurring.length === 0 && (
         <Card>

@@ -69,6 +69,9 @@ export function useInvalidateFinance() {
     utils.finance.hasData.invalidate();
     utils.dashboard.summary.invalidate();
     utils.dashboard.attention.invalidate();
+    // Alle Auswertungen (Matrix, Trend, Budget-Verlauf, Fälligkeiten, Projekte)
+    utils.analysis.invalidate();
+    utils.finance.listAuditLog.invalidate();
     utils.finance.listTransactionChanges.invalidate();
     utils.finance.listBudgets.invalidate();
     utils.finance.listBudgetStatus.invalidate();

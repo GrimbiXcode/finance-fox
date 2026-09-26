@@ -13,12 +13,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { budgetPace, percentChange, periodElapsed, shiftMonth } from '@contracts/planning';
 import { useFinanceData } from '@/lib/data';
 import {
-  currentMonthKey, formatCents, formatDate, formatMonth, formatMonthShort, todayISO,
+  currentMonthKey, formatCents, formatDate, formatMonth, formatMonthShort, getUserLocale, todayISO,
 } from '@/lib/finance';
 import { attentionEntry } from '@/lib/attention';
+import { AUDIT_ACTION_LABELS, AUDIT_ENTITY_GROUPS } from '@/lib/auditLabels';
 import TransactionDialog from '@/components/TransactionDialog';
 import GettingStarted from '@/components/GettingStarted';
 import BudgetMeter from '@/components/BudgetMeter';
+import KpiCard from '@/components/KpiCard';
 import { useOffline } from '@/providers/offline';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
@@ -87,24 +89,10 @@ function Kpi({
     : tone === 'negative' ? 'text-negative'
       : tone === 'auto' ? (value < 0 ? 'text-negative' : 'text-positive')
         : value < 0 ? 'text-destructive' : '';
-  const number = (
-    <div className={cn('font-serif text-2xl font-semibold tabular-nums', color)}>{formatCents(value)}</div>
-  );
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        {to ? (
-          <Link to={to} className="block rounded-md hover:underline hover:decoration-dotted hover:underline-offset-4">
-            {number}
-          </Link>
-        ) : number}
-        {children}
-      </CardContent>
-    </Card>
+    <KpiCard title={title} icon={icon} value={formatCents(value)} valueClassName={color} to={to}>
+      {children}
+    </KpiCard>
   );
 }
 
@@ -248,6 +236,61 @@ function BudgetsCard() {
   );
 }
 
+const HOUSEHOLD_ENTITIES = AUDIT_ENTITY_GROUPS
+  .filter(([key]) => !['user', 'settings', 'pension'].includes(key))
+  .flatMap(([, , entities]) => entities);
+const activityTime = (d: Date) => {
+  if (d.toDateString() === new Date().toDateString()) {
+    return `heute ${d.toLocaleTimeString(getUserLocale(), { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  // Lokales Datum — toISOString wäre UTC und kurz nach Mitternacht falsch
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return formatDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+};
+
+/**
+ * „Zuletzt im Haushalt“: was die anderen zuletzt gebucht oder geändert
+ * haben — damit man nicht doppelt erfasst und Änderungen mitbekommt. Nur in
+ * Haushalten mit mehr als einer Person; Einträge, die man nicht sehen darf,
+ * filtert der Server.
+ */
+function HouseholdActivityCard() {
+  const query = trpc.finance.listAuditLog.useQuery({ limit: 5, othersOnly: true, entities: HOUSEHOLD_ENTITIES });
+  const entries = query.data ?? [];
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle>Zuletzt im Haushalt</CardTitle>
+        <Link to="/verlauf" className="shrink-0 text-sm text-stamp hover:underline">Verlauf</Link>
+      </CardHeader>
+      <CardContent>
+        {entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {query.isLoading ? 'Lade…' : 'Von den anderen gibt es noch keine Einträge.'}
+          </p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {entries.map((e) => (
+              <li key={e.id} className="flex items-start gap-2">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: pencil(e.userColor) ?? CHART.muted }} />
+                <div className="min-w-0">
+                  <div>
+                    <span className="font-medium">{e.userName ?? 'System'}</span>{' '}
+                    {AUDIT_ACTION_LABELS[e.action] ?? e.action}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground" title={e.detail}>
+                    {activityTime(new Date(e.createdAt))}{e.detail ? ` · ${e.detail}` : ''}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const { categories, users } = useFinanceData();
   const navigate = useNavigate();
@@ -324,7 +367,7 @@ export default function Dashboard() {
 
       <GettingStarted />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Kpi
           title="Gesamtvermögen"
           icon={<Wallet className="h-4 w-4 text-muted-foreground" />}
@@ -559,7 +602,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <div className="space-y-4 lg:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle>Offene Salden</CardTitle>
             <CardDescription>Aus geteilten Ausgaben</CardDescription>
@@ -588,6 +632,8 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+        {users.length > 1 && <HouseholdActivityCard />}
+        </div>
       </div>
     </div>
   );

@@ -44,6 +44,26 @@ Welle 2 ist umgesetzt:
 | F1       | Jahresvergleich im laufenden Jahr „bis heute“                                                                          |
 | (Befund) | Aktivitäten-Log filtert nach Sichtbarkeit (siehe E-9)                                                                  |
 
+Welle 3 ist umgesetzt:
+
+| Story      | Umsetzung                                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| A4         | Befehlspalette (⌘/Strg+K, Lupe in der Kopfzeile): Aktionen, Seiten, Buchungen, Konten mit Saldo, Kategorien, Ziele, Policen |
+| A5         | Kürzel `n`, `s`, `/`, `?`; Enter im Betragsfeld springt zur Beschreibung; Kürzel in den Tooltips                           |
+| A7         | Einstellungen in vier Tabs mit `?tab=`                                                                                     |
+| C4         | Sortierung per Spaltenkopf, in der URL (`sortierung`, `richtung`)                                                          |
+| C6         | Ruhige Zeilen; Klick/Enter öffnet ein Detail-Blatt mit Tags, Belegen, Verlauf, Stornieren, Löschen                         |
+| D8         | Kennzahlen mobil als 2×2-Raster (Dashboard, Hypotheken, Versicherungen), gemeinsame `KpiCard`                              |
+| E3, E5     | Budget-Verlauf der letzten sechs Perioden, Aufschlüsselung, Links in die Buchungen                                         |
+| E6         | Karte „Ohne Budget“ mit Direkt-Anlage                                                                                      |
+| E7         | Budgetvorschläge Ø 3 / Ø 6 Monate / höchster Monat im Budget-Dialog                                                        |
+| F2         | Monatsmatrix Kategorie × Monat mit Tönung und aufklappbaren Unterkategorien                                                |
+| F3         | Einnahmen, Ausgaben und Sparquote im Verlauf (zwei Diagramme, keine zweite Achse)                                          |
+| F5         | Jede Matrix-Zelle, jede Säule (Verlauf, Jahresvergleich) und jede Jahresvergleichs-Zeile führt zu den Buchungen            |
+| G2         | Fälligkeiten der nächsten 7/30/90 Tage mit Warnung bei drohendem Minus                                                     |
+| H2 (teils) | Projekt-Karte in der Aufteilung; „abgeschlossen“-Status folgt mit Welle 5 (braucht Schema)                                 |
+| H4         | Seite „Verlauf“ (Person, Zeitraum, Bereich) und Dashboard-Karte „Zuletzt im Haushalt“                                      |
+
 ## 1. Kurzfassung
 
 Finance Fox hat funktional mehr an Bord als die meisten Haushalts-Apps: sechs
@@ -1515,3 +1535,98 @@ Partners betrifft und keine Zahlen enthält.
   sichtbaren Buchungen (online wie offline gleich).
 - Kleinere Punkte: Fehlerzustand der Transaktionsliste, ungültige
   URL-Werte, Dubletten beim Nachladen, ein zeitabhängiger Test.
+
+### Welle 3
+
+**E-10 · Detail-Blatt statt „⋯“-Menü (C6).** Die Story sah am Desktop ein
+Menü für seltene Aktionen vor, mobil ein Detail-Sheet.
+
+- _Alternative A:_ Menü am Desktop, Sheet mobil. Zwei Wege zu denselben
+  Aktionen, und das Menü zeigt keine Details (Splits, Projekt, Verlauf).
+- _Gewählt:_ Ein Detail-Blatt für beide — am Desktop von rechts, mobil von
+  unten. Die ganze Zeile ist der Auslöser (auch per Enter/Leertaste), in der
+  Zeile bleiben nur die zwei häufigsten Aktionen: Bearbeiten (bei Hover) und
+  Belege (mit Zähler immer sichtbar). Links mit `fokus=<id>` (Dashboard,
+  Befehlspalette) öffnen das Blatt direkt; nach dem Schließen bleibt nur die
+  Markierung. Das Blatt ist abgeleitet statt per Effekt gesetzt: Wird die
+  Buchung gelöscht, schließt es von selbst.
+
+**E-11 · Befehlspalette öffnet Buchungen im Detail-Blatt, nicht im
+Bearbeiten-Dialog (A4).** Die Story nannte den Bearbeiten-Dialog. Ein
+Enter in der Palette soll aber nichts verändern können, und das Blatt
+bietet „Bearbeiten“ einen Klick weiter an. Die Palette sucht Buchungen am
+Server (`searchTransactions`, ab zwei Zeichen) und zeigt höchstens sechs
+Treffer plus „Alle Treffer anzeigen“ — die Liste mit der Suche in der URL.
+
+**E-12 · Tastenkürzel nur außerhalb von Eingabefeldern und Dialogen.**
+`n`, `s`, `/` und `?` greifen nicht, solange ein Feld, eine Auswahlliste
+oder ein Menü den Fokus hat oder ein Dialog offen ist; sonst öffnet ein „n“
+in der Notiz einen zweiten Dialog, und auf einem Select-Auslöser springt
+dieselbe Taste zu einem Eintrag. ⌘/Strg+K wirkt auch in Eingabefeldern
+(Konvention vieler Apps), aber nicht über einem anderen Dialog — dort
+ersetzte die Palette eine halb ausgefüllte Buchung.
+
+**E-13 · Auswertung in Tabs statt einer langen Seite (F2, F3).** Drei
+Fragen, drei Ansichten: „Wie entwickeln wir uns?“ (Verlauf), „Wofür geben
+wir wann aus?“ (Matrix), „Teurer als letztes Jahr?“ (Jahresvergleich). Die
+Ansicht steht in der URL (`?ansicht=`). Die Sparquote ist ein eigenes
+Diagramm unter den Balken — eine zweite y-Achse hätte zwei Maßstäbe
+vermischt. Die Matrix zeigt ganze Währungseinheiten (Cent-Beträge stehen im
+Tooltip), tönt zeilenweise (der teuerste Monat einer Kategorie ist am
+dunkelsten) und beginnt auf schmalen Bildschirmen bei den jüngsten Monaten.
+
+**E-14 · Budgetvorschläge aus abgeschlossenen Monaten (E7).** Der laufende
+Monat zählt nicht mit, sonst schlägt der Dialog am Monatsanfang ein viel zu
+kleines Budget vor. Angeboten werden Ø 3 Monate, Ø 6 Monate und der
+höchste Monat; ein Klick übernimmt den Wert, gespeichert wird erst mit
+„Speichern“. Für Jahresbudgets werden die Werte mit zwölf hochgerechnet.
+
+**E-15 · Sortieren schaltet die Gruppierung ab (C4).** Tages- oder
+Monatsköpfe zwischen nach Betrag sortierten Zeilen ergäben keinen Sinn. Die
+Gruppierungs-Auswahl bleibt stehen, ist aber gesperrt und erklärt per
+Tooltip warum; zurück bei „Datum“ gilt wieder die gespeicherte Gruppierung.
+„Filter zurücksetzen“ behält Zeitraum und Sortierung.
+
+**E-16 · „Zuletzt im Haushalt“ ohne Anmeldungen und Einstellungen (H4).**
+Die Dashboard-Karte zeigt nur fachliche Bereiche (Buchungen, Konten,
+Budgets, Ziele, Module …). „Anna hat sich angemeldet“ ist Rauschen; wer das
+sehen will, findet es unter „Verlauf“. Der Server filtert eigene und
+System-Einträge (`othersOnly`), damit die fünf Plätze nicht von eigenen
+Einträgen belegt werden. Der Zeitfilter der Verlauf-Seite übergibt
+Epoch-Millisekunden, damit „heute“ in der Zeitzone des Geräts gilt.
+
+**E-17 · Eine KpiCard für alle Kennzahl-Zeilen (D8).** Dashboard,
+Hypotheken und Versicherungen hatten je eine eigene Kopie derselben Karte.
+Die gemeinsame `KpiCard` setzt das mobile 2×2-Raster einmal um; ab `sm`
+sieht alles aus wie vorher.
+
+**Review von Welle 3 — gefunden und behoben:**
+
+- **Datenschutz:** Die neue Dashboard-Karte „Zuletzt im Haushalt“ zeigte
+  Dauerbuchungen und Sparziel-Quellen auf fremden Privatkonten („Geheimes
+  Abo“, „Konto „Privat Sam““) — das Log behandelte beide als
+  haushaltsweit. Dauerbuchungen werden jetzt mit ihrer ID geloggt und nach
+  ihren Konten gefiltert; Sparziel-Quellen nur gezeigt, wenn das genannte
+  Konto sichtbar ist (sonst Urheber und Admin). Ältere Anlage-Einträge ohne
+  ID sehen nur Urheber und Admins.
+- Der globale Dialog „Neue Buchung“ (Taste `n`) blieb die ganze Sitzung
+  gemountet und behielt das Datum von gestern bzw. eines rückdatierten
+  Stapels. Jedes Öffnen setzt ihn jetzt neu auf; der Fokus steht im
+  Betragsfeld.
+- Das Detail-Blatt konnte eine früher angeklickte Buchung wieder öffnen,
+  nachdem man über die Suche zu einer anderen gesprungen war. Die Wahl ist
+  jetzt an die Suchparameter gebunden, ein `fokus`-Link hat Vorrang und
+  öffnet auch Buchungen außerhalb der geladenen Seiten.
+- Kürzel feuerten auf fokussierten Select-Auslösern (Taste „n“ wählte
+  „Nach Monat gruppiert“ *und* öffnete den Dialog); ⌘K ersetzte einen
+  offenen Buchungsdialog.
+- Barrierefreiheit: Die Zeile war als `role="button"` ausgezeichnet und
+  verlor damit Tabellen-Semantik und Inhalt für Screenreader; jetzt ist die
+  Beschreibung ein echter Knopf. Nach dem Schließen von Blatt, Palette und
+  Dialogen kehrt der Fokus zurück, statt auf `<body>` zu landen.
+- Mobil schnitt die Aktionen-Spalte den Betrag ab; sie entfällt dort.
+- Kleinere Punkte: Warnung „fällt ins Minus“ auch für schon negative
+  Konten, Einzahl-Formen („1 Termine“), leerer Reiter „Benachrichtigungen“
+  für Mitglieder, Tags im Blatt ohne Bearbeitungsrecht klickbar, „Ohne
+  Budget“ nur sichtbar, wenn schon Budgets existierten, Jahresvergleichs-
+  Säulen ohne Drilldown.

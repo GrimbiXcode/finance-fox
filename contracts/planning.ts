@@ -6,6 +6,47 @@
  * Monatsschlüssel sind `YYYY-MM`, Daten `YYYY-MM-DD`, Beträge Cent.
  */
 
+import { MONTHS_PER_INTERVAL, type RecurringInterval } from "./types";
+
+/** Datum als lokales `YYYY-MM-DD` (kein UTC-Versatz wie bei toISOString) */
+export function localISO(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Nächster Termin einer Dauerbuchung. Monatsschritte laufen über
+ * `setMonth` — der 31. eines Monats rutscht dadurch in kürzeren Monaten
+ * in den Folgemonat (bestehendes Verhalten, bewusst unverändert).
+ */
+export function advanceDate(
+  dateISO: string,
+  interval: RecurringInterval
+): string {
+  const d = new Date(`${dateISO}T12:00:00`);
+  if (interval === "weekly") d.setDate(d.getDate() + 7);
+  else d.setMonth(d.getMonth() + MONTHS_PER_INTERVAL[interval]);
+  return localISO(d);
+}
+
+/**
+ * Erster Termin nach `after` im Takt ab `start` — für „Wiederkehrend
+ * machen“: Aus einer Buchung vom 25.03. wird die nächste Fälligkeit nach
+ * heute, nie ein Termin in der Vergangenheit (den der Cron sonst sofort
+ * nachbuchen würde).
+ */
+export function nextOccurrenceAfter(
+  start: string,
+  interval: RecurringInterval,
+  after: string
+): string {
+  let date = advanceDate(start, interval);
+  // Obergrenze gegen Endlosschleifen bei kaputten Daten
+  for (let i = 0; date <= after && i < 5000; i++) {
+    date = advanceDate(date, interval);
+  }
+  return date;
+}
+
 /** Monatsschlüssel um `delta` Monate verschieben („2026-01“, −1 → „2025-12“) */
 export function shiftMonth(key: string, delta: number): string {
   const [y, m] = key.split("-").map(Number);

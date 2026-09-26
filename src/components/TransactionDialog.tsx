@@ -68,17 +68,34 @@ export default function TransactionDialog({
   defaultType = 'expense',
   transaction,
   trigger,
+  open: controlledOpen,
+  onOpenChange,
+  onCloseAutoFocus,
 }: {
   defaultType?: TxType;
   transaction?: EditableTransaction;
   trigger?: ReactNode;
+  /**
+   * Gesteuert von außen (Tastaturkürzel „N“, Befehlspalette): dann ohne
+   * eigenen Auslöser, sofern kein `trigger` übergeben wird.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Fokus nach dem Schließen (globaler Dialog: zurück aufs Element davor) */
+  onCloseAutoFocus?: (e: Event) => void;
 }) {
   const { user } = useAuth();
   const { accounts, banks, categories, users, projects, splitTemplates, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const isEdit = transaction !== undefined;
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [type, setType] = useState<TxType>(transaction?.type ?? defaultType);
   const [amount, setAmount] = useState(transaction ? shareFormatter.format(transaction.amount / 100) : '');
   const [accountId, setAccountId] = useState(transaction ? String(transaction.accountId) : '');
@@ -278,6 +295,9 @@ export default function TransactionDialog({
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) setSavedCount(0);
+    // Neu öffnen beginnt beim heutigen Datum — auch wenn der Dialog seit
+    // gestern gemountet ist oder zuletzt ein Stapel rückdatiert wurde
+    if (next && !isEdit) setDate(todayISO());
   };
 
   /**
@@ -422,15 +442,24 @@ export default function TransactionDialog({
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button>
-            <Plus className="mr-2 h-4 w-4" /> Neue Buchung
-          </Button>
-        )}
-      </DialogTrigger>
+      {(trigger || !controlled) && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button title="Neue Buchung (Taste N)">
+              <Plus className="mr-2 h-4 w-4" /> Neue Buchung
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent
         className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        // Neue Buchung: gleich im Betragsfeld beginnen (Kürzel „n“)
+        onOpenAutoFocus={(e) => {
+          if (isEdit) return;
+          e.preventDefault();
+          amountInput.current?.focus();
+        }}
+        onCloseAutoFocus={onCloseAutoFocus}
         onEscapeKeyDown={(e) => {
           // Radix hört Escape schon in der Capture-Phase — bei offener
           // Vorschlagsliste schließt Escape nur die Liste, nicht den Dialog
@@ -479,7 +508,17 @@ export default function TransactionDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="amount">Betrag ({currencySymbol()})</Label>
-              <Input ref={amountInput} id="amount" inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input
+                ref={amountInput} id="amount" inputMode="decimal" placeholder={amountPlaceholder}
+                value={amount} onChange={(e) => setAmount(e.target.value)}
+                // Enter springt zur Beschreibung (⌘/Strg+Enter speichert weiterhin)
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                    e.preventDefault();
+                    document.getElementById('note')?.focus();
+                  }
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="date">Datum</Label>

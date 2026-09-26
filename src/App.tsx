@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router'
 import { TRPCProvider } from '@/providers/trpc'
 import { AuthProvider, useAuth } from '@/providers/auth'
 import { OfflineProvider } from '@/providers/offline'
+import { ActionsProvider } from '@/providers/actions'
 import { Toaster } from '@/components/ui/sonner'
 import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
@@ -19,6 +20,7 @@ import Forecasts from '@/pages/Forecasts'
 import YearReview from '@/pages/YearReview'
 import Report from '@/pages/Report'
 import Sync from '@/pages/Sync'
+import Activity from '@/pages/Activity'
 import Settings from '@/pages/Settings'
 import UsersPage from '@/pages/Users'
 import Login from '@/pages/Login'
@@ -75,6 +77,7 @@ function Root() {
   if (!user) return <Login />
 
   return (
+    <ActionsProvider>
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
@@ -94,9 +97,11 @@ function Root() {
         <Route path="/abgleich" element={<Sync />} />
         <Route path="/personen" element={<UsersPage />} />
         <Route path="/einstellungen" element={<Settings />} />
+        <Route path="/verlauf" element={<Activity />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </ActionsProvider>
   )
 }
 

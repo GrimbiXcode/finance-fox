@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -15,6 +16,12 @@ import { CHART } from '@/lib/chartColors';
 import { AXIS_MONEY_WIDTH, CURSOR_BAR, GRID_PROPS, axisMoney } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { pencil } from '@/lib/pencil';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import TrendCharts from '@/components/TrendCharts';
+import CategoryMatrix from '@/components/CategoryMatrix';
+
+const VIEWS = ['verlauf', 'kategorien', 'jahr'] as const;
+type View = (typeof VIEWS)[number];
 
 /** Differenz Jahr vs. Vorjahr: mehr Ausgaben = negativ (rot), weniger = positiv (grün) */
 function DiffCell({ current, previous }: { current: number; previous: number }) {
@@ -31,8 +38,54 @@ function DiffCell({ current, previous }: { current: number; previous: number }) 
   );
 }
 
-/** Jahresvergleich der Ausgaben pro Oberkategorie (Jahr vs. Vorjahr) */
+/**
+ * Auswertung in drei Ansichten: Verlauf (Einnahmen/Ausgaben/Sparquote),
+ * Kategorien × Monate und der Jahresvergleich. Die Ansicht steht in der
+ * URL (`?ansicht=kategorien`), damit Links und „Zurück“ sie behalten.
+ */
 export default function YearReview() {
+  const [params, setParams] = useSearchParams();
+  const requested = params.get('ansicht');
+  const view: View = VIEWS.find((v) => v === requested) ?? 'verlauf';
+  const setView = (value: string) =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value === 'verlauf') next.delete('ansicht');
+      else next.set('ansicht', value);
+      return next;
+    }, { replace: true });
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Auswertung</h1>
+        <p className="text-sm text-muted-foreground">
+          Wohin das Geld geht — über die Monate, je Kategorie und im Vergleich zum Vorjahr.
+          Ein Klick auf einen Wert zeigt die Buchungen dahinter.
+        </p>
+      </div>
+      <Tabs value={view} onValueChange={setView} className="space-y-4">
+        <TabsList className="h-auto flex-wrap justify-start">
+          <TabsTrigger value="verlauf">Verlauf</TabsTrigger>
+          <TabsTrigger value="kategorien">Kategorien × Monate</TabsTrigger>
+          <TabsTrigger value="jahr">Jahresvergleich</TabsTrigger>
+        </TabsList>
+        <TabsContent value="verlauf" className="space-y-6">
+          <TrendCharts />
+        </TabsContent>
+        <TabsContent value="kategorien" className="space-y-6">
+          <CategoryMatrix />
+        </TabsContent>
+        <TabsContent value="jahr" className="space-y-6">
+          <YearComparison />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/** Jahresvergleich der Ausgaben pro Oberkategorie (Jahr vs. Vorjahr) */
+function YearComparison() {
   const today = todayISO();
   const currentYear = Number(today.slice(0, 4));
   const [year, setYear] = useState(currentYear);
@@ -50,19 +103,26 @@ export default function YearReview() {
     { current: 0, previous: 0 },
   );
 
+  const navigate = useNavigate();
   const chartData = rows
     .filter((r) => r.current > 0 || r.previous > 0)
     .map((r) => ({
+      categoryId: r.categoryId,
       name: r.name,
       [String(year - 1)]: r.previous / 100,
       [String(year)]: r.current / 100,
     }));
 
+  // Klick auf eine Zeile: die Ausgaben dieser Kategorie im selben Zeitraum
+  const linkFor = (categoryId: number | null) => {
+    const range: Record<string, string> = ytd ? { von: `${year}-01-01`, bis: today } : { jahr: String(year) };
+    return `/transaktionen?${new URLSearchParams({ ...range, typ: 'expense', kategorie: String(categoryId ?? -1) })}`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Auswertung</h1>
           <p className="text-sm text-muted-foreground">
             {ytd
               ? `Ausgaben vom 1. Januar bis ${upToLabel} ${year} im Vergleich zum selben Zeitraum ${year - 1} — pro Oberkategorie`
@@ -138,10 +198,10 @@ export default function YearReview() {
               {rows.map((r) => (
                 <TableRow key={r.categoryId ?? 'ohne'}>
                   <TableCell>
-                    <span className="flex items-center gap-2">
+                    <Link to={linkFor(r.categoryId)} className="flex items-center gap-2 hover:underline" title="Buchungen anzeigen">
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(r.color) }} />
                       {r.name}
-                    </span>
+                    </Link>
                   </TableCell>
                   <TableCell className="text-right">{formatCents(r.current)}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{formatCents(r.previous)}</TableCell>
@@ -173,7 +233,15 @@ export default function YearReview() {
             <p className="text-sm text-muted-foreground">Keine Daten für ein Diagramm.</p>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ left: 0, right: 8, top: 8 }} barGap={2}>
+              <BarChart
+                data={chartData} margin={{ left: 0, right: 8, top: 8 }} barGap={2} className="cursor-pointer"
+                // Klick auf eine Kategorie zeigt ihre Buchungen im gewählten Jahr
+                onClick={(state: { activeTooltipIndex?: number | null } | null) => {
+                  const index = state?.activeTooltipIndex;
+                  const row = typeof index === 'number' ? chartData[index] : undefined;
+                  if (row) navigate(linkFor(row.categoryId));
+                }}
+              >
                 <CartesianGrid {...GRID_PROPS} />
                 {/* Schräg und gekürzt: waagrecht liefen lange Kategorienamen
                     ineinander („LebensmittelFreizeit…“) */}

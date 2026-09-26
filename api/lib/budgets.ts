@@ -1,4 +1,5 @@
 import { budgets, categories, transactions } from "@db/schema";
+import { withoutReversals } from "@contracts/flows";
 import { touchesVisibleAccount, visibleAccountIds } from "./accountAccess";
 import type { Db } from "../queries/connection";
 import type { SessionUser } from "../context";
@@ -103,9 +104,10 @@ export async function computeBudgetStatuses(
     db.select().from(categories),
     db.select().from(transactions),
   ]);
-  const txs = allTxs.filter(
-    t => t.type === "expense" && touchesVisibleAccount(visible, t)
-  );
+  // Stornierte Ausgaben samt Gegenbuchung zählen nicht (contracts/flows.ts)
+  const txs = withoutReversals(
+    allTxs.filter(t => touchesVisibleAccount(visible, t))
+  ).filter(t => t.type === "expense");
 
   // Ausgaben einer Budget-Kategorie = Kategorie + alle ihre Unterkategorien
   const childrenByParent = new Map<number, number[]>();

@@ -8,8 +8,11 @@ import {
   categories,
   projects,
   recurring,
+  tags,
   transactionSplits,
+  transactionTags,
   transactions,
+  users,
 } from "@db/schema";
 import {
   listVisibleAccounts,
@@ -18,7 +21,8 @@ import {
 import { computeBudgetStatuses } from "./lib/budgets";
 import { localISO, occurrencesInRange } from "./lib/recurringSchedule";
 import { shiftMonth } from "@contracts/planning";
-import type { RecurringInterval } from "@contracts/types";
+import { withoutReversals } from "@contracts/flows";
+import { MONTHS_PER_INTERVAL, type RecurringInterval } from "@contracts/types";
 import type { SessionUser } from "./context";
 
 /**
@@ -40,10 +44,14 @@ async function visibleData(db: Db, user: SessionUser) {
     db.select().from(categories),
   ]);
   const visible = new Set(accs.map(a => a.id));
+  const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
   return {
     accs,
     visible,
-    txs: allTxs.filter(t => touchesVisibleAccount(visible, t)),
+    /** Alle sichtbaren Buchungen — für Salden */
+    txs,
+    /** Ohne stornierte Buchungen und ihre Gegenbuchungen — für Summen */
+    flows: withoutReversals(txs),
     cats,
   };
 }
@@ -68,6 +76,25 @@ function expensesByMonth(
   return out;
 }
 
+/** Betrag einer Dauerbuchung auf einen Monat umgerechnet (wöchentlich × 52/12) */
+const monthlyOf = (amount: number, interval: RecurringInterval) =>
+  interval === "weekly"
+    ? Math.round((amount * 52) / 12)
+    : Math.round(amount / MONTHS_PER_INTERVAL[interval]);
+
+/** Tage zwischen zwei ISO-Daten (inklusive beider Enden) */
+const daySpan = (from: string, to: string) =>
+  Math.round(
+    (Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000
+  ) + 1;
+const shiftDays = (iso: string, days: number) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+const BREAKDOWN_DIMENSIONS = ["category", "person", "account", "tag", "project"] as const;
+
 const withChildren = (
   cats: { id: number; parentId: number | null }[],
   id: number
@@ -88,7 +115,7 @@ export const analysisRouter = createRouter({
       })
     )
     .query(async ({ ctx, input }) => {
-      const { txs, cats } = await visibleData(getDb(), ctx.user);
+      const { flows: txs, cats } = await visibleData(getDb(), ctx.user);
       const end = input.endMonth ?? localISO(new Date()).slice(0, 7);
       const months = monthRange(end, input.months);
       const index = new Map(months.map((m, i) => [m, i]));
@@ -157,7 +184,7 @@ export const analysisRouter = createRouter({
       })
     )
     .query(async ({ ctx, input }) => {
-      const { txs } = await visibleData(getDb(), ctx.user);
+      const { flows: txs } = await visibleData(getDb(), ctx.user);
       const end = input.endMonth ?? localISO(new Date()).slice(0, 7);
       const months = monthRange(end, input.months);
       const rows = months.map(month => {
@@ -214,7 +241,7 @@ export const analysisRouter = createRouter({
       if (!budget) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Budget nicht gefunden." });
       }
-      const { txs, cats } = await visibleData(db, ctx.user);
+      const { flows: txs, cats } = await visibleData(db, ctx.user);
       const ids = withChildren(cats, budget.categoryId);
       const today = localISO(new Date());
       const yearly = budget.period === "yearly";
@@ -293,7 +320,7 @@ export const analysisRouter = createRouter({
    */
   budgetCoverage: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
-    const [{ txs, cats }, statuses] = await Promise.all([
+    const [{ flows: txs, cats }, statuses] = await Promise.all([
       visibleData(db, ctx.user),
       computeBudgetStatuses(db, ctx.user),
     ]);
@@ -337,7 +364,7 @@ export const analysisRouter = createRouter({
   categoryStats: authedQuery
     .input(z.object({ categoryId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const { txs, cats } = await visibleData(getDb(), ctx.user);
+      const { flows: txs, cats } = await visibleData(getDb(), ctx.user);
       const ids = withChildren(cats, input.categoryId);
       const lastClosed = shiftMonth(localISO(new Date()).slice(0, 7), -1);
       const byMonth = expensesByMonth(txs, ids);
@@ -405,6 +432,9 @@ export const analysisRouter = createRouter({
           balance.set(t.accountId, balance.get(t.accountId)! + (t.type === "income" ? t.amount : -t.amount));
         }
       }
+      // Nur warnen, wenn ein Konto durch die Termine ins Minus kippt — ein
+      // schon negatives Konto (Kreditkarte, Kontokorrent) ist kein neuer Befund
+      const start = new Map(balance);
       const lowest = new Map<number, { amount: number; date: string }>();
       const apply = (accountId: number, delta: number, date: string) => {
         if (!balance.has(accountId)) return;
@@ -429,7 +459,7 @@ export const analysisRouter = createRouter({
         expense: occurrences.filter(o => o.type === "expense").reduce((s, o) => s + o.amount, 0),
         income: occurrences.filter(o => o.type === "income").reduce((s, o) => s + o.amount, 0),
         warnings: [...lowest.entries()]
-          .filter(([, low]) => low.amount < 0)
+          .filter(([id, low]) => low.amount < 0 && (start.get(id) ?? 0) >= 0)
           .map(([accountId, low]) => ({
             accountId,
             accountName: names.get(accountId) ?? "?",
@@ -453,7 +483,7 @@ export const analysisRouter = createRouter({
       if (!project) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Projekt nicht gefunden." });
       }
-      const [{ txs, cats }, splitRows] = await Promise.all([
+      const [{ flows: txs, cats }, splitRows] = await Promise.all([
         visibleData(db, ctx.user),
         db.select().from(transactionSplits),
       ]);
@@ -501,6 +531,204 @@ export const analysisRouter = createRouter({
             amount,
           }))
           .sort((a, b) => b.amount - a.amount),
+      };
+    }),
+  /**
+   * Fixkosten-Quote: Wie viel der Ausgaben ist durch Dauerbuchungen fest
+   * gebunden, wo schwankt der Rest? Aktive Dauerbuchungen (nicht pausiert,
+   * nicht abgelaufen) auf den Monat umgerechnet; Durchschnitte über die
+   * letzten sechs abgeschlossenen Monate.
+   */
+  fixedCosts: authedQuery.query(async ({ ctx }) => {
+    const db = getDb();
+    const [{ visible, flows, cats }, rules] = await Promise.all([
+      visibleData(db, ctx.user),
+      db.select().from(recurring),
+    ]);
+    const today = localISO(new Date());
+    const months = monthRange(shiftMonth(today.slice(0, 7), -1), 6);
+    const first = months[0];
+    const last = months[months.length - 1];
+    const active = rules.filter(
+      r =>
+        r.active &&
+        (r.endDate === null || r.endDate >= today) &&
+        touchesVisibleAccount(visible, r)
+    );
+    const fixedOf = (type: "income" | "expense") =>
+      active
+        .filter(r => r.type === type)
+        .map(r => ({
+          recurringId: r.id,
+          note: r.note,
+          categoryId: r.categoryId,
+          monthly: monthlyOf(r.amount, r.interval as RecurringInterval),
+        }))
+        .sort((a, b) => b.monthly - a.monthly);
+    const fixedExpenses = fixedOf("expense");
+    const fixedExpense = fixedExpenses.reduce((s, r) => s + r.monthly, 0);
+    const fixedIncome = fixedOf("income").reduce((s, r) => s + r.monthly, 0);
+
+    let income = 0;
+    let expense = 0;
+    const rootOf = new Map(cats.map(c => [c.id, c.parentId ?? c.id]));
+    // Variable Ausgaben (nicht aus Dauerbuchungen) je Oberkategorie und Monat
+    const variable = new Map<number, number[]>();
+    const index = new Map(months.map((m, i) => [m, i]));
+    for (const t of flows) {
+      const key = t.date.slice(0, 7);
+      if (key < first || key > last) continue;
+      if (t.type === "income") income += t.amount;
+      if (t.type !== "expense") continue;
+      expense += t.amount;
+      if (t.recurringId !== null) continue;
+      const root = t.categoryId === null ? -1 : (rootOf.get(t.categoryId) ?? t.categoryId);
+      const row = variable.get(root) ?? months.map(() => 0);
+      row[index.get(key)!] += t.amount;
+      variable.set(root, row);
+    }
+    const averageIncome = Math.round(income / months.length);
+    const averageExpense = Math.round(expense / months.length);
+    const catById = new Map(cats.map(c => [c.id, c]));
+    return {
+      from: first,
+      to: last,
+      fixedExpense,
+      fixedIncome,
+      averageIncome,
+      averageExpense,
+      /** Anteil der Fixkosten an den Ø-Einnahmen bzw. Ø-Ausgaben (Prozent) */
+      shareOfIncome: averageIncome > 0 ? Math.round((fixedExpense / averageIncome) * 100) : null,
+      shareOfExpense: averageExpense > 0 ? Math.round((fixedExpense / averageExpense) * 100) : null,
+      top: fixedExpenses.slice(0, 6),
+      fixedCount: fixedExpenses.length,
+      variable: [...variable.entries()]
+        .map(([categoryId, values]) => ({
+          categoryId,
+          name: categoryId === -1 ? "Ohne Kategorie" : (catById.get(categoryId)?.name ?? "?"),
+          color: categoryId === -1 ? null : (catById.get(categoryId)?.color ?? null),
+          min: Math.min(...values),
+          max: Math.max(...values),
+          average: Math.round(values.reduce((s, v) => s + v, 0) / values.length),
+        }))
+        .filter(v => v.max > 0)
+        .sort((a, b) => b.max - b.min - (a.max - a.min))
+        .slice(0, 6),
+    };
+  }),
+
+  /**
+   * Summen nach einer frei wählbaren Dimension (Kategorie, Person, Konto,
+   * Tag, Projekt) für einen Zeitraum — plus derselbe Wert im gleich langen
+   * Zeitraum davor. Ohne `from`/`to` über alle Buchungen, dann ohne
+   * Vergleich. Person = wer bezahlt hat (`userId`); eine Buchung mit
+   * mehreren Tags zählt bei jedem Tag.
+   */
+  breakdown: authedQuery
+    .input(
+      z.object({
+        dimension: z.enum(BREAKDOWN_DIMENSIONS),
+        type: z.enum(["expense", "income"]).default("expense"),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const [{ accs, flows, cats }, tagRows, tagLinks, projectRows, userRows] =
+        await Promise.all([
+          visibleData(db, ctx.user),
+          db.select().from(tags),
+          db.select().from(transactionTags),
+          db.select().from(projects),
+          db.select({ id: users.id, name: users.name, color: users.color }).from(users),
+        ]);
+      const range = input.from && input.to ? { from: input.from, to: input.to } : null;
+      const previous = range
+        ? (() => {
+            const len = daySpan(range.from, range.to);
+            return { from: shiftDays(range.from, -len), to: shiftDays(range.from, -1) };
+          })()
+        : null;
+      const tagsOf = new Map<number, number[]>();
+      for (const l of tagLinks) {
+        tagsOf.set(l.transactionId, [...(tagsOf.get(l.transactionId) ?? []), l.tagId]);
+      }
+      const rootOf = new Map(cats.map(c => [c.id, c.parentId ?? c.id]));
+      const keysOf = (t: (typeof flows)[number]): number[] => {
+        switch (input.dimension) {
+          case "category":
+            return [t.categoryId === null ? -1 : (rootOf.get(t.categoryId) ?? t.categoryId)];
+          case "person":
+            return [t.userId];
+          case "account":
+            return [t.accountId];
+          case "tag": {
+            const list = tagsOf.get(t.id);
+            return list && list.length > 0 ? list : [-1];
+          }
+          case "project":
+            return [t.projectId ?? -1];
+        }
+      };
+      const sums = new Map<number, { amount: number; count: number; previous: number }>();
+      const entry = (key: number) => {
+        const e = sums.get(key) ?? { amount: 0, count: 0, previous: 0 };
+        sums.set(key, e);
+        return e;
+      };
+      let total = 0;
+      let previousTotal = 0;
+      for (const t of flows) {
+        if (t.type !== input.type) continue;
+        const inRange = !range || (t.date >= range.from && t.date <= range.to);
+        const inPrevious = previous !== null && t.date >= previous.from && t.date <= previous.to;
+        if (!inRange && !inPrevious) continue;
+        if (inRange) total += t.amount;
+        else previousTotal += t.amount;
+        for (const key of keysOf(t)) {
+          const e = entry(key);
+          if (inRange) {
+            e.amount += t.amount;
+            e.count += 1;
+          } else {
+            e.previous += t.amount;
+          }
+        }
+      }
+      const catById = new Map(cats.map(c => [c.id, c]));
+      const accById = new Map(accs.map(a => [a.id, a]));
+      const labelOf = (key: number): { name: string; color: string | null } => {
+        const none = { category: "Ohne Kategorie", tag: "Ohne Tag", project: "Ohne Projekt" } as Record<string, string>;
+        if (key === -1) return { name: none[input.dimension] ?? "—", color: null };
+        switch (input.dimension) {
+          case "category":
+            return { name: catById.get(key)?.name ?? "?", color: catById.get(key)?.color ?? null };
+          case "person": {
+            const u = userRows.find(x => x.id === key);
+            return { name: u?.name ?? "?", color: u?.color ?? null };
+          }
+          case "account":
+            return { name: accById.get(key)?.name ?? "?", color: null };
+          case "tag": {
+            const tag = tagRows.find(x => x.id === key);
+            return { name: tag?.name ?? "?", color: tag?.color ?? null };
+          }
+          case "project": {
+            const p = projectRows.find(x => x.id === key);
+            return { name: p?.name ?? "?", color: p?.color ?? null };
+          }
+        }
+      };
+      return {
+        range,
+        previousRange: previous,
+        total,
+        previousTotal,
+        rows: [...sums.entries()]
+          .map(([key, e]) => ({ key, ...labelOf(key), ...e }))
+          .filter(r => r.amount > 0 || r.previous > 0)
+          .sort((a, b) => b.amount - a.amount || b.previous - a.previous),
       };
     }),
 });

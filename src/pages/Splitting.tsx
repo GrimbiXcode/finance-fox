@@ -10,6 +10,7 @@ import { trpc } from '@/providers/trpc';
 import { computeSettlements, formatCents, formatDate, memberBalances, todayISO } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { PENCIL_COLORS, pencil } from '@/lib/pencil';
+import ProjectSummaryCard from '@/components/ProjectSummaryCard';
 
 // Kleine Farbpalette für neue Projekte (wie die Kategorien-Palette im Dialog)
 const PROJECT_COLORS = PENCIL_COLORS;
@@ -151,6 +152,9 @@ export default function Splitting() {
           ))}
         </div>
       )}
+
+      {/* Projekt gewählt: Gesamtkosten, Zeitraum, wer hat wie viel getragen */}
+      {typeof projectFilter === 'number' && <ProjectSummaryCard projectId={projectFilter} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

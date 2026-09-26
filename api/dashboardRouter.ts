@@ -15,6 +15,7 @@ import {
   touchesVisibleAccount,
 } from "./lib/accountAccess";
 import { computeBudgetStatuses } from "./lib/budgets";
+import { withoutReversals } from "@contracts/flows";
 import { localISO } from "./lib/recurringSchedule";
 import { computeSettlements, memberBalances } from "@contracts/settlement";
 import {
@@ -153,6 +154,8 @@ export const dashboardRouter = createRouter({
       ]);
       const visible = new Set(accs.map(a => a.id));
       const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
+      // Für Summen: stornierte Buchungen samt Gegenbuchung ausblenden
+      const flows = withoutReversals(txs);
       const today = input.today ?? localISO(new Date());
       const currentMonth = today.slice(0, 7);
       const month = input.month;
@@ -160,7 +163,7 @@ export const dashboardRouter = createRouter({
 
       const totalsOf = (key: string): Totals => {
         const totals = { income: 0, expense: 0 };
-        for (const t of txs) {
+        for (const t of flows) {
           if (!t.date.startsWith(key)) continue;
           if (t.type === "income") totals.income += t.amount;
           else if (t.type === "expense") totals.expense += t.amount;
@@ -192,7 +195,7 @@ export const dashboardRouter = createRouter({
       // Ausgaben nach Oberkategorie (-1 = ohne Kategorie)
       const rootOf = new Map(cats.map(c => [c.id, c.parentId ?? c.id]));
       const byRoot = new Map<number, number>();
-      for (const t of txs) {
+      for (const t of flows) {
         if (t.type !== "expense" || !t.date.startsWith(month)) continue;
         const root =
           t.categoryId === null

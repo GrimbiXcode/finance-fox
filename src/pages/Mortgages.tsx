@@ -64,6 +64,7 @@ import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
 import { warningText } from "@/lib/mortgageText";
 import { pencil } from "@/lib/pencil";
+import KpiCard from "@/components/KpiCard";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
 type Schedule = inferRouterOutputs<AppRouter>["mortgage"]["forecast"];
@@ -166,25 +167,14 @@ function Kpi({
   tone?: "warn";
 }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div
-          className={cn(
-            "font-serif text-2xl font-semibold tabular-nums",
-            tone === "warn" && "text-destructive"
-          )}
-        >
-          {value}
-        </div>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
+    <KpiCard
+      title={label}
+      icon={icon}
+      value={value}
+      valueClassName={tone === "warn" ? "text-destructive" : undefined}
+    >
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </KpiCard>
   );
 }
 
@@ -228,7 +218,7 @@ function OverviewSection({
 
   return (
     <section className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Kpi
           label="Restschuld"
           value={formatCents(totals.debt)}

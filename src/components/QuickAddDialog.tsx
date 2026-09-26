@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useActions } from '@/providers/actions';
 import { Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,21 +24,25 @@ import { toast } from 'sonner';
  * mit „edit"-Recht.
  */
 export default function QuickAddDialog() {
-  const [open, setOpen] = useState(false);
+  // Offen-Zustand global, damit auch das Kürzel „S“ und die Befehlspalette
+  // die Schnellerfassung öffnen
+  const { open: dialog, show, close, restoreFocus } = useActions();
+  const open = dialog === 'quick';
+  const setOpen = (next: boolean) => (next ? show('quick') : close());
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5" title="Schnellbuchung erfassen">
+        <Button variant="outline" size="sm" className="gap-1.5" title="Schnellbuchung erfassen (Taste S)">
           <Zap className="h-4 w-4" />
           <span className="hidden sm:inline">Schnell</span>
         </Button>
       </DialogTrigger>
-      {open && <QuickAddForm close={() => setOpen(false)} />}
+      {open && <QuickAddForm close={() => setOpen(false)} onCloseAutoFocus={restoreFocus} />}
     </Dialog>
   );
 }
 
-function QuickAddForm({ close }: { close: () => void }) {
+function QuickAddForm({ close, onCloseAutoFocus }: { close: () => void; onCloseAutoFocus: (e: Event) => void }) {
   const { user } = useAuth();
   const { accounts, banks } = useFinanceData();
   const usage = trpc.finance.categoryUsage.useQuery();
@@ -102,6 +107,7 @@ function QuickAddForm({ close }: { close: () => void }) {
 
   return (
     <DialogContent
+      onCloseAutoFocus={onCloseAutoFocus}
       className="sm:max-w-md"
       onEscapeKeyDown={(e) => {
         // Bei offener Vorschlagsliste schließt Escape nur die Liste

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   budgetPace,
   monthsUntilDeadline,
+  nextOccurrenceAfter,
   percentChange,
   periodElapsed,
   requiredMonthlyRate,
@@ -59,5 +60,16 @@ describe("percentChange", () => {
     expect(percentChange(110, 100)).toBe(10);
     expect(percentChange(90, 100)).toBe(-10);
     expect(percentChange(5, 0)).toBeNull();
+  });
+});
+
+describe("nextOccurrenceAfter", () => {
+  it("liefert den ersten Termin nach dem Stichtag, nie einen vergangenen", () => {
+    expect(nextOccurrenceAfter("2026-09-25", "monthly", "2026-09-26")).toBe("2026-10-25");
+    expect(nextOccurrenceAfter("2026-03-25", "monthly", "2026-09-26")).toBe("2026-10-25");
+    expect(nextOccurrenceAfter("2026-09-26", "monthly", "2026-09-26")).toBe("2026-10-26");
+    expect(nextOccurrenceAfter("2025-01-15", "yearly", "2026-09-26")).toBe("2027-01-15");
+    expect(nextOccurrenceAfter("2026-09-20", "weekly", "2026-09-26")).toBe("2026-09-27");
+    expect(nextOccurrenceAfter("2026-08-01", "quarterly", "2026-09-26")).toBe("2026-11-01");
   });
 });

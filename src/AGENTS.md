@@ -44,18 +44,35 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
 
 ## Navigation (Layout.tsx)
 
-Die Menüstruktur steht zentral in `navGroups` (thematisch gruppiert:
+Die Menüstruktur steht zentral in `navGroups` (`lib/navigation.ts`,
+thematisch gruppiert:
 Alltag = Dashboard/Transaktionen/Wiederkehrend/Aufteilung, Konten =
 Konten/Geldfluss, Planung = Budgets/Sparziele/Vorsorge/Hypotheken/
 Versicherungen, Analyse =
-Prognosen/Auswertung, Verwaltung = Personen/Einstellungen) und speist
+Prognosen/Auswertung, Verwaltung = Personen/Verlauf/Einstellungen) und speist
+drei Stellen: die Befehlspalette (Einträge mit `keywords` für Synonyme) und
 beide Navigationen: die Desktop-Seitenleiste (mit Gruppen-Labels, im
 eingeklappten Zustand nur Icons + Trennlinien) und die mobile Ansicht —
 dort zeigt die untere Leiste vier Schnellzugriffe (`mobilePrimary`:
 Dashboard, Transaktionen, Konten, Budgets) plus „Mehr", das ein
 Bottom-Sheet (`ui/sheet`) mit allen Bereichen in derselben Gruppierung
 öffnet. Neue Seiten: Route in `App.tsx` + Eintrag in `navGroups` — beide
-Navigationen bekommen sie dann automatisch.
+Navigationen und die Befehlspalette bekommen sie dann automatisch.
+
+**Globale Aktionen** (`providers/actions.tsx`, `ActionsProvider` in
+`App.tsx`): hält, welcher globale Dialog offen ist (`'transaction' |
+'quick' | 'palette' | 'shortcuts'`), und die Tastenkürzel — ⌘/Strg+K
+(Befehlspalette, auch in Eingabefeldern), `n` (neue Buchung), `s`
+(Schnellerfassung), `/` (Suche), `?` (Kürzel-Übersicht). Die Buchstaben
+wirken nur außerhalb von Eingabefeldern und wenn kein Dialog offen ist.
+Die Buchstaben greifen auch nicht auf Auswahllisten und Menüs
+(`role="combobox"|"listbox"|"menu"`), ⌘K nicht über einem anderen Dialog.
+`useActions().show('quick')` öffnet einen Dialog von überall; das Layout
+rendert Befehlspalette (`components/CommandPalette.tsx`), Kürzel-Hilfe
+(`ShortcutsDialog.tsx`) und den kontrollierten `TransactionDialog`
+(Props `open`/`onOpenChange`; ohne `trigger` rendert er dann keinen Knopf;
+`key={seq}` setzt das Formular bei jedem Öffnen neu auf). Nach dem
+Schließen führt `restoreFocus` den Fokus aufs Element davor zurück.
 
 ## Zentrale Helfer (lib/finance.ts)
 
@@ -159,11 +176,18 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   oder `zeit=alle` — ohne Angabe gilt der **laufende Monat**
   (`contracts/period.ts`); dazu `typ`, `konto`, `kategorie` (eine
   Oberkategorie schließt ihre Unterkategorien ein, `-1` = ohne), `person`,
-  `tag`, `q` (Suche, verzögert geschrieben) und `fokus` (Buchungs-ID:
-  markieren und hinscrollen). Andere Seiten verlinken damit direkt auf eine
-  gefilterte Liste (Dashboard-Kennzahlen, Kategorien-Legende, Cashflow,
-  letzte Buchungen).
+  `tag`, `projekt` (`0` = ohne Projekt), `q` (Suche, verzögert
+  geschrieben), `sortierung` (`datum|betrag|kategorie|konto|person`) mit
+  `richtung` (`auf|ab`, nur wenn abweichend von der ersten Richtung der
+  Spalte) und `fokus` (Buchungs-ID: markieren, hinscrollen, Detail-Blatt
+  öffnen). Andere Seiten verlinken damit direkt auf eine gefilterte Liste
+  (Dashboard-Kennzahlen, Kategorien-Legende, Cashflow, letzte Buchungen,
+  Budget-Verlauf, Monatsmatrix, Jahresvergleich, Befehlspalette,
+  Projekt-Karte).
 - **Dashboard**: `monat` (fehlt = aktueller Monat).
+- **Auswertung**: `ansicht` (`kategorien|jahr`, fehlt = Verlauf).
+- **Einstellungen**: `tab` (`haushalt|benachrichtigungen|daten`, fehlt =
+  Profil & Sicherheit).
 - **Wiederkehrend**: `neu=1` öffnet den Anlegen-Dialog, vorbefüllt aus
   `typ`, `von`, `nach`, `kategorie`, `betrag` (Cent), `notiz`; die Parameter
   werden danach entfernt. So schlägt z. B. die Sparziel-Karte eine
@@ -194,15 +218,43 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   Dialog per SearchableSelect angezeigt/gewählt (Wahl wird direkt
   gespeichert). Weitere Defaults: zuletzt verwendete Kategorie der
   jeweiligen Art, heutiges Datum, aktueller User.
-- **Transaktionen**: Tag-Auswahl + Inline-Anlage im Details-Bereich des
-  TransactionDialog, Badges + Tag-Filter + Tag-Popover zum nachträglichen
-  Taggen in der Liste (Tag-Namen sind Teil des Such-Haystacks). Edit-Modus
-  im TransactionDialog (Prop `transaction`, Art-Wahl deaktiviert mit
+- **Transaktionen**: ruhige Zeilen — am Desktop in der Zeile nur Stift
+  (bei Hover/Fokus, nur bei `edit`, Remount-Key aus changeCount/tags) und
+  Beleg-Knopf (mit Zähler immer sichtbar); mobil entfällt die
+  Aktionen-Spalte ganz, damit der Betrag Platz hat. Ein Klick in die Zeile
+  oder auf die Beschreibung (ein echter `<button>`, die Zeile bleibt eine
+  Tabellenzeile) öffnet `components/TransactionDetailSheet.tsx` (mobil von
+  unten, sonst von rechts): alle Felder, Tags zum An-/Abwählen (nur mit
+  `edit`), Bearbeiten, Belege, Verlauf, „Wiederkehrend“ (öffnet den
+  vorbefüllten Dauerbuchungs-Dialog, erste Fälligkeit nach heute),
+  Stornieren und Löschen — die beiden letzten über AlertDialoge, die den
+  Saldo-Effekt erklären. Nach dem Schließen kehrt der Fokus auf die Zeile
+  zurück. Liegt eine `fokus`-Buchung nicht in den geladenen Seiten, holt
+  das Blatt sie einzeln (`searchTransactions({ id })`). Die Aktionen-Zelle
+  stoppt Klicks, weil Klicks aus Dialog-Portalen im React-Baum bis zur
+  Zeile blubbern. **Massenbearbeitung** (Desktop): Checkbox je Zeile mit
+  `edit`-Recht und „alle geladenen“ im Kopf; die Auswahl gilt nur für die
+  aktuelle Suche (abgeleitet über einen Schlüssel aus den Suchparametern).
+  `components/BulkActionBar.tsx` setzt Kategorie, Projekt, Person, Tags
+  oder löscht (`finance.bulkUpdateTransactions`/`bulkDeleteTransactions`).
+  Spaltenköpfe sortieren (`SortHead`, `aria-sort`); gruppiert wird nur bei
+  Sortierung nach Datum. Tag-Auswahl + Inline-Anlage im Details-Bereich des
+  TransactionDialog, Tag-Namen sind Teil der Suche. Edit-Modus im
+  TransactionDialog (Prop `transaction`, Art-Wahl deaktiviert mit
   title-Hinweis, Änderungskommentar-Feld, Hinweis bei Dauerbuchungs-
-  Instanzen, Belege nur im Create-Modus), Stift-Button nur bei `edit`
-  (Remount-Key aus changeCount/tags), „bearbeitet"-Badge bei changeCount > 0
-  öffnet den Änderungsverlauf-Dialog. Löschen UND Stornieren laufen über
-  AlertDialoge, die den konkreten Saldo-Effekt erklären.
+  Instanzen, Belege nur im Create-Modus). Enter im Betragsfeld springt zur
+  Beschreibung.
+- **Kennzahl-Karten**: `components/KpiCard.tsx` (Dashboard, Hypotheken,
+  Versicherungen) — mobil im 2×2-Raster (`grid-cols-2`) mit kleinerer
+  Schrift und ohne Symbol.
+- **Budgets**: „Verlauf & Details“ klappt `components/BudgetDetail.tsx` auf
+  (letzte sechs Perioden als Mini-Balken mit Limit-Strich, eingehalten/
+  Durchschnitt, Aufschlüsselung auf Unterkategorien, Links in die
+  Buchungen; Query erst beim Aufklappen). Karte „Ohne Budget“
+  (`analysis.budgetCoverage`) mit Direkt-Anlage; der Budget-Dialog schlägt
+  Ø 3 / Ø 6 Monate / höchsten Monat vor (`analysis.categoryStats`). Das
+  Budget-Grid hat `items-start`, damit ein aufgeklappter Verlauf die
+  Nachbarkarten nicht streckt.
 - **Konten**: Filter nach Bank/Kontotyp, Suche (Name/Bank/IBAN), Karten-/
   Tabellenansicht (sortierbar, Total in der Fußzeile), aufklappbarer Bereich
   „Saldo-Verlauf" pro Konto-Karte (Zeitraum-Wahl + recharts-AreaChart, Query
@@ -228,15 +280,32 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   nach der Konto-Wahl den freien Betrag „Verfügbar: X" via
   `finance.goalSourceAvailability`). Offene Ziele: „offenes Ziel"-Badge
   statt Prozent/Prognose.
-- **Splitting** (`pages/Splitting.tsx`): filtert Salden,
+- **Splitting** (`pages/Splitting.tsx`): bei gewähltem Projekt oben
+  `components/ProjectSummaryCard.tsx` (Gesamtkosten, Zeitraum, je Person
+  bezahlt/getragen, Kategorien). Filtert Salden,
   Ausgleichsvorschläge und die Liste geteilter Ausgaben pro Projekt (Chips:
   Alle / Haushalt / je Projekt); verbuchte Ausgleiche übernehmen das gewählte
   Projekt. Sektion „Projekte & Vorlagen": Projekt-Anlage mit Farbpalette,
   Löschen von Projekten und Aufteilungsvorlagen. Vorlagen-Select im
   Split-Bereich des TransactionDialog (gespeicherte Vorlagen + Schnellwahl
   60/40, 70/30), „Als Vorlage speichern" aus den aktuellen Anteilen.
-- **Jahresvergleich**: `pages/YearReview.tsx` unter `/auswertung` (Nav
-  „Auswertung").
+- **Auswertung** (`pages/YearReview.tsx` unter `/auswertung`): Tabs
+  Verlauf (`components/TrendCharts.tsx`: Einnahmen/Ausgaben als Balken,
+  darunter die Sparquote als eigene Linie — bewusst keine zweite y-Achse),
+  Kategorien × Monate (`components/CategoryMatrix.tsx`: Zellen mit
+  zeilenweise normierter Tönung in `--pencil-1`, sticky erste Spalte,
+  aufklappbare Unterkategorien, startet mobil bei den jüngsten Monaten)
+  und Jahresvergleich (Zeilen verlinken auf die Buchungen). Jeder Wert
+  führt per Klick zur gefilterten Transaktionsliste.
+- **Dauerbuchungen**: `components/UpcomingCard.tsx` zeigt die Termine der
+  nächsten 7/30/90 Tage (`analysis.upcoming`) samt Warnung, wenn ein Konto
+  dabei ins Minus fiele.
+- **Verlauf** (`pages/Activity.tsx` unter `/verlauf`, Nav „Verwaltung“):
+  das Aktivitäten-Log mit Filter Person, Zeitraum (`since` in Epoch-ms,
+  lokal gerechnet) und Bereich, nach Tagen gruppiert. Beschriftungen in
+  `lib/auditLabels.ts`. Das Dashboard zeigt die fünf neuesten Einträge
+  anderer Personen („Zuletzt im Haushalt“, `othersOnly`), nur in Haushalten
+  mit mehr als einer Person.
 - **Bericht** (`pages/Report.tsx` unter `/bericht`, Nav „Bericht" nach
   „Auswertung", Icon `FileDown`): stellt den Export zusammen — eine Checkbox
   je Eintrag aus `REPORT_SECTIONS` (`contracts/report.ts`, geteilt mit der
@@ -264,12 +333,14 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   Sparziel seinen Zielbetrag erreicht, ist grün mit Häkchen markiert, offene
   Ziele zeigen Badge „offenes Ziel" ohne Prozent. Das Szenario der Card
   darüber wird als Prop durchgereicht.
-- **Einstellungen** (`pages/Settings.tsx`): Sektionen u. a. Kontotypen &
-  Banken, Tags (Card), Kategorien-Baum mit Stift-Button pro Kategorie
-  (`CategoryEditDialog`: Name, Farbpalette, Oberkategorie-Select deaktiviert
-  bei eigenen Unterkategorien), Zwei-Faktor-Authentifizierung (QR-Code via
-  `qrcode`-Paket als Data-URL), Card „Aktivitäten" (Audit-Log: deutsches
-  Action-Mapping, Entity-Filter, „Mehr laden").
+- **Einstellungen** (`pages/Settings.tsx`): vier Tabs (`?tab=`) — Profil &
+  Sicherheit (Profil, Passwort, Zwei-Faktor-Authentifizierung mit QR-Code
+  via `qrcode`-Paket als Data-URL), Haushalt (Währung, Kategorien-Baum mit
+  Stift-Button pro Kategorie — `CategoryEditDialog`: Name, Farbpalette,
+  Oberkategorie-Select deaktiviert bei eigenen Unterkategorien —, Tags,
+  Kontotypen & Banken), Benachrichtigungen (Admin) und Daten & Offline
+  (Datensicherung, Datenverwaltung, OfflineCard). Das Aktivitäten-Log ist
+  eine eigene Seite (`/verlauf`).
 - **Login**: zweistufig bei aktiviertem TOTP (InputOTP).
 - **Vorsorge** (`pages/Pension.tsx` unter `/vorsorge`, Nav „Vorsorge" nach
   „Sparziele"): privates 3-Säulen-Modul pro Benutzer. Ohne Profil nur eine

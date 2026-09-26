@@ -730,7 +730,10 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   fachlichen Mutationen in `financeRouter.ts` und `authRouter.ts` (Login
   Erfolg/Fehlschlag, Logout, TOTP, Benutzer-Verwaltung, Profil, Passwort).
   Lesen über `finance.listAuditLog` (neueste zuerst, Limit max 500, Filter
-  `entities` und `userId`, userName/userColor gejoint). **Sichtbarkeit**
+  `entities`, `userId`, `othersOnly` — nur Einträge anderer Personen, ohne
+  System — und das Zeitfenster `since`/`until` in Epoch-Millisekunden, damit
+  der Client „heute“ in seiner Zeitzone rechnet; userName/userColor
+  gejoint). **Sichtbarkeit**
   prüft `lib/auditVisibility.ts` je Eintrag: Vorsorge nur eigene (außer
   Ehepartner-Verknüpfung), Buchungen und Konten nur mit sichtbarem Konto,
   gelöschte nur Urheber und Admins; der Rest ist haushaltsweit. Bis 1.31 sah

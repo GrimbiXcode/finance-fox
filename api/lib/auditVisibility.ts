@@ -18,14 +18,20 @@ import type { SessionUser } from "../context";
  * - Importe (`transaction.imported`) tragen die Konto-ID: sichtbar mit dem
  *   Konto.
  * - Konten: sichtbar mit dem Konto; gelöschte nur Urheber und Admins.
- * - Alles andere (Kategorien, Budgets, Sparziele, Hypotheken,
- *   Versicherungen, Einstellungen, Anmeldungen) ist haushaltsweit.
+ * - Dauerbuchungen: sichtbar, wenn die Regel ein sichtbares Konto berührt;
+ *   gelöschte und ältere Anlage-Einträge ohne ID nur Urheber und Admins.
+ * - Sparziel-Quellen („Konto „Privat Sam“ verknüpft“): das Detail nennt den
+ *   Kontonamen — sichtbar nur, wenn ein sichtbares Konto so heißt, sonst nur
+ *   Urheber und Admins. Die übrigen Sparziel-Einträge sind haushaltsweit.
+ * - Alles andere (Kategorien, Budgets, Hypotheken, Versicherungen,
+ *   Einstellungen, Anmeldungen) ist haushaltsweit.
  */
 export interface AuditRowLike {
   userId: number | null;
   action: string;
   entity: string;
   entityId: number | null;
+  detail?: string;
 }
 
 export interface AuditVisibilityContext {
@@ -35,7 +41,15 @@ export interface AuditVisibilityContext {
   transactions: Map<number, { accountId: number; toAccountId: number | null }>;
   /** IDs aller existierenden Konten (sichtbar oder nicht) */
   existingAccountIds: Set<number>;
+  /** Existierende Dauerbuchungen: ID → Quell-/Zielkonto */
+  recurring: Map<number, { accountId: number; toAccountId: number | null }>;
+  /** Namen der sichtbaren Konten (Sparziel-Quellen stehen nur im Detail) */
+  visibleAccountNames: Set<string>;
 }
+
+/** Kontoname aus „Konto „Name“ (modus)“ */
+const accountNameInDetail = (detail: string | undefined) =>
+  /Konto „(.*)“/.exec(detail ?? "")?.[1] ?? null;
 
 export function isAuditRowVisible(
   row: AuditRowLike,
@@ -62,6 +76,19 @@ export function isAuditRowVisible(
       if (row.entityId === null) return privileged;
       if (!ctx.existingAccountIds.has(row.entityId)) return privileged;
       return ctx.visibleAccountIds.has(row.entityId);
+    }
+    case "recurring": {
+      const rule = row.entityId === null ? undefined : ctx.recurring.get(row.entityId);
+      if (!rule) return privileged;
+      return (
+        ctx.visibleAccountIds.has(rule.accountId) ||
+        (rule.toAccountId !== null && ctx.visibleAccountIds.has(rule.toAccountId))
+      );
+    }
+    case "goal": {
+      if (!row.action.startsWith("goal.source")) return true;
+      const name = accountNameInDetail(row.detail);
+      return privileged || (name !== null && ctx.visibleAccountNames.has(name));
     }
     default:
       return true;

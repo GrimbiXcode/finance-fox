@@ -22,6 +22,8 @@ export const TX_SORT_KEYS = [
 export type TxSortKey = (typeof TX_SORT_KEYS)[number];
 
 export const transactionSearchInput = z.object({
+  /** Genau eine Buchung (Detail-Blatt für einen Link außerhalb der Seite) */
+  id: z.number().int().positive().optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
   type: z.enum(["income", "expense", "transfer"]).optional(),
@@ -55,6 +57,7 @@ export interface SearchableTx {
   projectId: number | null;
   date: string;
   note: string;
+  stornoOfId: number | null;
 }
 
 export interface SearchLookups {
@@ -123,6 +126,7 @@ export function searchTransactions<T extends SearchableTx>(
   const amountTerm = term ? parseAmountTerm(term) : null;
 
   const matches = rows.filter(t => {
+    if (input.id !== undefined && t.id !== input.id) return false;
     if (input.from && t.date < input.from) return false;
     if (input.to && t.date > input.to) return false;
     if (input.type && t.type !== input.type) return false;
@@ -166,9 +170,20 @@ export function searchTransactions<T extends SearchableTx>(
     return true;
   });
 
+  // Summen ohne stornierte Buchungen und Gegenbuchungen (contracts/flows.ts)
+  // — die Paare aus allen Zeilen bestimmen, nicht nur aus den Treffern: Liegt
+  // das Storno in einem anderen Monat, zählte das Original sonst weiter
+  const inPair = new Set<number>();
+  for (const t of rows) {
+    if (t.stornoOfId !== null) {
+      inPair.add(t.id);
+      inPair.add(t.stornoOfId);
+    }
+  }
   let income = 0;
   let expense = 0;
   for (const t of matches) {
+    if (inPair.has(t.id)) continue;
     if (t.type === "income") income += t.amount;
     else if (t.type === "expense") expense += t.amount;
   }

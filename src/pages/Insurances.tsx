@@ -86,6 +86,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { pencil } from "@/lib/pencil";
 import { gapText } from "@/lib/insuranceText";
+import KpiCard from "@/components/KpiCard";
 
 type Outputs = inferRouterOutputs<AppRouter>;
 type Policy = Outputs["insurance"]["listPolicies"][number];
@@ -176,25 +177,14 @@ function Kpi({
   tone?: "warn";
 }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div
-          className={cn(
-            "font-serif text-2xl font-semibold tabular-nums",
-            tone === "warn" && "text-destructive"
-          )}
-        >
-          {value}
-        </div>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
+    <KpiCard
+      title={label}
+      icon={icon}
+      value={value}
+      valueClassName={tone === "warn" ? "text-destructive" : undefined}
+    >
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </KpiCard>
   );
 }
 
@@ -979,7 +969,7 @@ export default function Insurances() {
       </div>
 
       {summary && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <Kpi
             label="Policen"
             value={String(summary.activeCount)}

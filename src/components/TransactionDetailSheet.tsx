@@ -204,6 +204,7 @@ export default function TransactionDetailSheet({
                         notiz: t.note,
                         person: String(t.userId),
                         start: nextOccurrenceAfter(t.date, 'monthly', todayISO()),
+                        basis: t.date,
                         quelle: String(t.id),
                       })}`}
                       onClick={() => onOpenChange(false)}

@@ -10,6 +10,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { trpc } from '@/providers/trpc';
+import { useScope } from '@/providers/scope';
 import { formatCents, getUserLocale, todayISO } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
@@ -47,6 +48,7 @@ function DiffCell({ current, previous }: { current: number; previous: number }) 
  */
 export default function YearReview() {
   const [params, setParams] = useSearchParams();
+  const { userId: scopeUserId } = useScope();
   const requested = params.get('ansicht');
   const view: View = VIEWS.find((v) => v === requested) ?? 'verlauf';
   const setView = (value: string) =>
@@ -62,6 +64,12 @@ export default function YearReview() {
           Wohin das Geld geht — über die Monate, je Kategorie und im Vergleich zum Vorjahr.
           Ein Klick auf einen Wert zeigt die Buchungen dahinter.
         </p>
+        {scopeUserId !== undefined && (
+          <p className="pt-1 text-xs text-stamp">
+            Meine Sicht: Verlauf, Kategorien und Aufschlüsselung zählen nur deine Buchungen; der
+            Jahresvergleich und die Fixkosten bleiben haushaltsweit.
+          </p>
+        )}
       </div>
       <Tabs value={view} onValueChange={setView} className="space-y-4">
         <TabsList className="h-auto flex-wrap justify-start">

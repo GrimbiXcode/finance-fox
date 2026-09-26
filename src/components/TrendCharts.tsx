@@ -14,6 +14,7 @@ import {
 } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { trpc } from '@/providers/trpc';
+import { useScope } from '@/providers/scope';
 
 /**
  * Verlauf über 12/24 Monate: oben Einnahmen und Ausgaben (Balken, Geld),
@@ -24,7 +25,8 @@ import { trpc } from '@/providers/trpc';
 export default function TrendCharts() {
   const [months, setMonths] = useState(12);
   const navigate = useNavigate();
-  const query = trpc.analysis.monthlyTrend.useQuery({ months });
+  const { userId } = useScope();
+  const query = trpc.analysis.monthlyTrend.useQuery({ months, userId });
   const data = query.data;
   const rows = (data?.rows ?? []).map((r) => ({
     key: r.month,

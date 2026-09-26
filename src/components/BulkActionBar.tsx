@@ -30,7 +30,7 @@ export default function BulkActionBar({
   const update = trpc.finance.bulkUpdateTransactions.useMutation({
     onSuccess: (res) => {
       const parts = [`${buchungen(res.updated)} geändert`];
-      if (res.skipped > 0) parts.push(`${res.skipped} übersprungen (Kategorie passt nicht zur Buchungsart)`);
+      if (res.skipped > 0) parts.push(`${res.skipped} übersprungen (Umbuchung oder Kategorie einer anderen Art)`);
       if (res.unchanged > 0) parts.push(`${res.unchanged} schon so`);
       toast.success(parts.join(' · '));
       invalidate();
@@ -93,7 +93,7 @@ export default function BulkActionBar({
           className="w-40"
           disabled={busy}
           onValueChange={(v) => update.mutate({ ids, userId: Number(v) })}
-          options={users.map((u) => ({ value: String(u.id), label: u.name }))}
+          options={users.filter((u) => u.active).map((u) => ({ value: String(u.id), label: u.name }))}
         />
       )}
       {tags.length > 0 && (

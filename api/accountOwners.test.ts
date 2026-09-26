@@ -181,7 +181,7 @@ describe("Mehrere Besitzer (Rechte)", () => {
         type: "checking",
         initialBalance: 0,
       })
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     expect(
       byId(await callerFor(stranger).finance.listAccounts())

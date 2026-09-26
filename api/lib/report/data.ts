@@ -325,7 +325,8 @@ async function collectAccounts(
 async function collectGoals(
   caller: Caller
 ): Promise<NonNullable<ReportData["goals"]>> {
-  const goals = await caller.finance.listGoals();
+  // Archivierte (abgeschlossene) Ziele gehören nicht in den Bericht
+  const goals = (await caller.finance.listGoals()).filter(g => g.archivedAt === null);
   const rows = goals
     .map(g => ({
       name: g.name,

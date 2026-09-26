@@ -153,3 +153,13 @@ describe("Stornos in Summen", () => {
     expect(sum).toBe(10_000);
   });
 });
+
+describe("verwaiste Gegenbuchung", () => {
+  it("zählt wieder, wenn das Original gelöscht wurde", () => {
+    const rows = [
+      { id: 1, stornoOfId: null },
+      { id: 3, stornoOfId: 7 }, // Original 7 existiert nicht mehr
+    ];
+    expect(withoutReversals(rows).map(r => r.id)).toEqual([1, 3]);
+  });
+});

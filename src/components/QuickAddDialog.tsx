@@ -13,6 +13,7 @@ import { amountPlaceholder, formatAmountInput, formatCents, parseEuro, todayISO 
 import NoteSuggestInput from '@/components/NoteSuggestInput';
 import { pencil } from '@/lib/pencil';
 import { cn } from '@/lib/utils';
+import { radioKeyDown } from '@/lib/radio';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -85,15 +86,22 @@ function QuickAddForm({
   // automatisch das erste Konto mit „edit"-Recht
   const configured = editableAccounts.find((a) => a.id === user?.quickAccountId);
   const account = configured ?? editableAccounts[0];
-  // Abhebung: vom Buchungskonto auf ein Bargeldkonto (Kasse)
-  const cashAccounts = accounts.filter((a) => a.type === 'cash' && a.id !== account?.id);
+  // Abhebung: von einem Konto (nie einer Kasse) auf ein Bargeldkonto. Ist
+  // das Schnellkonto selbst die Kasse — typisch, die Schnellerfassung ist
+  // fürs Bargeld da —, kommt das Geld vom ersten anderen Konto.
+  const nonCash = editableAccounts.filter((a) => a.type !== 'cash');
+  const [sourceId, setSourceId] = useState<number | undefined>(undefined);
+  const withdrawSource =
+    nonCash.find((a) => a.id === sourceId) ??
+    (account && account.type !== 'cash' ? account : nonCash[0]);
+  const cashAccounts = accounts.filter((a) => a.type === 'cash');
   const [cashId, setCashId] = useState<number | undefined>(initialCashId);
   const cash = cashAccounts.find((a) => a.id === cashId) ?? cashAccounts[0];
-  const effectiveMode: QuickMode = mode === 'withdrawal' && !cash ? 'expense' : mode;
+  const canWithdraw = !!withdrawSource && !!cash;
   // „-50“ bleibt eine Einnahme — auch wenn der Schalter auf Ausgabe steht
   const type: 'income' | 'expense' | 'transfer' =
-    effectiveMode === 'withdrawal' ? 'transfer'
-      : effectiveMode === 'income' || amount.trim().startsWith('-') ? 'income' : 'expense';
+    mode === 'withdrawal' ? 'transfer'
+      : mode === 'income' || amount.trim().startsWith('-') ? 'income' : 'expense';
 
   const setQuickAccount = trpc.auth.setQuickAccount.useMutation({
     onSuccess: () => utils.auth.me.invalidate(),
@@ -137,9 +145,13 @@ function QuickAddForm({
       return;
     }
     if (type === 'transfer') {
+      if (!canWithdraw) {
+        toast.error('Für eine Abhebung braucht es ein Bargeldkonto und ein anderes Konto mit Bearbeitungsrecht.');
+        return;
+      }
       createTx.mutate({
         type: 'transfer',
-        accountId: account.id,
+        accountId: withdrawSource!.id,
         toAccountId: cash!.id,
         amount: cents,
         userId: user.id,
@@ -174,7 +186,9 @@ function QuickAddForm({
         .map((id) => categories.find((c) => c.id === id))
         .filter((c): c is NonNullable<typeof c> => c !== undefined)
         .slice(0, 6);
-  const modes: QuickMode[] = cashAccounts.length > 0 ? ['expense', 'income', 'withdrawal'] : ['expense', 'income'];
+  // „Abhebung“ nur, wenn es eine Kasse gibt — oder wenn sie ausdrücklich
+  // verlangt wurde (dann mit Hinweis, statt still als Ausgabe zu buchen)
+  const modes: QuickMode[] = canWithdraw || mode === 'withdrawal' ? ['expense', 'income', 'withdrawal'] : ['expense', 'income'];
 
   return (
     <DialogContent
@@ -201,6 +215,11 @@ function QuickAddForm({
                 type="button"
                 role="radio"
                 aria-checked={active}
+                tabIndex={active ? 0 : -1}
+                onKeyDown={(e) => radioKeyDown(e, modes, mode, (next) => {
+                  setMode(next);
+                  if (next !== 'income') setAmount((a) => a.replace(/^\s*-/, ''));
+                })}
                 onClick={() => {
                   setMode(m);
                   // Ein Minus im Betrag widerspräche dem Schalter
@@ -251,12 +270,12 @@ function QuickAddForm({
               }}
             />
           </div>
-          <Button type="submit" className="w-full sm:w-auto" disabled={createTx.isPending}>
+          <Button type="submit" className="w-full sm:w-auto" disabled={createTx.isPending || (type === 'transfer' && !canWithdraw)}>
             Buchen
           </Button>
         </form>
         {chips.length > 0 && (
-          <div className="flex flex-wrap gap-1.5" aria-label="Kategorie">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Kategorie">
             {chips.map((c) => (
               <button
                 key={c.id}
@@ -274,6 +293,32 @@ function QuickAddForm({
             ))}
           </div>
         )}
+        {type === 'transfer' && !canWithdraw && (
+          <p className="text-sm text-negative">
+            Für eine Abhebung braucht es ein Bargeldkonto und ein anderes Konto mit Bearbeitungsrecht.
+          </p>
+        )}
+        {type === 'transfer' && canWithdraw && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">Von</span>
+              <SearchableSelect
+                value={String(withdrawSource!.id)}
+                onValueChange={(v) => setSourceId(Number(v))}
+                options={nonCash.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">Auf (Bargeld)</span>
+              <SearchableSelect
+                value={String(cash!.id)}
+                onValueChange={(v) => setCashId(Number(v))}
+                options={cashAccounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+              />
+            </div>
+          </div>
+        )}
+        {type !== 'transfer' && (
         <div className="space-y-1">
           <SearchableSelect
             value={account ? String(account.id) : ''}
@@ -289,21 +334,9 @@ function QuickAddForm({
             disabled={editableAccounts.length === 0 || setQuickAccount.isPending}
           />
           <p className="text-xs text-muted-foreground">
-            {type === 'transfer'
-              ? 'Abgehoben von diesem Konto — deine Wahl wird für die Schnellerfassung gespeichert.'
-              : 'Buchungskonto — deine Wahl wird für die Schnellerfassung gespeichert.'}
+            Buchungskonto — deine Wahl wird für die Schnellerfassung gespeichert.
           </p>
         </div>
-        {type === 'transfer' && cashAccounts.length > 1 && (
-          <SearchableSelect
-            value={cash ? String(cash.id) : ''}
-            onValueChange={(v) => setCashId(Number(v))}
-            options={cashAccounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
-            placeholder="Bargeldkonto"
-          />
-        )}
-        {type === 'transfer' && cash && cashAccounts.length === 1 && (
-          <p className="text-xs text-muted-foreground">Bargeld landet auf „{cash.name}“.</p>
         )}
       </div>
     </DialogContent>

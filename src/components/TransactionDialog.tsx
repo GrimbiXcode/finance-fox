@@ -191,7 +191,11 @@ export default function TransactionDialog({
   };
 
   const effectiveUserId = userId ? Number(userId) : (user?.id ?? 0);
-  const effectiveAccountId = accountId ? Number(accountId) : (accounts[0]?.id ?? 0);
+  // Buchen darf man nur auf Konten mit Bearbeitungsrecht; nur lesend
+  // sichtbare Konten taugen als Ziel einer Umbuchung, nicht als Quelle
+  const editableAccounts = accounts.filter((a) => a.access === 'edit');
+  const sourceOptions = editableAccounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }));
+  const effectiveAccountId = accountId ? Number(accountId) : (editableAccounts[0]?.id ?? 0);
   const effectiveToAccountId = toAccountId ? Number(toAccountId) : (accounts.find((a) => a.id !== effectiveAccountId)?.id ?? 0);
 
   const filteredCategories = useMemo(
@@ -536,7 +540,7 @@ export default function TransactionDialog({
                   value={String(effectiveAccountId || '')}
                   onValueChange={setAccountId}
                   placeholder="Konto wählen"
-                  options={accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                  options={sourceOptions}
                 />
               </div>
               <div className="space-y-2">
@@ -547,7 +551,10 @@ export default function TransactionDialog({
                   placeholder="Zielkonto"
                   options={accounts
                     .filter((a) => a.id !== effectiveAccountId)
-                    .map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                    .map((a) => ({
+                      value: String(a.id),
+                      label: `${accountLabel(a, banks)}${a.access === 'view' ? ' (nur lesend)' : ''}`,
+                    }))}
                 />
               </div>
             </div>
@@ -559,7 +566,7 @@ export default function TransactionDialog({
                   value={String(effectiveAccountId || '')}
                   onValueChange={setAccountId}
                   placeholder="Konto wählen"
-                  options={accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                  options={sourceOptions}
                 />
               </div>
               <div className="space-y-2">

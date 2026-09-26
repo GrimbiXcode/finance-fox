@@ -71,5 +71,9 @@ describe("nextOccurrenceAfter", () => {
     expect(nextOccurrenceAfter("2025-01-15", "yearly", "2026-09-26")).toBe("2027-01-15");
     expect(nextOccurrenceAfter("2026-09-20", "weekly", "2026-09-26")).toBe("2026-09-27");
     expect(nextOccurrenceAfter("2026-08-01", "quarterly", "2026-09-26")).toBe("2026-11-01");
+    // Monatsende: am Tag der Buchung bleiben, nie über den Überlauf wandern
+    expect(nextOccurrenceAfter("2026-08-31", "monthly", "2026-09-26")).toBe("2026-09-30");
+    expect(nextOccurrenceAfter("2026-01-31", "monthly", "2026-09-26")).toBe("2026-09-30");
+    expect(nextOccurrenceAfter("2026-03-15", "yearly", "2026-09-26")).toBe("2027-03-15");
   });
 });

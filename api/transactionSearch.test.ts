@@ -105,6 +105,17 @@ describe("finance.searchTransactions", () => {
     expect((await asMember().finance.searchTransactions({ id: priv.id })).total).toBe(0);
   });
 
+  it("liefert bei Kontofilter den laufenden Saldo nach jeder Buchung", async () => {
+    const all = await asAdmin().finance.searchTransactions({ accountId: privateAdmin, sort: "date", dir: "asc", limit: 500 });
+    expect(all.items.length).toBeGreaterThan(0);
+    const accs = await asAdmin().finance.listAccounts();
+    const acc = accs.find(a => a.id === privateAdmin)!;
+    // Der letzte laufende Saldo ist der Kontostand
+    expect(all.items[all.items.length - 1].balanceAfter).toBe(acc.balance);
+    const noFilter = await asAdmin().finance.searchTransactions({ limit: 1 });
+    expect(noFilter.items[0].balanceAfter).toBeNull();
+  });
+
   it("schließt Unterkategorien beim Kategoriefilter ein", async () => {
     const res = await asAdmin().finance.searchTransactions({ categoryId: food });
     expect(res.items.map(t => t.note).sort()).toEqual(["Bäckerei Steiner", "Coop Wocheneinkauf", "Migros"]);

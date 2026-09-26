@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -12,6 +13,7 @@ import { periodLabel } from '@/lib/period';
 import { pencil } from '@/lib/pencil';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/providers/trpc';
+import { useScope } from '@/providers/scope';
 import { percentChange } from '@contracts/planning';
 import { parsePeriod, periodParams, periodRange, type Period } from '@contracts/period';
 
@@ -21,6 +23,7 @@ const DIMENSIONS = {
   konto: { key: 'account', label: 'Konto', param: 'konto' },
   tag: { key: 'tag', label: 'Tag', param: 'tag' },
   projekt: { key: 'project', label: 'Projekt', param: 'projekt' },
+  notiz: { key: 'note', label: 'Empfänger / Notiz', param: 'q' },
 } as const;
 type DimensionParam = keyof typeof DIMENSIONS;
 const PERIOD_KEYS = ['monat', 'jahr', 'von', 'bis', 'zeit'] as const;
@@ -61,24 +64,34 @@ export default function BreakdownView() {
   const range = periodRange(period);
   // Für den Vergleich nicht über heute hinaus
   const to = range.to && range.to > today ? today : range.to;
+  const { userId } = useScope();
   const query = trpc.analysis.breakdown.useQuery({
     dimension: DIMENSIONS[dimension].key,
     type,
     from: range.from,
     to,
     compare,
+    // „Meine Sicht“ — nur, wenn nicht ohnehin nach Person aufgeschlüsselt
+    userId: dimension === 'person' ? undefined : userId,
   });
   const d = query.data;
-  const max = Math.max(1, ...(d?.rows ?? []).map((r) => r.amount));
+  // Top-Empfänger (F7): wahlweise nach Anzahl statt Betrag
+  const [byCount, setByCount] = useState(false);
+  const rows = dimension === 'notiz' && byCount
+    ? [...(d?.rows ?? [])].sort((a, b) => b.count - a.count || b.amount - a.amount)
+    : (d?.rows ?? []);
+  const max = Math.max(1, ...rows.map((r) => r.amount));
 
-  const linkFor = (key: number) => {
+  const linkFor = (row: { key: number; name: string }) => {
     const search = new URLSearchParams({
       ...(range.from && to ? { von: range.from, bis: to } : { zeit: 'alle' }),
       typ: type,
     });
     const param = DIMENSIONS[dimension].param;
+    // Notizen: über die Suche (findet alle Schreibweisen)
+    if (dimension === 'notiz') search.set('q', row.name);
     // -1 = „ohne“: Transaktionen kennen das für Kategorie (-1) und Projekt (0)
-    if (key !== -1) search.set(param, String(key));
+    else if (row.key !== -1) search.set(param, String(row.key));
     else if (dimension === 'kategorie') search.set(param, '-1');
     else if (dimension === 'projekt') search.set(param, '0');
     return `/transaktionen?${search}`;
@@ -127,6 +140,25 @@ export default function BreakdownView() {
             </Select>
           )}
         </div>
+        {dimension === 'notiz' && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            Groß-/Kleinschreibung und Leerzeichen zählen nicht — höchstens 50 Einträge.
+            <div role="radiogroup" aria-label="Sortierung" className="ml-auto flex rounded-md border bg-muted/40 p-0.5">
+              {([false, true] as const).map((c) => (
+                <button
+                  key={String(c)}
+                  type="button"
+                  role="radio"
+                  aria-checked={byCount === c}
+                  onClick={() => setByCount(c)}
+                  className={cn('rounded px-2 py-0.5', byCount === c && 'bg-background text-foreground shadow-sm')}
+                >
+                  {c ? 'nach Anzahl' : 'nach Betrag'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {dimension === 'tag' && (
           <p className="text-xs text-muted-foreground">
             Eine Buchung mit mehreren Tags zählt bei jedem Tag — die Zeilen ergeben zusammen mehr als die Summe.
@@ -144,24 +176,29 @@ export default function BreakdownView() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(!d || d.rows.length === 0) && (
+            {(!d || rows.length === 0) && (
               <TableRow>
                 <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
                   {query.isLoading ? 'Wird berechnet…' : 'Keine Buchungen in diesem Zeitraum.'}
                 </TableCell>
               </TableRow>
             )}
-            {d?.rows.map((r) => {
+            {d && rows.map((r) => {
               const change = percentChange(r.amount, r.previous);
               // Mehr Ausgaben = schlecht, mehr Einnahmen = gut
               const good = type === 'expense' ? r.amount < r.previous : r.amount > r.previous;
               return (
                 <TableRow key={r.key}>
                   <TableCell className="whitespace-normal">
-                    <Link to={linkFor(r.key)} className="inline-flex items-center gap-2 hover:underline" title="Buchungen anzeigen">
-                      {r.color && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(r.color) }} />}
-                      {r.name}
-                    </Link>
+                    {/* „Ohne Tag“/„Ohne Notiz“ lassen sich nicht filtern — kein Link */}
+                    {r.key === -1 && (dimension === 'tag' || dimension === 'notiz') ? (
+                      <span className="inline-flex items-center gap-2">{r.name}</span>
+                    ) : (
+                      <Link to={linkFor(r)} className="inline-flex items-center gap-2 hover:underline" title="Buchungen anzeigen">
+                        {r.color && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(r.color) }} />}
+                        {r.name}
+                      </Link>
+                    )}
                     <span className="ml-2 text-xs text-muted-foreground">{r.count}×</span>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">

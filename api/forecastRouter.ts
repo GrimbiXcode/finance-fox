@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isNull } from "drizzle-orm";
 import { FORECAST_GRANULARITIES } from "@contracts/types";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -337,7 +338,8 @@ export const forecastRouter = createRouter({
         db.select().from(accounts),
         db.select().from(transactions),
         db.select().from(recurring),
-        db.select().from(savingsGoals),
+        // Archivierte Ziele sind abgeschlossen — keine Prognose mehr
+        db.select().from(savingsGoals).where(isNull(savingsGoals.archivedAt)),
         db.select().from(goalSources),
         db.select().from(goalContributions),
         db.select().from(properties),
@@ -595,7 +597,8 @@ export const forecastRouter = createRouter({
     const visible = await visibleAccountIds(db, ctx.user);
     const [goals, allAccs, allTxs, allRecs, allSources, allContribs] =
       await Promise.all([
-        db.select().from(savingsGoals),
+        // Archivierte Ziele sind abgeschlossen — keine Prognose mehr
+        db.select().from(savingsGoals).where(isNull(savingsGoals.archivedAt)),
         db.select().from(accounts),
         db.select().from(transactions),
         db.select().from(recurring),

@@ -138,6 +138,12 @@ export const dashboardRouter = createRouter({
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional(),
+        /**
+         * „Meine Sicht“ (H6): nur Buchungen dieser Person in Summen,
+         * Kategorien, Cashflow und letzten Buchungen. Vermögen und
+         * Aufteilungs-Salden bleiben haushaltsweit.
+         */
+        userId: z.number().int().positive().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -154,8 +160,11 @@ export const dashboardRouter = createRouter({
       ]);
       const visible = new Set(accs.map(a => a.id));
       const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
-      // Für Summen: stornierte Buchungen samt Gegenbuchung ausblenden
-      const flows = withoutReversals(txs);
+      // Für Summen: stornierte Buchungen samt Gegenbuchung ausblenden —
+      // die Paare aus allen sichtbaren Buchungen, erst danach die Person
+      const mine = <T extends { userId: number }>(list: T[]) =>
+        input.userId === undefined ? list : list.filter(t => t.userId === input.userId);
+      const flows = mine(withoutReversals(txs));
       const today = input.today ?? localISO(new Date());
       const currentMonth = today.slice(0, 7);
       const month = input.month;
@@ -231,8 +240,8 @@ export const dashboardRouter = createRouter({
       );
 
       const recentSource = isCurrent
-        ? txs
-        : txs.filter(t => t.date.startsWith(month));
+        ? mine(txs)
+        : mine(txs).filter(t => t.date.startsWith(month));
       const recent = recentSource.slice(0, 8).map(t => ({
         id: t.id,
         type: t.type,

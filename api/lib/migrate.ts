@@ -25,6 +25,7 @@ export function ensureSchema() {
       totp_secret TEXT,
       totp_enabled INTEGER NOT NULL DEFAULT 0,
       quick_account_id INTEGER,
+      dashboard_layout TEXT,
       created_at INTEGER NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -178,7 +179,8 @@ export function ensureSchema() {
       target_amount INTEGER,
       saved_amount INTEGER NOT NULL DEFAULT 0,
       color TEXT NOT NULL,
-      deadline TEXT
+      deadline TEXT,
+      archived_at TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS goal_contributions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -617,6 +619,10 @@ export function ensureSchema() {
   if (!userCols.some(col => col[1] === "quick_account_id")) {
     db.run("ALTER TABLE users ADD COLUMN quick_account_id INTEGER" as never);
   }
+  // Dashboard-Anordnung pro Benutzer nachrüsten
+  if (!userCols.some(col => col[1] === "dashboard_layout")) {
+    db.run("ALTER TABLE users ADD COLUMN dashboard_layout TEXT" as never);
+  }
   // Dauerbuchungen: Zielkonto für wiederkehrende Umbuchungen nachrüsten
   const recurringCols = raw.prepare("PRAGMA table_info(recurring)").raw().all();
   if (!recurringCols.some(col => col[1] === "to_account_id")) {
@@ -793,6 +799,13 @@ export function ensureSchema() {
       throw err;
     }
   }
+  // Sparziele archivieren: erst nach dem Rebuild oben nachrüsten — der
+  // kopiert nur die alten Spalten
+  const goalColsNow = raw.prepare("PRAGMA table_info(savings_goals)").raw().all();
+  if (!goalColsNow.some(col => col[1] === "archived_at")) {
+    db.run("ALTER TABLE savings_goals ADD COLUMN archived_at TEXT" as never);
+  }
+
 
   // Builtin-Kontotypen seeden — nur fehlende Keys ergänzen, bestehende
   // Einträge (z. B. umbenannte) niemals überschreiben.

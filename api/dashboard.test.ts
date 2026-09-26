@@ -183,3 +183,15 @@ describe("dashboard.attention: Dauerbuchungen hinter dem Enddatum", () => {
     expect(due).toMatchObject({ count: 1, expense: 150_000 });
   });
 });
+
+describe("Meine Sicht (userId)", () => {
+  it("rechnet Summen und letzte Buchungen nur für die Person, Vermögen bleibt", async () => {
+    const all = await asAdmin().dashboard.summary({ month: thisMonth, today });
+    const mine = await asAdmin().dashboard.summary({ month: thisMonth, today, userId: member.id });
+    expect(mine.balance.current).toBe(all.balance.current);
+    expect(mine.recent.every(t => t.userId === member.id)).toBe(true);
+    expect(mine.totals.current.expense).toBeLessThanOrEqual(all.totals.current.expense);
+    const trend = await asAdmin().analysis.monthlyTrend({ months: 3, userId: member.id });
+    expect(trend.rows.at(-1)?.expense).toBe(mine.totals.current.expense);
+  });
+});

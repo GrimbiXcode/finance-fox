@@ -3,6 +3,7 @@ import { TRPCProvider } from '@/providers/trpc'
 import { AuthProvider, useAuth } from '@/providers/auth'
 import { OfflineProvider } from '@/providers/offline'
 import { ActionsProvider } from '@/providers/actions'
+import { ScopeProvider } from '@/providers/scope'
 import { Toaster } from '@/components/ui/sonner'
 import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
@@ -78,6 +79,7 @@ function Root() {
 
   return (
     <ActionsProvider>
+    <ScopeProvider>
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
@@ -101,6 +103,7 @@ function Root() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </ScopeProvider>
     </ActionsProvider>
   )
 }

@@ -164,7 +164,9 @@ export default function Accounts() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [bankFilter, setBankFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [view, setView] = useState<ViewMode>(readViewMode);
+  // Mit `?verlauf=` die Kartenansicht: Nur sie zeigt Verlauf, Kassen-Zettel
+  // und „Kasse zählen“ — dorthin führen Dashboard und „Was ansteht“
+  const [view, setView] = useState<ViewMode>(() => (params.get('verlauf') ? 'cards' : readViewMode()));
   const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
   const userName = new Map(users.map((u) => [u.id, u.name]));

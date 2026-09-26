@@ -1,3 +1,4 @@
+import { DASHBOARD_CARD_IDS, normalizeDashboardLayout } from "@contracts/dashboard";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
@@ -237,12 +238,47 @@ export const authRouter = createRouter({
     const user = await getDb().query.users.findFirst({
       where: eq(users.id, ctx.user.id),
     });
+    let layout: unknown;
+    try {
+      layout = user?.dashboardLayout ? JSON.parse(user.dashboardLayout) : null;
+    } catch {
+      layout = null; // kaputtes JSON → Standard
+    }
     return {
       ...ctx.user,
       totpEnabled: user?.totpEnabled ?? false,
       quickAccountId: user?.quickAccountId ?? null,
+      dashboardLayout: normalizeDashboardLayout(layout),
+      /** false = Standard-Anordnung (für „Zurücksetzen“) */
+      dashboardCustomized: !!user?.dashboardLayout,
     };
   }),
+
+  /**
+   * Eigene Dashboard-Anordnung speichern (Sichtbarkeit und Reihenfolge der
+   * Karten); `null` setzt auf den Standard zurück. Pro Benutzer serverseitig,
+   * damit sie auf allen Geräten gilt.
+   */
+  setDashboardLayout: authedQuery
+    .input(
+      z.object({
+        layout: z
+          .array(z.object({ id: z.enum(DASHBOARD_CARD_IDS), visible: z.boolean() }))
+          .max(DASHBOARD_CARD_IDS.length)
+          .nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const value =
+        input.layout === null
+          ? null
+          : JSON.stringify(normalizeDashboardLayout(input.layout));
+      await getDb()
+        .update(users)
+        .set({ dashboardLayout: value })
+        .where(eq(users.id, ctx.user.id));
+      return { ok: true };
+    }),
 
   /**
    * Schnellerfassung: Konto konfigurieren, auf das gebucht wird

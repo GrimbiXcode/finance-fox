@@ -185,9 +185,9 @@ describe("updateAccount (Rechte)", () => {
     await callerFor(editor).finance.updateAccount(input);
 
     await expect(callerFor(viewer).finance.updateAccount(input))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerFor(admin).finance.updateAccount(input))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerFor(stranger).finance.updateAccount(input))
       .rejects.toMatchObject({ code: "NOT_FOUND" });
 
@@ -314,7 +314,7 @@ describe("createTransaction / deleteTransaction (Rechte)", () => {
     await callerFor(owner).finance.createTransaction(base);
     await callerFor(editor).finance.createTransaction(base);
     await expect(callerFor(viewer).finance.createTransaction(base))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerFor(stranger).finance.createTransaction(base))
       .rejects.toMatchObject({ code: "NOT_FOUND" });
   });
@@ -349,7 +349,7 @@ describe("createTransaction / deleteTransaction (Rechte)", () => {
     const txRow = (await getDb().select().from(transactions)
       .where(eq(transactions.note, "zum-loeschen")))[0];
     await expect(callerFor(viewer).finance.deleteTransaction({ id: txRow.id }))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await callerFor(owner).finance.deleteTransaction({ id: txRow.id });
     expect(await getDb().query.transactions
       .findFirst({ where: eq(transactions.id, txRow.id) })).toBeUndefined();

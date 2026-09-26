@@ -17,8 +17,26 @@
 export function withoutReversals<
   T extends { id: number; stornoOfId: number | null },
 >(txs: T[]): T[] {
-  const reversed = new Set<number>();
-  for (const t of txs) if (t.stornoOfId !== null) reversed.add(t.stornoOfId);
-  if (reversed.size === 0) return txs;
-  return txs.filter(t => t.stornoOfId === null && !reversed.has(t.id));
+  const pairs = reversalPairIds(txs);
+  if (pairs.size === 0) return txs;
+  return txs.filter(t => !pairs.has(t.id));
+}
+
+/**
+ * IDs aller vollständigen Storno-Paare (Original und Gegenbuchung). Ist das
+ * Original gelöscht, bleibt die Gegenbuchung eine gewöhnliche Buchung — sie
+ * steckt ja weiter im Saldo und muss dann auch in den Summen stehen.
+ */
+export function reversalPairIds(
+  txs: { id: number; stornoOfId: number | null }[]
+): Set<number> {
+  const ids = new Set(txs.map(t => t.id));
+  const pairs = new Set<number>();
+  for (const t of txs) {
+    if (t.stornoOfId !== null && ids.has(t.stornoOfId)) {
+      pairs.add(t.id);
+      pairs.add(t.stornoOfId);
+    }
+  }
+  return pairs;
 }

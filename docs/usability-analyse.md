@@ -76,7 +76,7 @@ Welle 4 ist umgesetzt:
 | F4           | Fixkosten-Karte: Quote, größte Fixposten, Schwankung der variablen Ausgaben                                               |
 | F6, F8       | Aufschlüsselung nach Kategorie, Person, Konto, Tag oder Projekt für einen freien Zeitraum, Vergleich davor oder Vorjahr   |
 | G7           | Geldfluss mobil standardmäßig als Liste                                                                                   |
-| H1           | „Sichtbares Vermögen“ mit Hinweis, wenn Privatkonten anderer fehlen; „davon N nur lesend“ für Admins                      |
+| H1           | „Sichtbares Vermögen“ mit Hinweis, wenn Privatkonten anderer fehlen; „davon N nur lesend“ bei Lese-Freigaben              |
 | I1           | Einrichtungs-Checklisten in Vorsorge, Hypotheken und Versicherungen; Vorsorge-Diagramm erst mit Kapital                   |
 | I2, I3       | Deckungs-Check gruppiert und gebündelt, Hinweise mit Aktion (Police erfassen/bearbeiten, Tranche, Liegenschaft)           |
 | J3, J4       | Weniger Monats-Ticks in der Prognose, gestaffelte Ablauf-Beschriftungen im Schuldenverlauf                                |
@@ -1676,7 +1676,9 @@ Budget.
 - _Gewählt:_ `bulkUpdateTransactions` prüft zuerst alles (Existenz,
   Schreibrecht auf jedem Konto, Ziele) und schreibt dann in einer
   Transaktion — ein fremdes Privatkonto in der Auswahl ändert nichts. Jede
-  Buchung bekommt trotzdem ihren eigenen Verlaufs- und Audit-Eintrag.
+  Buchung bekommt trotzdem ihren eigenen Verlaufs- und Audit-Eintrag. (Die
+  Beleg-Dateien entfernt das Löschen wie beim Einzellöschen vorab — erst
+  nach allen Prüfungen, aber außerhalb der Datenbank-Transaktion.)
   Kategorien, die nicht zur Art passen (Ausgaben-Kategorie auf einer
   Einnahme, Umbuchungen), werden übersprungen und gemeldet statt die ganze
   Auswahl abzulehnen — typisch enthält eine Import-Auswahl eine Umbuchung.
@@ -1686,9 +1688,12 @@ Budget.
 **E-20 · „Wiederkehrend machen“ über die bestehende Vorbefüllung (B7).** Das
 Detail-Blatt öffnet den Dauerbuchungs-Dialog über dieselben URL-Parameter
 wie „Sparrate einrichten“. Die erste Fälligkeit ist der erste Termin **nach
-heute** im Monatstakt der Buchung (`nextOccurrenceAfter`) — aus einer
-Buchung vom März würde sonst eine Fälligkeit im April, die der Cron sofort
-fünfmal nachbuchte. `advanceDate` wanderte dafür nach
+heute** im Takt der Buchung (`nextOccurrenceAfter`) — aus einer Buchung vom
+März würde sonst eine Fälligkeit im April, die der Cron sofort fünfmal
+nachbuchte. Der Takt bleibt am Tag der Buchung und weicht nur am Monatsende
+aus (31.08. → 30.09.); wechselt man im Formular das Intervall, rechnet es
+die Fälligkeit aus dem Buchungsdatum neu, solange man sie nicht selbst
+geändert hat (Jahresprämie vom 15.03. → nächster 15.03.). `advanceDate` wanderte dafür nach
 `contracts/planning.ts`, damit Frontend und Cron dieselben Termine rechnen.
 Den Ursprung nennt nur das Aktivitäten-Log; ein Schemafeld wäre für diese
 Information zu viel.
@@ -1736,3 +1741,36 @@ wo Status und Enddatum zusammen gesetzt werden.
 **E-26 · Geldfluss mobil als Liste nur ohne gespeicherte Wahl (G7).** Wer das
 Diagramm einmal gewählt hat, bekommt es wieder — die Breite entscheidet nur
 den Standard.
+
+**Review von Welle 4 — gefunden und behoben:**
+
+- **Massenbearbeitung:** Nach „Kategorie setzen“ im Filter „Ohne Kategorie“
+  verschwanden die Zeilen, blieben aber ausgewählt — die nächste Aktion
+  (auch „Löschen“) hätte unsichtbare Buchungen getroffen. Die Leiste zählt
+  jetzt nur Buchungen, die in der Liste stehen.
+- **Abhebung:** War das Schnellkonto selbst die Kasse, fiel „Abhebung
+  nachtragen“ still auf eine weitere Ausgabe auf der Kasse zurück. Die
+  Abhebung kommt jetzt von einem Konto, das keine Kasse ist, mit sichtbarer
+  Wahl von/auf; fehlt eines davon, sagt die App es, statt still anders zu
+  buchen.
+- **Existenz-Orakel:** Die Massen-Endpunkte antworteten auf eine fremde
+  Privatbuchung anders als auf eine nicht existierende; eine unsichtbare
+  Ursprungsbuchung bei „Wiederkehrend“ warf einen Fehler. Beides verhält
+  sich jetzt wie „gibt es nicht“.
+- **Verwaiste Gegenbuchung:** Wurde ein storniertes Original gelöscht, fiel
+  die Gegenbuchung aus allen Summen, steckte aber weiter im Saldo. Paare
+  zählen jetzt nur, wenn beide Buchungen existieren.
+- Die Vorbefüllung „Wiederkehrend“ hing nach „Abbrechen“ an der nächsten
+  neuen Dauerbuchung (samt falschem Rückverweis im Log); Monatsende und
+  Intervallwechsel siehe E-20.
+- Die Sparziel-Karte meldete „Rate nötig“ auch für Ziele mit Quellen auf
+  fremden Privatkonten (und kurz während des Ladens).
+- Kleinere Punkte: Hypotheken-Checkliste blieb für Mitglieder offen, wenn die
+  Zins-Dauerbuchung auf einem fremden Privatkonto lag; Vorjahresvergleich
+  über mehr als ein Jahr überlappte sich selbst, Schalttag; Fixkosten-Ø über
+  sechs Monate auch bei jungen Haushalten; „Ohne Tag“ verlinkte auf alles;
+  inaktive Personen in der Massenbearbeitung; „Kategorie entfernen“ bei
+  Umbuchungen als „übersprungen“ gemeldet; Konten im Minus fielen auf der
+  Dashboard-Karte zuerst hinter „+ N weitere“; Segment-Schalter ohne
+  Pfeiltasten; „Nachtragen“ landete in der Tabellenansicht der Konten, die
+  weder Kassen-Zettel noch „Kasse zählen“ zeigt.

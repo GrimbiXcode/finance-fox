@@ -42,7 +42,11 @@ export default function FixedCostsCard() {
             </div>
           </div>
           {/* Anteil fix/variabel an den Ø-Ausgaben: ein Balken, zwei Töne */}
-          <div className="flex h-3 overflow-hidden rounded-full bg-muted" aria-label={`${Math.round(fixedShare)} % fix`}>
+          <div
+            className="flex h-3 overflow-hidden rounded-full bg-muted"
+            role="img"
+            aria-label={`${Math.round(fixedShare)} % der Ausgaben sind fix`}
+          >
             <div className="h-full bg-foreground/70" style={{ width: `${fixedShare}%` }} />
           </div>
           <div className="flex justify-between text-xs text-muted-foreground">

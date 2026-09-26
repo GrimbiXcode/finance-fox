@@ -30,6 +30,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "goal.created": "Sparziel angelegt",
   "goal.updated": "Sparziel-Stand geändert",
   "goal.deleted": "Sparziel gelöscht",
+  "goal.archived": "Sparziel abgeschlossen und archiviert",
+  "goal.restored": "Sparziel aus dem Archiv geholt",
   "goal.contribution.added": "Sparziel-Beitrag hinzugefügt",
   "goal.contribution.deleted": "Sparziel-Beitrag gelöscht",
   "goal.sourceAdded": "Sparziel mit Konto verknüpft",

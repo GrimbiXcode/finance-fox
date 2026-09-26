@@ -32,17 +32,34 @@ export function advanceDate(
  * Erster Termin nach `after` im Takt ab `start` — für „Wiederkehrend
  * machen“: Aus einer Buchung vom 25.03. wird die nächste Fälligkeit nach
  * heute, nie ein Termin in der Vergangenheit (den der Cron sonst sofort
- * nachbuchen würde).
+ * nachbuchen würde). Monatliche Takte bleiben am Tag der Buchung und
+ * weichen nur am Monatsende auf den letzten Tag aus (31.08. → 30.09.) —
+ * ein Aneinanderreihen von `advanceDate` würde über den Überlauf wandern.
  */
 export function nextOccurrenceAfter(
   start: string,
   interval: RecurringInterval,
   after: string
 ): string {
-  let date = advanceDate(start, interval);
+  if (interval === "weekly") {
+    let date = advanceDate(start, interval);
+    for (let i = 0; date <= after && i < 5000; i++) {
+      date = advanceDate(date, interval);
+    }
+    return date;
+  }
+  const step = MONTHS_PER_INTERVAL[interval];
+  const [y, m, d] = start.split("-").map(Number);
+  const base = y * 12 + (m - 1);
+  let date = start;
   // Obergrenze gegen Endlosschleifen bei kaputten Daten
-  for (let i = 0; date <= after && i < 5000; i++) {
-    date = advanceDate(date, interval);
+  for (let k = 1; k < 5000; k++) {
+    const index = base + k * step;
+    const year = Math.floor(index / 12);
+    const month = (index % 12) + 1;
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    date = `${year}-${String(month).padStart(2, "0")}-${String(Math.min(d, lastDay)).padStart(2, "0")}`;
+    if (date > after) break;
   }
   return date;
 }

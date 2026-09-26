@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useTheme } from 'next-themes';
 import {
-  ShieldCheck, LogOut, Sun, Moon, PanelLeftClose, PanelLeftOpen, Menu, Search,
+  ShieldCheck, LogOut, Sun, Moon, PanelLeftClose, PanelLeftOpen, Menu, Search, User, Users,
 } from 'lucide-react';
 import { navGroups } from '@/lib/navigation';
 import { useActions } from '@/providers/actions';
+import { useScope } from '@/providers/scope';
 import CommandPalette from '@/components/CommandPalette';
 import ShortcutsDialog from '@/components/ShortcutsDialog';
 import TransactionDialog from '@/components/TransactionDialog';
@@ -36,6 +37,7 @@ const SIDEBAR_KEY = 'ff-sidebar-collapsed';
 export default function Layout() {
   const { user, logout } = useAuth();
   const actions = useActions();
+  const scope = useScope();
   const { accounts, users } = useFinanceData();
   const { resolvedTheme, setTheme } = useTheme();
   // Salden rechnet listAccounts serverseitig — dieselbe Zahl wie auf der Kontenseite
@@ -148,6 +150,21 @@ export default function Layout() {
               <kbd className="hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline">⌘K</kbd>
             </Button>
             <QuickAddDialog />
+            {users.length > 1 && (
+              <Button
+                variant={scope.scope === 'mine' ? 'outline' : 'ghost'}
+                size="sm"
+                className={cn('gap-1.5', scope.scope === 'mine' ? 'border-stamp text-stamp' : 'text-muted-foreground')}
+                aria-pressed={scope.scope === 'mine'}
+                title={scope.scope === 'mine'
+                  ? 'Meine Sicht: nur eigene Buchungen in Dashboard, Transaktionen und Auswertung — zum Haushalt wechseln'
+                  : 'Haushaltssicht: alle Buchungen — zu „Meine Sicht“ wechseln'}
+                onClick={() => scope.setScope(scope.scope === 'mine' ? 'household' : 'mine')}
+              >
+                {scope.scope === 'mine' ? <User className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+                <span className="hidden lg:inline">{scope.scope === 'mine' ? 'Meine Sicht' : 'Haushalt'}</span>
+              </Button>
+            )}
             <SyncStatus />
             <Button
               variant="ghost"

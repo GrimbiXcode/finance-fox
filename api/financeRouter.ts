@@ -1670,9 +1670,38 @@ export const financeRouter = createRouter({
         tagsByTx,
         sharedTxIds: new Set(splitRows.map(r => r.id)),
       });
+      // Laufender Saldo (C7): bei genau einem Konto im Filter der Stand nach
+      // jeder Buchung — über ALLE Buchungen des Kontos gerechnet, damit er
+      // mit dem Kontoauszug übereinstimmt, auch wenn weitere Filter Zeilen
+      // ausblenden. Reihenfolge wie in der Liste: Datum, dann ID.
+      const balanceAfter = new Map<number, number>();
+      const account =
+        input.accountId !== undefined
+          ? visibleAccs.find(a => a.id === input.accountId)
+          : undefined;
+      if (account) {
+        let running = account.initialBalance;
+        const own = txs
+          .filter(t => t.accountId === account.id || t.toAccountId === account.id)
+          .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+        for (const t of own) {
+          if (t.type === "transfer") {
+            if (t.accountId === account.id) running -= t.amount;
+            if (t.toAccountId === account.id) running += t.amount;
+          } else {
+            running += t.type === "income" ? t.amount : -t.amount;
+          }
+          balanceAfter.set(t.id, running);
+        }
+      }
+      const enriched = await enrichTransactions(db, result.items, txs);
       return {
         ...result,
-        items: await enrichTransactions(db, result.items, txs),
+        items: enriched.map(t => ({
+          ...t,
+          /** Nur bei Kontofilter gesetzt, sonst null */
+          balanceAfter: balanceAfter.get(t.id) ?? null,
+        })),
       };
     }),
 
@@ -2427,7 +2456,13 @@ export const financeRouter = createRouter({
         .select()
         .from(transactions)
         .where(inArray(transactions.id, ids));
-      if (rows.length !== ids.length) {
+      // Unsichtbare Buchungen (fremde Privatkonten) melden wie fehlende —
+      // sonst verriete die Fehlermeldung, dass es sie gibt
+      const visibleIds = await visibleAccountIds(db, ctx.user);
+      if (
+        rows.length !== ids.length ||
+        rows.some(r => !touchesVisibleAccount(visibleIds, r))
+      ) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Mindestens eine Buchung wurde nicht gefunden.",
@@ -2511,14 +2546,17 @@ export const financeRouter = createRouter({
         const changes: ChangeEntry[] = [];
         let categoryId = row.categoryId;
         if (input.categoryId !== undefined) {
-          const fits =
-            row.type !== "transfer" &&
-            (category === null || category.type === row.type);
-          if (!fits) {
+          // Umbuchungen haben keine Kategorie: „entfernen“ ist dort keine
+          // Änderung, „setzen“ passt nicht
+          if (row.type === "transfer" && category !== null) {
             skipped++;
             continue;
           }
-          categoryId = input.categoryId;
+          if (category !== null && category.type !== row.type) {
+            skipped++;
+            continue;
+          }
+          if (row.type !== "transfer") categoryId = input.categoryId;
         }
         const next = {
           categoryId,
@@ -2634,7 +2672,13 @@ export const financeRouter = createRouter({
         .select()
         .from(transactions)
         .where(inArray(transactions.id, ids));
-      if (rows.length !== ids.length) {
+      // Unsichtbare Buchungen (fremde Privatkonten) melden wie fehlende —
+      // sonst verriete die Fehlermeldung, dass es sie gibt
+      const visibleIds = await visibleAccountIds(db, ctx.user);
+      if (
+        rows.length !== ids.length ||
+        rows.some(r => !touchesVisibleAccount(visibleIds, r))
+      ) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Mindestens eine Buchung wurde nicht gefunden.",
@@ -2903,14 +2947,16 @@ export const financeRouter = createRouter({
         // Zielkonto muss zumindest sichtbar sein (wie bei createTransaction)
         await requireAccountAccess(db, ctx.user, input.toAccountId, "view");
       }
-      // Rückverweis nur auf eine Buchung, die man sehen darf
+      // Rückverweis nur auf eine Buchung, die man sehen darf — eine
+      // unsichtbare wird wie eine fehlende still übergangen (kein Hinweis
+      // auf ihre Existenz)
       let source = "";
       if (sourceTransactionId !== undefined) {
         const src = await db.query.transactions.findFirst({
           where: eq(transactions.id, sourceTransactionId),
         });
-        if (src) {
-          await requireAccountAccess(db, ctx.user, src.accountId, "view");
+        const visibleIds = await visibleAccountIds(db, ctx.user);
+        if (src && touchesVisibleAccount(visibleIds, src)) {
           source = ` (aus Buchung vom ${src.date})`;
         }
       }
@@ -3392,6 +3438,45 @@ export const financeRouter = createRouter({
         message:
           "Manuelle Einzahlungen sind nicht mehr möglich — verknüpfe das Sparziel mit einem Konto.",
       });
+    }),
+
+  /**
+   * Ziel abschließen und ins Archiv legen (bzw. mit `archived: false`
+   * zurückholen). Beim Archivieren werden **alle** Konto-Verknüpfungen
+   * gelöst — das Geld ist wieder frei für neue Ziele (wie beim Löschen,
+   * Sparziele sind haushaltsweit). Beiträge bleiben.
+   */
+  setGoalArchived: authedQuery
+    .input(
+      z.object({ id: z.number().int().positive(), archived: z.boolean() })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const goal = await db.query.savingsGoals.findFirst({
+        where: eq(savingsGoals.id, input.id),
+      });
+      if (!goal) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sparziel nicht gefunden." });
+      }
+      const archivedAt = input.archived ? localIsoDate(new Date()) : null;
+      db.transaction(tx => {
+        if (input.archived) {
+          tx.delete(goalSources).where(eq(goalSources.goalId, input.id)).run();
+        }
+        tx.update(savingsGoals)
+          .set({ archivedAt })
+          .where(eq(savingsGoals.id, input.id))
+          .run();
+      });
+      logAudit(
+        db,
+        ctx.user.id,
+        input.archived ? "goal.archived" : "goal.restored",
+        "goal",
+        input.id,
+        goal.name
+      );
+      return { ok: true, archivedAt };
     }),
 
   deleteGoal: authedQuery

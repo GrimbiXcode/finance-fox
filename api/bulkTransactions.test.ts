@@ -179,6 +179,25 @@ describe("bulkUpdateTransactions", () => {
     expect(removed.updated).toBe(1);
   });
 
+  it("meldet unsichtbare Buchungen wie fehlende (kein Existenz-Orakel)", async () => {
+    const hidden = await asMember()
+      .finance.bulkUpdateTransactions({ ids: [privateTx], userId: member.id })
+      .catch(e => e);
+    const missing = await asMember()
+      .finance.bulkUpdateTransactions({ ids: [999_999], userId: member.id })
+      .catch(e => e);
+    expect(hidden.message).toBe(missing.message);
+    expect(hidden.code).toBe("NOT_FOUND");
+  });
+
+  it("zählt „Kategorie entfernen“ bei Umbuchungen als unverändert", async () => {
+    const res = await asAdmin().finance.bulkUpdateTransactions({
+      ids: [transferId],
+      categoryId: null,
+    });
+    expect(res).toEqual({ updated: 0, skipped: 0, unchanged: 1 });
+  });
+
   it("verlangt edit auf jedem Konto — und ändert dann gar nichts", async () => {
     await expect(
       asMember().finance.bulkUpdateTransactions({
@@ -268,16 +287,19 @@ describe("createRecurring mit Ursprungsbuchung", () => {
   });
 
   it("verrät keine Buchung, die man nicht sehen darf", async () => {
-    await expect(
-      asMember().finance.createRecurring({
-        type: "expense",
-        accountId: shared,
-        amount: 700,
-        userId: member.id,
-        interval: "monthly",
-        nextDate: "2026-04-07",
-        sourceTransactionId: privateTx,
-      })
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    // Unsichtbar wie fehlend: kein Fehler, kein Rückverweis im Log
+    await asMember().finance.createRecurring({
+      type: "expense",
+      accountId: shared,
+      amount: 700,
+      userId: member.id,
+      interval: "monthly",
+      nextDate: "2026-04-07",
+      note: "Ohne Quelle",
+      sourceTransactionId: privateTx,
+    });
+    const audit = await asAdmin().finance.listAuditLog({ entity: "recurring" });
+    const entry = audit.find(a => a.detail.includes("Ohne Quelle"))!;
+    expect(entry.detail).not.toContain("aus Buchung");
   });
 });

@@ -36,6 +36,9 @@ export const users = sqliteTable("users", {
   // Konfiguriertes Konto der Schnellerfassung (NULL = automatisch: erstes
   // Konto mit „edit"-Recht) — siehe QuickAddDialog
   quickAccountId: integer("quick_account_id"),
+  // Eigene Dashboard-Anordnung als JSON `[{ id, visible }]` (NULL = Standard)
+  // — pro Benutzer, damit sie auf allen Geräten gilt
+  dashboardLayout: text("dashboard_layout"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -292,6 +295,9 @@ export const savingsGoals = sqliteTable("savings_goals", {
   savedAmount: integer("saved_amount").notNull().default(0),
   color: text("color").notNull(),
   deadline: text("deadline"), // YYYY-MM-DD
+  // Abgeschlossen und ins Archiv gelegt am … (NULL = aktives Ziel). Bewusst
+  // ohne gespeicherten Endstand: er enthielte Anteile fremder Privatkonten.
+  archivedAt: text("archived_at"), // YYYY-MM-DD
 });
 
 /**

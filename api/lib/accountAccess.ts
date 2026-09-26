@@ -127,10 +127,19 @@ export async function requireAccountAccess(
       ])
     : [undefined, []];
   const level = account ? accessLevelFor(owners, user, permission) : "none";
-  if (!account || LEVEL_RANK[level] < LEVEL_RANK[minLevel]) {
+  // Unsichtbare Konten bleiben „nicht gefunden“ (kein Hinweis auf ihre
+  // Existenz). Wer das Konto sieht, aber nicht bearbeiten darf, erfährt den
+  // wahren Grund — „nicht gefunden“ für ein sichtbares Konto verwirrt nur.
+  if (!account || level === "none") {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Konto nicht gefunden.",
+    });
+  }
+  if (LEVEL_RANK[level] < LEVEL_RANK[minLevel]) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Für das Konto „${account.name}“ hast du nur Leserecht.`,
     });
   }
   return account;

@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
 import UpcomingCard from '@/components/UpcomingCard';
+import { nextOccurrenceAfter } from '@contracts/planning';
 import TypeSegment from '@/components/TypeSegment';
 import { useAuth } from '@/providers/auth';
 import {
@@ -72,11 +73,17 @@ interface RecurringFormValues {
   interval: Interval;
   nextDate: string;
   endDate: string; // leer = kein Ende
+  /**
+   * Datum der Ursprungsbuchung („Wiederkehrend machen“): Wechselt das
+   * Intervall, rechnet das Formular die nächste Fälligkeit daraus neu —
+   * solange man das Datum nicht selbst geändert hat. Leer = keine.
+   */
+  basis: string;
 }
 
 const emptyForm = (): RecurringFormValues => ({
   type: 'expense', amount: '', accountId: '', toAccountId: '', categoryId: '',
-  userId: '', note: '', interval: 'monthly', nextDate: todayISO(), endDate: '',
+  userId: '', note: '', interval: 'monthly', nextDate: todayISO(), endDate: '', basis: '',
 });
 
 /**
@@ -101,6 +108,7 @@ const formFromParams = (params: URLSearchParams): RecurringFormValues => {
     userId: params.get('person') ?? '',
     note: params.get('notiz') ?? '',
     nextDate: start && /^\d{4}-\d{2}-\d{2}$/.test(start) ? start : todayISO(),
+    basis: /^\d{4}-\d{2}-\d{2}$/.test(params.get('basis') ?? '') ? params.get('basis')! : '',
   };
 };
 
@@ -115,6 +123,7 @@ const formFromRow = (r: RecurringRow): RecurringFormValues => ({
   interval: r.interval,
   nextDate: r.nextDate,
   endDate: r.endDate ?? '',
+  basis: '',
 });
 
 /**
@@ -136,8 +145,17 @@ function RecurringForm({
   const { user } = useAuth();
   const { accounts, banks, categories, users } = useFinanceData();
   const [values, setValues] = useState(initial);
+  const [nextDateTouched, setNextDateTouched] = useState(false);
   const set = <K extends keyof RecurringFormValues>(key: K, value: RecurringFormValues[K]) =>
     setValues((prev) => ({ ...prev, [key]: value }));
+  const changeInterval = (interval: Interval) =>
+    setValues((prev) => ({
+      ...prev,
+      interval,
+      // Aus einer Buchung: nächster Termin im neuen Takt (Jahresprämie vom
+      // 15.03. → nächster 15.03., nicht in einem Monat)
+      nextDate: prev.basis && !nextDateTouched ? nextOccurrenceAfter(prev.basis, interval, todayISO()) : prev.nextDate,
+    }));
 
 
   return (
@@ -156,7 +174,7 @@ function RecurringForm({
           </div>
           <div className="space-y-2">
             <Label>Intervall</Label>
-            <Select value={values.interval} onValueChange={(v) => set('interval', v as Interval)}>
+            <Select value={values.interval} onValueChange={(v) => changeInterval(v as Interval)}>
               <SelectTrigger className="w-full min-w-0 [&>span]:truncate" title={intervalLabel[values.interval]}>
                 <SelectValue />
               </SelectTrigger>
@@ -219,7 +237,13 @@ function RecurringForm({
           </div>
           <div className="space-y-2">
             <Label>Nächste Fälligkeit</Label>
-            <Input type="date" value={values.nextDate} onChange={(e) => set('nextDate', e.target.value)} />
+            <Input
+              type="date" value={values.nextDate}
+              onChange={(e) => {
+                setNextDateTouched(true);
+                set('nextDate', e.target.value);
+              }}
+            />
           </div>
         </div>
         <div className="space-y-2">
@@ -270,11 +294,18 @@ export default function Recurring() {
   const [userFilter, setUserFilter] = useState('all');
   const [view, setView] = useState<ViewMode>(readViewMode);
 
+  // Schließen setzt Vorbefüllung und Ursprungsbuchung zurück — sonst hinge
+  // beides an der nächsten „Neuen Dauerbuchung“ (auch nach Abbrechen)
+  const closeCreate = () => {
+    setOpen(false);
+    setCreateInitial(emptyForm());
+    setSourceTxId(undefined);
+  };
   const createRecurring = trpc.finance.createRecurring.useMutation({
     onSuccess: () => {
       toast.success('Dauerbuchung angelegt — fällige Buchungen erzeugt der Server automatisch.');
       invalidate();
-      setOpen(false);
+      closeCreate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -441,13 +472,7 @@ export default function Recurring() {
           </Button>
           <Dialog
             open={open}
-            onOpenChange={(o) => {
-              setOpen(o);
-              if (!o) {
-                setCreateInitial(emptyForm());
-                setSourceTxId(undefined);
-              }
-            }}
+            onOpenChange={(o) => (o ? setOpen(true) : closeCreate())}
           >
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
@@ -462,7 +487,7 @@ export default function Recurring() {
                 editMode={false}
                 isPending={createRecurring.isPending}
                 submitLabel="Anlegen"
-                onCancel={() => setOpen(false)}
+                onCancel={closeCreate}
                 onSubmit={submitCreate}
               />
             </DialogContent>

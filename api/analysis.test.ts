@@ -70,11 +70,6 @@ describe("analysis.categoryMatrix", () => {
     expect(m.totals).toEqual([0, 35_000, 15_000]);
   });
 
-  it("vergleicht wahlweise mit denselben Tagen ein Jahr früher", async () => {
-    const r = await analysis(admin).breakdown({ dimension: "category", compare: "yearAgo", from: "2024-02-01", to: "2024-02-29" });
-    expect(r.previousRange).toEqual({ from: "2023-02-01", to: "2023-02-28" });
-  });
-
   it("zählt fremde Privatkonten nicht mit", async () => {
     const m = await analysis(member).categoryMatrix({ months: 3 });
     expect(m.totals[2]).toBe(6_000);
@@ -152,11 +147,12 @@ describe("analysis.fixedCosts", () => {
     // wöchentlich 200'000 → 200'000 × 52 / 12
     expect(f.fixedExpense).toBe(Math.round((200_000 * 52) / 12));
     expect(f.top[0].note).toBe("Wöchentlich");
-    // Sechs abgeschlossene Monate; nur der Vormonat hat Buchungen
+    // Sechs abgeschlossene Monate, aber nur der Vormonat hat Buchungen —
+    // Durchschnitt und Schwankung zählen nur Monate mit Buchungen
     expect(f.to).toBe(lastMonth);
-    expect(f.averageExpense).toBe(Math.round(35_000 / 6));
+    expect(f.averageExpense).toBe(35_000);
     const foodRow = f.variable.find(v => v.categoryId === food);
-    expect(foodRow).toMatchObject({ min: 0, max: 35_000 });
+    expect(foodRow).toMatchObject({ min: 35_000, max: 35_000 });
   });
 });
 
@@ -176,6 +172,18 @@ describe("analysis.breakdown", () => {
     expect(byTag.rows[0]).toMatchObject({ key: -1, name: "Ohne Tag" });
     const income = await analysis(admin).breakdown({ dimension: "account", type: "income", ...range });
     expect(income.rows[0]).toMatchObject({ key: shared, amount: 500_000 });
+  });
+
+  it("vergleicht wahlweise mit denselben Tagen ein Jahr früher", async () => {
+    const r = await analysis(admin).breakdown({ dimension: "category", compare: "yearAgo", from: "2024-02-01", to: "2024-02-29" });
+    expect(r.previousRange).toEqual({ from: "2023-02-01", to: "2023-02-28" });
+  });
+
+  it("gruppiert Notizen unabhängig von Schreibweise (Top-Empfänger)", async () => {
+    await app(admin).finance.createTransaction({ type: "expense", accountId: shared, amount: 1_000, userId: admin.id, date: `${lastMonth}-10`, note: "  coop " });
+    const r = await analysis(admin).breakdown({ dimension: "note", ...range });
+    const coop = r.rows.find(x => x.name.toLowerCase() === "coop")!;
+    expect(coop).toMatchObject({ amount: 31_000, count: 2, name: "Coop" });
   });
 
   it("zählt fremde Privatkonten nicht mit", async () => {

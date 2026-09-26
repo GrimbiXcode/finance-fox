@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { radioKeyDown } from '@/lib/radio';
 
 type TxType = 'expense' | 'income' | 'transfer';
 const LABELS: Record<TxType, string> = { expense: 'Ausgabe', income: 'Einnahme', transfer: 'Umbuchung' };
@@ -25,6 +26,8 @@ export default function TypeSegment({
           type="button"
           role="radio"
           aria-checked={value === t}
+          tabIndex={value === t ? 0 : -1}
+          onKeyDown={(e) => radioKeyDown(e, Object.keys(LABELS) as TxType[], value, onChange)}
           disabled={disabled}
           title={disabled ? disabledTitle : undefined}
           onClick={() => onChange(t)}

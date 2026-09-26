@@ -11,6 +11,7 @@ import {
 import { formatCents, formatMonthYearShort, getUserLocale } from '@/lib/finance';
 import { pencil } from '@/lib/pencil';
 import { trpc } from '@/providers/trpc';
+import { useScope } from '@/providers/scope';
 import { cn } from '@/lib/utils';
 
 /** Ganze Währungseinheiten ohne Symbol — die Matrix bleibt so schmal genug */
@@ -27,7 +28,8 @@ export default function CategoryMatrix() {
   const [months, setMonths] = useState(12);
   const [type, setType] = useState<'expense' | 'income'>('expense');
   const [open, setOpen] = useState<Set<number>>(new Set());
-  const query = trpc.analysis.categoryMatrix.useQuery({ months, type });
+  const { userId } = useScope();
+  const query = trpc.analysis.categoryMatrix.useQuery({ months, type, userId });
   const data = query.data;
   // Schmale Bildschirme: bei den jüngsten Monaten beginnen — die ältesten
   // liegen links, erreichbar per Wischen. Nur beim Wechsel des Zeitraums,

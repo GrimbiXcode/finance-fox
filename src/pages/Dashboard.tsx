@@ -23,6 +23,7 @@ import GettingStarted from '@/components/GettingStarted';
 import BudgetMeter from '@/components/BudgetMeter';
 import KpiCard from '@/components/KpiCard';
 import { useOffline } from '@/providers/offline';
+import { useScope } from '@/providers/scope';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
@@ -247,7 +248,11 @@ const ACCOUNT_ICONS: Record<string, typeof Wallet> = { checking: CreditCard, cas
 function AccountsCard() {
   const { accounts } = useFinanceData();
   const LIMIT = 8;
-  const sorted = [...accounts].sort((a, b) => b.balance - a.balance);
+  // Konten im Minus zuerst — genau die sollen nicht hinter „+ N weitere“
+  // verschwinden; dann nach Saldo
+  const sorted = [...accounts].sort(
+    (a, b) => Number(b.balance < 0) - Number(a.balance < 0) || b.balance - a.balance,
+  );
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -294,11 +299,12 @@ function AccountsCard() {
  */
 function GoalsCard() {
   const { goals } = useFinanceData();
-  const forecast = trpc.forecast.goalForecast.useQuery().data;
+  const forecastQuery = trpc.forecast.goalForecast.useQuery();
+  const forecast = forecastQuery.data;
   const byGoal = new Map((forecast ?? []).map((f) => [f.goalId, f]));
   const today = todayISO();
   const active = goals
-    .filter((g) => g.targetAmount !== null && g.totalSaved < g.targetAmount)
+    .filter((g) => g.archivedAt === null && g.targetAmount !== null && g.totalSaved < g.targetAmount)
     .sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || (b.percent ?? 0) - (a.percent ?? 0))
     .slice(0, 3);
   if (active.length === 0) return null;
@@ -311,7 +317,11 @@ function GoalsCard() {
       <CardContent className="space-y-3">
         {active.map((g) => {
           const fc = byGoal.get(g.id);
-          const late = g.deadline && (!fc?.etaMonth || fc.etaMonth > g.deadline.slice(0, 7));
+          // Erst mit Prognose urteilen (sonst blitzt kurz eine Rate auf) und
+          // nie bei verborgenen Quellen: Der Partner spart dort vielleicht
+          // längst mit — wie in „Was ansteht“
+          const late = !!forecast && !g.hasHiddenSources && !!g.deadline &&
+            (!fc?.etaMonth || fc.etaMonth > g.deadline.slice(0, 7));
           const rate = late ? requiredMonthlyRate(g.targetAmount! - g.totalSaved, g.deadline!, today) : null;
           return (
             <div key={g.id} className="space-y-1">
@@ -332,9 +342,11 @@ function GoalsCard() {
                 {g.percent ?? 0} %
                 {rate
                   ? ` · bis ${formatDate(g.deadline!)} nötig: ${formatCents(rate)} pro Monat`
-                  : fc?.etaMonth
-                    ? ` · erreicht voraussichtlich im ${formatMonth(fc.etaMonth)}`
-                    : ''}
+                  : g.hasHiddenSources
+                    ? ' · enthält Quellen, die du nicht siehst'
+                    : fc?.etaMonth
+                      ? ` · erreicht voraussichtlich im ${formatMonth(fc.etaMonth)}`
+                      : ''}
               </p>
             </div>
           );
@@ -418,8 +430,9 @@ export default function Dashboard() {
 
   // Vorherigen Monat stehen lassen, bis der neue geladen ist — sonst blinkt
   // beim Blättern die ganze Seite
+  const { userId: scopeUserId } = useScope();
   const summaryQuery = trpc.dashboard.summary.useQuery(
-    { month, today: todayISO() },
+    { month, today: todayISO(), userId: scopeUserId },
     { placeholderData: keepPreviousData },
   );
   const summary = summaryQuery.data;
@@ -458,6 +471,7 @@ export default function Dashboard() {
             </Button>
             <span className="min-w-32 text-center text-sm text-muted-foreground tabular-nums">
               {isCurrent ? `Überblick für ${formatMonth(month)}` : formatMonth(month)}
+              {scopeUserId !== undefined && ' · Meine Sicht'}
             </span>
             <Button
               variant="ghost" size="icon" className="h-7 w-7" title="Nächster Monat"

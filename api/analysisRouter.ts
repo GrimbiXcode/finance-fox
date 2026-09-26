@@ -37,6 +37,11 @@ import type { SessionUser } from "./context";
 
 const monthInput = z.string().regex(/^\d{4}-\d{2}$/, "Monat als YYYY-MM");
 
+/** „Meine Sicht“ (H6): optional nur Buchungen einer Person */
+const personInput = z.number().int().positive().optional();
+const onlyPerson = <T extends { userId: number }>(list: T[], userId: number | undefined) =>
+  userId === undefined ? list : list.filter(t => t.userId === userId);
+
 async function visibleData(db: Db, user: SessionUser) {
   const [accs, allTxs, cats] = await Promise.all([
     listVisibleAccounts(db, user),
@@ -93,7 +98,11 @@ const shiftDays = (iso: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-const BREAKDOWN_DIMENSIONS = ["category", "person", "account", "tag", "project"] as const;
+const BREAKDOWN_DIMENSIONS = ["category", "person", "account", "tag", "project", "note"] as const;
+/** Notizen gruppieren: Groß-/Kleinschreibung und Leerzeichen egal (F7) */
+const normalizeNote = (note: string) => note.trim().replace(/\s+/g, " ").toLowerCase();
+/** Top-Empfänger: mehr Zeilen ergäben nur einen langen Schwanz von Einzelbuchungen */
+const NOTE_ROW_LIMIT = 50;
 
 const withChildren = (
   cats: { id: number; parentId: number | null }[],
@@ -112,10 +121,13 @@ export const analysisRouter = createRouter({
         months: z.number().int().min(3).max(36).default(12),
         endMonth: monthInput.optional(),
         type: z.enum(["expense", "income"]).default("expense"),
+        userId: personInput,
       })
     )
     .query(async ({ ctx, input }) => {
-      const { flows: txs, cats } = await visibleData(getDb(), ctx.user);
+      const data = await visibleData(getDb(), ctx.user);
+      const txs = onlyPerson(data.flows, input.userId);
+      const { cats } = data;
       const end = input.endMonth ?? localISO(new Date()).slice(0, 7);
       const months = monthRange(end, input.months);
       const index = new Map(months.map((m, i) => [m, i]));
@@ -181,10 +193,11 @@ export const analysisRouter = createRouter({
       z.object({
         months: z.number().int().min(3).max(36).default(12),
         endMonth: monthInput.optional(),
+        userId: personInput,
       })
     )
     .query(async ({ ctx, input }) => {
-      const { flows: txs } = await visibleData(getDb(), ctx.user);
+      const txs = onlyPerson((await visibleData(getDb(), ctx.user)).flows, input.userId);
       const end = input.endMonth ?? localISO(new Date()).slice(0, 7);
       const months = monthRange(end, input.months);
       const rows = months.map(month => {
@@ -587,8 +600,18 @@ export const analysisRouter = createRouter({
       row[index.get(key)!] += t.amount;
       variable.set(root, row);
     }
-    const averageIncome = Math.round(income / months.length);
-    const averageExpense = Math.round(expense / months.length);
+    // Nur Monate mit Buchungen zählen — ein Haushalt, der erst seit zwei
+    // Monaten bucht, hätte sonst ein Drittel zu kleine Durchschnitte (und
+    // „100 % fix“)
+    const activeKeys = new Set(
+      flows
+        .filter(t => t.type !== "transfer" && t.date.slice(0, 7) >= first && t.date.slice(0, 7) <= last)
+        .map(t => t.date.slice(0, 7))
+    );
+    const activeMonths = activeKeys.size || 1;
+    const averageIncome = Math.round(income / activeMonths);
+    const averageExpense = Math.round(expense / activeMonths);
+    const activeIndex = months.map((m, i) => (activeKeys.has(m) ? i : -1)).filter(i => i >= 0);
     const catById = new Map(cats.map(c => [c.id, c]));
     return {
       from: first,
@@ -603,7 +626,8 @@ export const analysisRouter = createRouter({
       top: fixedExpenses.slice(0, 6),
       fixedCount: fixedExpenses.length,
       variable: [...variable.entries()]
-        .map(([categoryId, values]) => ({
+        .map(([categoryId, all]) => ({ categoryId, values: activeIndex.map(i => all[i]) }))
+        .map(({ categoryId, values }) => ({
           categoryId,
           name: categoryId === -1 ? "Ohne Kategorie" : (catById.get(categoryId)?.name ?? "?"),
           color: categoryId === -1 ? null : (catById.get(categoryId)?.color ?? null),
@@ -633,6 +657,7 @@ export const analysisRouter = createRouter({
         to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         /** Vergleich: gleich langer Zeitraum direkt davor oder dieselben Tage ein Jahr früher */
         compare: z.enum(["previous", "yearAgo"]).default("previous"),
+        userId: personInput,
       })
     )
     .query(async ({ ctx, input }) => {
@@ -646,10 +671,25 @@ export const analysisRouter = createRouter({
           db.select({ id: users.id, name: users.name, color: users.color }).from(users),
         ]);
       const range = input.from && input.to ? { from: input.from, to: input.to } : null;
-      const yearAgo = (iso: string) => `${Number(iso.slice(0, 4)) - 1}${iso.slice(4)}`.replace(/-02-29$/, "-02-28");
+      // Dieselben Tage ein Jahr früher; ein Zeitraum bis zum 28.02. reicht
+      // im Schaltjahr davor bis zum 29.02.
+      const isLeap = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+      const yearAgo = (iso: string, end: boolean) => {
+        const y = Number(iso.slice(0, 4)) - 1;
+        const md = iso.slice(5);
+        if (md === "02-29") return `${y}-02-28`;
+        if (end && md === "02-28" && isLeap(y)) return `${y}-02-29`;
+        return `${y}-${md}`;
+      };
+      // Länger als ein Jahr: der Vorjahreszeitraum überlappte den eigenen —
+      // dann gleich lang davor
+      const compare =
+        range && input.compare === "yearAgo" && daySpan(range.from, range.to) > 366
+          ? "previous"
+          : input.compare;
       const previous = range
-        ? input.compare === "yearAgo"
-          ? { from: yearAgo(range.from), to: yearAgo(range.to) }
+        ? compare === "yearAgo"
+          ? { from: yearAgo(range.from, false), to: yearAgo(range.to, true) }
           : (() => {
               const len = daySpan(range.from, range.to);
               return { from: shiftDays(range.from, -len), to: shiftDays(range.from, -1) };
@@ -660,8 +700,28 @@ export const analysisRouter = createRouter({
         tagsOf.set(l.transactionId, [...(tagsOf.get(l.transactionId) ?? []), l.tagId]);
       }
       const rootOf = new Map(cats.map(c => [c.id, c.parentId ?? c.id]));
+      // Notizen bekommen laufende Nummern als Schlüssel; angezeigt wird die
+      // häufigste Schreibweise
+      const noteIds = new Map<string, number>();
+      const noteSpellings = new Map<number, Map<string, number>>();
+      const noteKey = (note: string) => {
+        const norm = normalizeNote(note);
+        if (!norm) return -1;
+        let id = noteIds.get(norm);
+        if (id === undefined) {
+          id = noteIds.size + 1;
+          noteIds.set(norm, id);
+        }
+        const spellings = noteSpellings.get(id) ?? new Map<string, number>();
+        const shown = note.trim().replace(/\s+/g, " ");
+        spellings.set(shown, (spellings.get(shown) ?? 0) + 1);
+        noteSpellings.set(id, spellings);
+        return id;
+      };
       const keysOf = (t: (typeof flows)[number]): number[] => {
         switch (input.dimension) {
+          case "note":
+            return [noteKey(t.note)];
           case "category":
             return [t.categoryId === null ? -1 : (rootOf.get(t.categoryId) ?? t.categoryId)];
           case "person":
@@ -684,7 +744,7 @@ export const analysisRouter = createRouter({
       };
       let total = 0;
       let previousTotal = 0;
-      for (const t of flows) {
+      for (const t of onlyPerson(flows, input.userId)) {
         if (t.type !== input.type) continue;
         const inRange = !range || (t.date >= range.from && t.date <= range.to);
         const inPrevious = previous !== null && t.date >= previous.from && t.date <= previous.to;
@@ -704,9 +764,14 @@ export const analysisRouter = createRouter({
       const catById = new Map(cats.map(c => [c.id, c]));
       const accById = new Map(accs.map(a => [a.id, a]));
       const labelOf = (key: number): { name: string; color: string | null } => {
-        const none = { category: "Ohne Kategorie", tag: "Ohne Tag", project: "Ohne Projekt" } as Record<string, string>;
+        const none = { category: "Ohne Kategorie", tag: "Ohne Tag", project: "Ohne Projekt", note: "Ohne Notiz" } as Record<string, string>;
         if (key === -1) return { name: none[input.dimension] ?? "—", color: null };
         switch (input.dimension) {
+          case "note": {
+            const spellings = [...(noteSpellings.get(key)?.entries() ?? [])];
+            spellings.sort((a, b) => b[1] - a[1]);
+            return { name: spellings[0]?.[0] ?? "?", color: null };
+          }
           case "category":
             return { name: catById.get(key)?.name ?? "?", color: catById.get(key)?.color ?? null };
           case "person": {
@@ -733,7 +798,8 @@ export const analysisRouter = createRouter({
         rows: [...sums.entries()]
           .map(([key, e]) => ({ key, ...labelOf(key), ...e }))
           .filter(r => r.amount > 0 || r.previous > 0)
-          .sort((a, b) => b.amount - a.amount || b.previous - a.previous),
+          .sort((a, b) => b.amount - a.amount || b.previous - a.previous)
+          .slice(0, input.dimension === "note" ? NOTE_ROW_LIMIT : undefined),
       };
     }),
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reversalPairIds } from "@contracts/flows";
 
 /**
  * Serverseitige Suche über Buchungen (Transaktionsliste, Drilldowns).
@@ -173,13 +174,7 @@ export function searchTransactions<T extends SearchableTx>(
   // Summen ohne stornierte Buchungen und Gegenbuchungen (contracts/flows.ts)
   // — die Paare aus allen Zeilen bestimmen, nicht nur aus den Treffern: Liegt
   // das Storno in einem anderen Monat, zählte das Original sonst weiter
-  const inPair = new Set<number>();
-  for (const t of rows) {
-    if (t.stornoOfId !== null) {
-      inPair.add(t.id);
-      inPair.add(t.stornoOfId);
-    }
-  }
+  const inPair = reversalPairIds(rows);
   let income = 0;
   let expense = 0;
   for (const t of matches) {

@@ -34,6 +34,7 @@ import CamtImportDialog from '@/components/CamtImportDialog';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useScope } from '@/providers/scope';
 import { pencil } from '@/lib/pencil';
 
 type Grouping = 'day' | 'month' | 'none';
@@ -75,6 +76,7 @@ const signedAmount = (t: { type: string; amount: number }) =>
 
 export default function Transactions() {
   const { accounts, banks, categories, users, projects, tags } = useFinanceData();
+  const { userId: scopeUserId, setScope } = useScope();
   // Filter und Zeitraum stehen in der URL (`#/transaktionen?monat=2026-08&kategorie=12`):
   // teilbar, überleben ein Neuladen, und andere Seiten verlinken direkt auf
   // eine gefilterte Liste (Dashboard → Kategorie des Monats).
@@ -179,7 +181,8 @@ export default function Transactions() {
     type: (['income', 'expense', 'transfer'] as const).find((t) => t === typeFilter),
     accountId: idParam(accountFilter),
     categoryId: idParam(categoryFilter, -1),
-    userId: idParam(userFilter),
+    // „Meine Sicht“ gilt, solange kein Personenfilter gesetzt ist
+    userId: idParam(userFilter) ?? scopeUserId,
     tagId: idParam(tagFilter),
     // 0 = laufender Haushalt (ohne Projekt)
     projectId: idParam(projectFilter, 0),
@@ -275,6 +278,10 @@ export default function Transactions() {
     [accounts],
   );
   const selectable = items.filter((t) => accessByAccount.get(t.accountId) === 'edit');
+  // Nur markierte Buchungen, die noch in der Liste stehen: Fällt eine nach
+  // einer Massenänderung aus dem Filter („Ohne Kategorie“ → kategorisiert),
+  // darf die nächste Aktion (Löschen!) sie nicht unsichtbar mit erfassen
+  const selectedIds = selectable.filter((t) => selected.has(t.id)).map((t) => t.id);
   const allSelected = selectable.length > 0 && selectable.every((t) => selected.has(t.id));
   const someSelected = selectable.some((t) => selected.has(t.id));
 
@@ -600,8 +607,19 @@ export default function Transactions() {
             {groupingSelect}
           </div>
 
-          {(chips.length > 0 || searchParam) && (
+          {(chips.length > 0 || searchParam || (scopeUserId !== undefined && userFilter === 'all')) && (
             <div className="flex flex-wrap items-center gap-1.5">
+              {scopeUserId !== undefined && userFilter === 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setScope('household')}
+                  className="flex items-center gap-1 rounded-full border border-stamp/50 bg-stamp/10 px-2.5 py-0.5 text-xs text-stamp hover:bg-stamp/20"
+                  title="Zur Haushaltssicht wechseln"
+                >
+                  Meine Sicht
+                  <X className="h-3 w-3" />
+                </button>
+              )}
               {chips.map((c) => (
                 <button
                   key={c.key}
@@ -725,7 +743,7 @@ export default function Transactions() {
         </CardContent>
       </Card>
 
-      {selected.size > 0 && <BulkActionBar ids={[...selected]} onClear={clearSelection} />}
+      {selectedIds.length > 0 && <BulkActionBar ids={selectedIds} onClear={clearSelection} />}
 
       <TransactionDetailSheet
         tx={detailItem}

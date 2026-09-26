@@ -904,7 +904,6 @@ function MortgageChecklist({
   tranches: TrancheRow[];
   schedule: Schedule | undefined;
 }) {
-  const { recurring } = useFinanceData();
   if (!schedule) return null;
   const kinds = new Set(schedule.warnings.map(w => w.kind));
   const stale = schedule.warnings.find(w => w.kind === "stale_balance");
@@ -912,11 +911,11 @@ function MortgageChecklist({
     stale && stale.kind === "stale_balance"
       ? tranches.find(t => t.name === stale.tranche)
       : undefined;
-  const recurringIds = new Set(recurring.map(r => r.id));
+  // Der Server setzt Verweise auf gelöschte Dauerbuchungen auf null; die
+  // Liste der sichtbaren Dauerbuchungen taugt nicht zur Prüfung (liegt die
+  // Regel auf einem fremden Privatkonto, bliebe der Punkt ewig offen)
   const withoutRecurring = tranches.filter(
-    t =>
-      t.principal > 0 &&
-      (t.interestRecurringId === null || !recurringIds.has(t.interestRecurringId))
+    t => t.principal > 0 && t.interestRecurringId === null
   );
   const button = (label: string) => (
     <Button size="sm" variant="outline" className="shrink-0">

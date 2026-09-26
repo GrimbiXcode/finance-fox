@@ -63,7 +63,8 @@ function CustomizeForm({ close }: { close: () => void }) {
         <DialogTitle>Dashboard anpassen</DialogTitle>
         <DialogDescription>
           Welche Karten du siehst und in welcher Reihenfolge — gilt für dich auf allen Geräten.
-          Manche Karten erscheinen nur im laufenden Monat.
+          Manche Karten erscheinen nur, wenn sie etwas zu zeigen haben — etwa im laufenden Monat
+          oder mit mehreren Personen im Haushalt.
         </DialogDescription>
       </DialogHeader>
       <ul className="divide-y rounded-md border">

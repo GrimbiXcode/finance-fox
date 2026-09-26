@@ -207,7 +207,8 @@ export default function Splitting() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {users.map((u) => {
+            {/* Deaktivierte Personen nur, solange noch etwas offen ist */}
+            {users.filter((u) => u.active || (balances.get(u.id) ?? 0) !== 0).map((u) => {
               const bal = balances.get(u.id) ?? 0;
               return (
                 <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border px-4 py-3">

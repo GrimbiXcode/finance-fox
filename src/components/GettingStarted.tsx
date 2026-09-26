@@ -55,7 +55,7 @@ export default function GettingStarted() {
     account: accounts.length > 0,
     categories: categories.length > 0,
     transaction: (anyTx.data?.total ?? 0) > 0,
-    person: users.length > 1,
+    person: users.filter((u) => u.active).length > 1,
     recurring: recurring.length > 0,
     budget: budgets.length > 0,
   };

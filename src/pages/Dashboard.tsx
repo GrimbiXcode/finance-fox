@@ -475,6 +475,9 @@ export default function Dashboard() {
   const categoryData = summary.categories.map((c) => ({ ...c, value: c.amount / 100 }));
   const categoryTotal = categoryData.reduce((s, c) => s + c.value, 0);
   const balances = new Map(summary.memberBalances.map((b) => [b.userId, b.amount]));
+  // Salden-Liste: aktive Personen, deaktivierte nur mit offenem Betrag
+  const balanceUsers = users.filter((u) => u.active || (balances.get(u.id) ?? 0) !== 0);
+  const activeCount = users.filter((u) => u.active).length;
 
   // Alle Karten des Dashboards; `null` = gerade nicht verfügbar (z. B. nur
   // im laufenden Monat sinnvoll). Anordnung und Sichtbarkeit wählt jeder
@@ -717,7 +720,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
     ) },
-    balances: { span: 'narrow', node: (
+    // Allein gibt es nichts aufzuteilen — außer Altlasten deaktivierter Personen
+    balances: balanceUsers.length < 2 ? null : { span: 'narrow', node: (
         <Card>
           <CardHeader>
             <CardTitle>Offene Salden</CardTitle>
@@ -725,7 +729,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {users.map((u) => {
+              {balanceUsers.map((u) => {
                 const bal = balances.get(u.id) ?? 0;
                 return (
                   <div key={u.id} className="flex items-center justify-between gap-2">
@@ -748,7 +752,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
     ) },
-    activity: users.length > 1 ? { span: 'narrow', node: <HouseholdActivityCard /> } : null,
+    activity: activeCount > 1 ? { span: 'narrow', node: <HouseholdActivityCard /> } : null,
   };
 
   return (

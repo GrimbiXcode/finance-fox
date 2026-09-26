@@ -63,6 +63,7 @@ import {
 import { SearchableSelect } from "@/components/SearchableSelect";
 import InsuranceAttachments from "@/components/InsuranceAttachments";
 import InsuranceCoverageDialog from "@/components/InsuranceCoverageDialog";
+import SetupChecklist from "@/components/SetupChecklist";
 import InsurancePolicyDialog from "@/components/InsurancePolicyDialog";
 import InsuranceTransferDialog from "@/components/InsuranceTransferDialog";
 import { trpc } from "@/providers/trpc";
@@ -85,7 +86,13 @@ import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { pencil } from "@/lib/pencil";
-import { gapText } from "@/lib/insuranceText";
+import {
+  GAP_GROUP_LABELS,
+  gapBundleText,
+  gapGroup,
+  gapText,
+  type GapGroup,
+} from "@/lib/insuranceText";
 import KpiCard from "@/components/KpiCard";
 
 type Outputs = inferRouterOutputs<AppRouter>;
@@ -192,14 +199,60 @@ function Kpi({
 
 type DismissedGap = Outputs["insurance"]["gapAnalysis"]["dismissed"][number];
 
+/**
+ * Handeln direkt aus dem Hinweis: fehlt eine Versicherung, „Police
+ * erfassen“ mit vorgewählter Sparte; betrifft er eine Police (Frist,
+ * fehlende Prämie oder Deckung), „Bearbeiten“ öffnet genau diese.
+ */
+function GapAction({ gap, policies }: { gap: Gap; policies: Policy[] }) {
+  if (gap.kind === "missing_person" || gap.kind === "missing_household") {
+    return (
+      <InsurancePolicyDialog
+        initialBranch={gap.branch}
+        trigger={
+          <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs text-stamp">
+            Police erfassen
+          </Button>
+        }
+      />
+    );
+  }
+  if (gap.kind === "missing_building") {
+    return (
+      <InsurancePolicyDialog
+        initialBranch="gebaeude"
+        trigger={
+          <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs text-stamp">
+            Police erfassen
+          </Button>
+        }
+      />
+    );
+  }
+  const policy = "policyId" in gap ? policies.find(p => p.id === gap.policyId) : undefined;
+  if (!policy) return null;
+  return (
+    <InsurancePolicyDialog
+      policy={policy}
+      trigger={
+        <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs text-stamp">
+          {gap.kind === "notice_soon" ? "Kündigung erfassen" : "Bearbeiten"}
+        </Button>
+      }
+    />
+  );
+}
+
 function GapRow({
   gap,
   dismissal,
   dismissed,
+  action,
 }: {
   gap: Gap;
   dismissal?: DismissedGap["dismissal"];
   dismissed?: boolean;
+  action?: React.ReactNode;
 }) {
   const invalidate = useInvalidateInsurance();
   const [note, setNote] = useState("");
@@ -245,6 +298,7 @@ function GapRow({
           </p>
         )}
       </div>
+      {!dismissed && action}
       {dismissed ? (
         <Button
           variant="ghost"
@@ -299,11 +353,47 @@ function GapRow({
   );
 }
 
-function GapCard() {
+/** Mehrere gleichartige Hinweise als eine aufklappbare Zeile */
+function GapBundle({ gaps, policies }: { gaps: Gap[]; policies: Policy[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="border-b last:border-0">
+      <CollapsibleTrigger asChild>
+        <button type="button" className="flex w-full items-center gap-3 py-2 text-left text-sm">
+          {gaps[0].severity === "warn" ? (
+            <AlertTriangle className="h-4 w-4 shrink-0 text-negative" />
+          ) : (
+            <Info className="h-4 w-4 shrink-0 text-warning" />
+          )}
+          <span className="flex-1">{gapBundleText(gaps[0].kind, gaps.length)}</span>
+          <ChevronDown
+            className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pl-7">
+        {gaps.map(g => (
+          <GapRow key={g.key} gap={g} action={<GapAction gap={g} policies={policies} />} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function GapCard({ policies }: { policies: Policy[] }) {
   const gapsQuery = trpc.insurance.gapAnalysis.useQuery();
   const [showDismissed, setShowDismissed] = useState(false);
   const gaps = gapsQuery.data?.gaps ?? [];
   const dismissed = gapsQuery.data?.dismissed ?? [];
+  // Gruppen in fester Reihenfolge; darin gleichartige Hinweise gebündelt
+  const groups = (["act", "check", "data"] as GapGroup[])
+    .map(group => {
+      const inGroup = gaps.filter(g => gapGroup(g) === group);
+      const byKind = new Map<string, Gap[]>();
+      for (const g of inGroup) byKind.set(g.kind, [...(byKind.get(g.kind) ?? []), g]);
+      return { group, count: inGroup.length, kinds: [...byKind.values()] };
+    })
+    .filter(g => g.count > 0);
 
   return (
     <Card>
@@ -326,9 +416,25 @@ function GapCard() {
             Keine Lücken gefunden.
           </p>
         ) : (
-          <div>
-            {gaps.map(g => (
-              <GapRow key={g.key} gap={g} />
+          <div className="space-y-4">
+            {groups.map(({ group, count, kinds }) => (
+              <section key={group}>
+                <h3 className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {GAP_GROUP_LABELS[group]}
+                  <Badge variant="label">{count}</Badge>
+                </h3>
+                {kinds.map(list =>
+                  list.length > 1 ? (
+                    <GapBundle key={list[0].kind} gaps={list} policies={policies} />
+                  ) : (
+                    <GapRow
+                      key={list[0].key}
+                      gap={list[0]}
+                      action={<GapAction gap={list[0]} policies={policies} />}
+                    />
+                  )
+                )}
+              </section>
             ))}
           </div>
         )}
@@ -363,6 +469,80 @@ function GapCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Was den Policen noch fehlt — Deckungen machen das Nachschlagen möglich,
+ * die Dauerbuchung bringt die Prämie in Budget und Prognose. Nur aktive
+ * Policen zählen; Angebote und gekündigte bleiben außen vor.
+ */
+function InsuranceChecklist({
+  policies,
+  coverages,
+}: {
+  policies: Policy[];
+  coverages: Coverage[];
+}) {
+  const active = policies.filter(p => p.status === "active");
+  if (active.length === 0) return null;
+  const withCoverage = new Set(coverages.map(c => c.policyId));
+  const noCoverage = active.filter(p => !withCoverage.has(p.id));
+  const noRecurring = active.filter(
+    p => p.premium > 0 && p.premiumRecurringId === null
+  );
+  const noAccount = active.filter(p => p.premium > 0 && p.accountId === null);
+  const names = (list: Policy[]) =>
+    list.length <= 3
+      ? list.map(p => `„${p.name}“`).join(", ")
+      : `${list.slice(0, 2).map(p => `„${p.name}“`).join(", ")} und ${list.length - 2} weitere`;
+  const editFirst = (list: Policy[], label: string) =>
+    list[0] && (
+      <InsurancePolicyDialog
+        policy={list[0]}
+        trigger={
+          <Button size="sm" variant="outline" className="shrink-0">
+            {label}
+          </Button>
+        }
+      />
+    );
+  return (
+    <SetupChecklist
+      title="Policen vervollständigen"
+      items={[
+        {
+          key: "coverage",
+          done: noCoverage.length === 0,
+          label:
+            noCoverage.length === 0
+              ? "Deckungen je Police erfasst"
+              : `Deckungen erfassen für ${names(noCoverage)}`,
+          unlocks: "nachschlagen, was gedeckt ist — auch unterwegs beim Arzt",
+          action: editFirst(noCoverage, "Police öffnen"),
+        },
+        {
+          key: "account",
+          done: noAccount.length === 0,
+          label:
+            noAccount.length === 0
+              ? "Belastungskonto je Police gewählt"
+              : `Belastungskonto wählen für ${names(noAccount)}`,
+          unlocks: "Prämie lässt sich als Dauerbuchung übernehmen",
+          action: editFirst(noAccount, "Police öffnen"),
+        },
+        {
+          key: "recurring",
+          done: noRecurring.length === 0,
+          label:
+            noRecurring.length === 0
+              ? "Prämien als Dauerbuchung übernommen"
+              : `Prämie als Dauerbuchung übernehmen für ${names(noRecurring)}`,
+          unlocks:
+            "Prämien erscheinen in Fixkosten, Fälligkeiten und Kontoprognose (Knopf mit den Pfeilen auf der Police)",
+        },
+      ]}
+    />
   );
 }
 
@@ -1007,7 +1187,8 @@ export default function Insurances() {
         </div>
       )}
 
-      <GapCard />
+      <GapCard policies={policies} />
+      <InsuranceChecklist policies={policies} coverages={coverages} />
 
       <Card>
         <CardHeader className="pb-3">

@@ -19,8 +19,10 @@ import { pencil } from '@/lib/pencil';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import TrendCharts from '@/components/TrendCharts';
 import CategoryMatrix from '@/components/CategoryMatrix';
+import BreakdownView from '@/components/BreakdownView';
+import FixedCostsCard from '@/components/FixedCostsCard';
 
-const VIEWS = ['verlauf', 'kategorien', 'jahr'] as const;
+const VIEWS = ['verlauf', 'kategorien', 'aufschluesselung', 'jahr'] as const;
 type View = (typeof VIEWS)[number];
 
 /** Differenz Jahr vs. Vorjahr: mehr Ausgaben = negativ (rot), weniger = positiv (grün) */
@@ -48,12 +50,9 @@ export default function YearReview() {
   const requested = params.get('ansicht');
   const view: View = VIEWS.find((v) => v === requested) ?? 'verlauf';
   const setView = (value: string) =>
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value === 'verlauf') next.delete('ansicht');
-      else next.set('ansicht', value);
-      return next;
-    }, { replace: true });
+    // Beim Reiterwechsel nur die Ansicht behalten — Zeitraum und Filter der
+    // Aufschlüsselung gehören nicht in die anderen Reiter
+    setParams(value === 'verlauf' ? {} : { ansicht: value }, { replace: true });
 
   return (
     <div className="space-y-6">
@@ -68,13 +67,18 @@ export default function YearReview() {
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="verlauf">Verlauf</TabsTrigger>
           <TabsTrigger value="kategorien">Kategorien × Monate</TabsTrigger>
+          <TabsTrigger value="aufschluesselung">Aufschlüsselung</TabsTrigger>
           <TabsTrigger value="jahr">Jahresvergleich</TabsTrigger>
         </TabsList>
         <TabsContent value="verlauf" className="space-y-6">
           <TrendCharts />
+          <FixedCostsCard />
         </TabsContent>
         <TabsContent value="kategorien" className="space-y-6">
           <CategoryMatrix />
+        </TabsContent>
+        <TabsContent value="aufschluesselung" className="space-y-6">
+          <BreakdownView />
         </TabsContent>
         <TabsContent value="jahr" className="space-y-6">
           <YearComparison />

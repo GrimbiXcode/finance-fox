@@ -12,6 +12,8 @@ import {
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import TypeSegment from '@/components/TypeSegment';
+import DateField from '@/components/DateField';
 import NoteSuggestInput, { type NoteSuggestion } from '@/components/NoteSuggestInput';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
@@ -484,26 +486,12 @@ export default function TransactionDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1">
-            {([['expense', 'Ausgabe'], ['income', 'Einnahme'], ['transfer', 'Umbuchung']] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                disabled={isEdit}
-                title={isEdit ? 'Die Buchungsart kann nicht geändert werden — bitte löschen und neu anlegen.' : undefined}
-                className={cn(
-                  'rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
-                  'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground',
-                  type === value && 'bg-background text-foreground shadow-sm',
-                  type === value && value === 'expense' && 'text-negative',
-                  type === value && value === 'income' && 'text-positive',
-                )}
-                onClick={() => changeType(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <TypeSegment
+            value={type}
+            onChange={changeType}
+            disabled={isEdit}
+            disabledTitle="Die Buchungsart kann nicht geändert werden — bitte löschen und neu anlegen."
+          />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -522,7 +510,7 @@ export default function TransactionDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="date">Datum</Label>
-              <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <DateField id="date" value={date} onChange={setDate} />
             </div>
           </div>
 

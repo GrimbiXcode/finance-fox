@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { keepPreviousData } from '@tanstack/react-query';
 import {
-  ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Paperclip, Pencil, Search,
-  SlidersHorizontal, X,
+  ArrowDown, ArrowUp, Download, Paperclip, Pencil, Search, SlidersHorizontal, X,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,7 +12,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/SearchableSelect';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
 } from '@/components/ui/sheet';
@@ -23,12 +21,11 @@ import {
 import { accountLabel, useFinanceData } from '@/lib/data';
 import { saveBlobAsFile } from '@/lib/download';
 import { formatCents, formatDate, formatMonth, getUserLocale, todayISO } from '@/lib/finance';
-import {
-  PERIOD_PRESET_LABELS, isFuturePeriod, matchingPreset, parsePeriod, periodParams, periodRange,
-  presetPeriod, shiftPeriod, type Period, type PeriodPreset,
-} from '@contracts/period';
+import { parsePeriod, periodParams, periodRange, type Period } from '@contracts/period';
 import TransactionDialog from '@/components/TransactionDialog';
 import TransactionAttachmentsDialog from '@/components/TransactionAttachmentsDialog';
+import PeriodPicker from '@/components/PeriodPicker';
+import { periodLabel } from '@/lib/period';
 import TransactionDetailSheet, { type TxItem } from '@/components/TransactionDetailSheet';
 import BulkActionBar from '@/components/BulkActionBar';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -62,19 +59,6 @@ function readGrouping(): Grouping {
     return v === 'month' || v === 'none' ? v : 'day';
   } catch {
     return 'day';
-  }
-}
-
-function periodLabel(period: Period): string {
-  switch (period.kind) {
-    case 'month':
-      return formatMonth(period.month);
-    case 'year':
-      return String(period.year);
-    case 'range':
-      return `${formatDate(period.from)} – ${formatDate(period.to)}`;
-    case 'all':
-      return 'Alle Zeiträume';
   }
 }
 
@@ -307,10 +291,6 @@ export default function Transactions() {
     }
     return out;
   }, [items, effectiveGrouping]);
-
-  const selectedPreset = matchingPreset(period, today);
-  const canShift = period.kind !== 'all';
-  const nextDisabled = isFuturePeriod(shiftPeriod(period, 1), today);
 
   // Aktive Filter als entfernbare Chips
   const chips: { key: string; label: string }[] = [];
@@ -583,51 +563,7 @@ export default function Transactions() {
       <Card>
         <CardContent className="space-y-3">
           {/* Zeitraum: Pfeile schieben um die eigene Länge, Presets daneben */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center rounded-md border bg-card">
-              <Button
-                variant="ghost" size="icon" className="h-9 w-9" title="Vorheriger Zeitraum"
-                disabled={!canShift} onClick={() => setPeriod(shiftPeriod(period, -1))}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="min-w-28 px-1 text-center text-sm font-medium tabular-nums">{periodLabel(period)}</span>
-              <Button
-                variant="ghost" size="icon" className="h-9 w-9" title="Nächster Zeitraum"
-                disabled={!canShift || nextDisabled} onClick={() => setPeriod(shiftPeriod(period, 1))}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-            <Select
-              value={selectedPreset ?? 'custom'}
-              onValueChange={(v) => {
-                if (v !== 'custom') setPeriod(presetPeriod(v as PeriodPreset, today));
-              }}
-            >
-              <SelectTrigger className="w-44 min-w-0 [&>span]:truncate" title="Zeitraum wählen">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(PERIOD_PRESET_LABELS) as PeriodPreset[]).map((p) => (
-                  <SelectItem key={p} value={p}>{PERIOD_PRESET_LABELS[p]}</SelectItem>
-                ))}
-                <SelectItem value="custom" disabled={selectedPreset !== null}>Eigener Zeitraum</SelectItem>
-              </SelectContent>
-            </Select>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9">Von – bis…</Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 space-y-2" align="start">
-                <RangeForm
-                  initial={periodRange(period)}
-                  today={today}
-                  onApply={(from, to) => setPeriod({ kind: 'range', from, to })}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
+          <PeriodPicker period={period} onChange={setPeriod} today={today} />
 
           <div className="flex gap-2">
             <div className="relative min-w-0 flex-1">
@@ -841,36 +777,5 @@ function SortHead({
         {isActive && <Icon className="h-3 w-3" />}
       </button>
     </TableHead>
-  );
-}
-
-/** Freie Spanne im Popover: zwei Datumsfelder, Übernehmen */
-function RangeForm({
-  initial, today, onApply,
-}: {
-  initial: { from?: string; to?: string };
-  today: string;
-  onApply: (from: string, to: string) => void;
-}) {
-  const [from, setFrom] = useState(initial.from ?? `${today.slice(0, 7)}-01`);
-  const [to, setTo] = useState(initial.to ?? today);
-  const valid = from !== '' && to !== '' && from <= to;
-  return (
-    <>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="space-y-1 text-xs">
-          <span className="text-muted-foreground">Von</span>
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </label>
-        <label className="space-y-1 text-xs">
-          <span className="text-muted-foreground">Bis</span>
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </label>
-      </div>
-      {!valid && <p className="text-xs text-destructive">„Von“ muss vor „Bis“ liegen.</p>}
-      <Button size="sm" className="w-full" disabled={!valid} onClick={() => onApply(from, to)}>
-        Zeitraum übernehmen
-      </Button>
-    </>
   );
 }

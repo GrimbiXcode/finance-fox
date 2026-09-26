@@ -43,3 +43,54 @@ export function gapText(g: InsuranceGap): string {
       return `Das Angebot „${g.policy}“ liegt seit ${g.days} Tagen unentschieden herum.`;
   }
 }
+
+/* ------------------------------- Gruppierung ------------------------------ */
+
+/**
+ * Drei Gruppen statt einer flachen Liste: was jetzt dringend ist, was man
+ * prüfen sollte, und was nur an den erfassten Daten fehlt. So gehen die
+ * wichtigen drei nicht in dreizehn Hinweisen unter.
+ */
+export type GapGroup = "act" | "check" | "data";
+export const GAP_GROUP_LABELS: Record<GapGroup, string> = {
+  act: "Jetzt handeln",
+  check: "Prüfen",
+  data: "Datenqualität",
+};
+const DATA_KINDS = new Set(["no_end_date", "no_premium", "no_coverage"]);
+
+export function gapGroup(g: InsuranceGap): GapGroup {
+  if (DATA_KINDS.has(g.kind)) return "data";
+  return g.severity === "warn" ? "act" : "check";
+}
+
+/** Sammeltext für mehrere gleichartige Hinweise („4 Policen ohne Deckungen“) */
+export function gapBundleText(
+  kind: InsuranceGap["kind"],
+  count: number
+): string {
+  switch (kind) {
+    case "no_coverage":
+      return `${count} Policen ohne erfasste Deckungen`;
+    case "no_premium":
+      return `${count} Policen ohne Prämie`;
+    case "no_end_date":
+      return `${count} befristete Policen ohne Vertragsende`;
+    case "missing_person":
+      return `${count} fehlende persönliche Versicherungen`;
+    case "missing_household":
+      return `${count} fehlende Haushaltsversicherungen`;
+    case "notice_soon":
+      return `${count} Kündigungsfristen stehen an`;
+    case "notice_missed":
+      return `${count} verstrichene Kündigungsfristen`;
+    case "expiring":
+      return `${count} Policen laufen bald aus`;
+    case "coverage_ending":
+      return `${count} Deckungen enden ohne Nachfolge`;
+    case "quote_pending":
+      return `${count} unentschiedene Angebote`;
+    default:
+      return `${count} ähnliche Hinweise`;
+  }
+}

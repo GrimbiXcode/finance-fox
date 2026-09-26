@@ -59,6 +59,7 @@ export function useInvalidateFinance() {
   const utils = trpc.useUtils();
   return () => {
     utils.finance.listAccounts.invalidate();
+    utils.finance.accountVisibility.invalidate();
     utils.finance.accountBalanceHistory.invalidate();
     utils.finance.listAccountTypes.invalidate();
     utils.finance.listBanks.invalidate();

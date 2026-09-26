@@ -218,7 +218,7 @@ export default function Forecasts() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
                 <CartesianGrid {...GRID_PROPS} />
-                <XAxis dataKey="month" {...AXIS_PROPS} tick={{ fontSize: 11 }} />
+                <XAxis dataKey="month" {...AXIS_PROPS} tick={{ fontSize: 11 }} minTickGap={16} />
                 <YAxis tickLine={false} axisLine={false} tickFormatter={axisMoney} width={AXIS_MONEY_WIDTH} />
                 <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                 <Legend iconType="plainline" iconSize={14} />

@@ -457,8 +457,29 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   `finance.categoryUsage` (zuletzt/häufig genutzte Kategorien je Art) und
   `finance.noteSuggestions` (frühere Notizen mit Kategorie, Konto, Projekt,
   Betrag; nur Konten mit `edit`) ignorieren Storno-Buchungen.
-  `listAccounts` liefert zusätzlich `txCount`. Tests:
-  `api/transactionSearch.test.ts`.
+  `listAccounts` liefert zusätzlich `txCount`; `finance.accountVisibility`
+  sagt nur, ob es verborgene Konten gibt (`hasHidden`) und wie viele man nur
+  lesend sieht — ohne Anzahl, Namen oder Beträge der verborgenen. Mit `id`
+  liefert `searchTransactions` genau eine (sichtbare) Buchung — für das
+  Detail-Blatt eines `fokus`-Links. Tests: `api/transactionSearch.test.ts`.
+- **Stornos in Summen** (`contracts/flows.ts`, `withoutReversals`): Eine
+  stornierte Buchung und ihre Gegenbuchung zählen in **Einnahmen-/
+  Ausgaben-Summen** beide nicht — Dashboard, Budgets, Auswertungen,
+  Jahresvergleich, Bericht, Ø-variable Buchungen der Prognose, Summen der
+  Transaktionsliste (dort werden die Paare aus allen sichtbaren Zeilen
+  bestimmt, nicht nur aus den Treffern). Salden, Listen und die
+  Kostenaufteilung rechnen weiter mit beiden. Neue Summen-Endpunkte müssen
+  das ebenfalls tun. Tests: `api/reversals.test.ts`.
+- **Massenbearbeitung**: `finance.bulkUpdateTransactions({ ids, categoryId?,
+  projectId?, userId?, addTagIds?, removeTagIds? })` und
+  `finance.bulkDeleteTransactions({ ids })`, je höchstens 500. Erst prüfen
+  (Existenz, `edit` auf jedem Konto, Ziele), dann in einer Transaktion
+  schreiben — alles oder nichts. Eine Kategorie passt nur zu Buchungen
+  derselben Art (Umbuchungen haben keine): Unpassende werden übersprungen
+  und in `skipped` gezählt. Jede geänderte Buchung bekommt einen
+  Historien-Eintrag (Kommentar „Massenbearbeitung“) und einen Audit-Eintrag;
+  die Budget-Kipp-Prüfung läuft einmal für die ganze Auswahl. Tests:
+  `api/bulkTransactions.test.ts`.
 - **CSV-Import/-Export**: Format in `lib/csv.ts` (für de-Locales Semikolon +
   Dezimalkomma, sonst Komma + Dezimalpunkt, RFC-4180-Quoting; der Import
   erkennt das Trennzeichen automatisch). Kategorien werden rein per Name
@@ -510,10 +531,13 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   aber die Terminrechnung `advanceDate` (`lib/recurringSchedule.ts`) muss
   es kennen. `quarterly`/`semiannual` kamen mit dem Hypotheken-Modul dazu
   (Schweizer Hypothekarzins wird quartalsweise belastet).
-- **Terminrechnung**: `advanceDate` ist der Einzelschritt,
+- **Terminrechnung**: `advanceDate` ist der Einzelschritt (liegt mit
+  `localISO` und `nextOccurrenceAfter` in `contracts/planning.ts`, damit das
+  Frontend bei „Wiederkehrend machen“ dieselben Termine rechnet;
+  `lib/recurringSchedule.ts` exportiert beide weiter),
   `occurrencesInRange(rule, from, to, cap)` zählt alle Fälligkeiten eines
-  Zeitraums auf (inklusive Grenzen, `endDate` inklusiv respektiert). Beides in
-  `lib/recurringSchedule.ts` — die Schleife darüber lag früher dreifach
+  Zeitraums auf (inklusive Grenzen, `endDate` inklusiv respektiert). Die
+  Schleife liegt in `lib/recurringSchedule.ts` — die Schleife darüber lag früher dreifach
   kopiert im Cron-Job und in zwei Prognose-Endpunkten, wobei die beiden
   Prognose-Kopien `endDate` ignorierten (abgelaufene Regeln projizierten
   endlos weiter) und sich einen Zähler mit dem Vorspulen teilten (lange
@@ -542,6 +566,12 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   (endDate < heute) = „archiviert". Logik in `src/lib/recurring.ts`
   (`isRecurringArchived`, `sortRecurring`). Tests:
   `api/recurringEndDate.test.ts`.
+- **Aus einer Buchung** („Wiederkehrend machen“ im Detail-Blatt):
+  `createRecurring` nimmt optional `sourceTransactionId` (braucht `view` auf
+  deren Konto) und nennt die Ursprungsbuchung nur im Audit-Detail; das
+  Formular wird per URL vorbefüllt (`src/pages/Recurring.tsx`,
+  `formFromParams`). Der Audit-Eintrag trägt seit Welle 3 die ID der Regel —
+  das Aktivitäten-Log filtert Dauerbuchungen nach ihren Konten.
 
 ## Kategorien & Budgets
 
@@ -735,8 +765,12 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   der Client „heute“ in seiner Zeitzone rechnet; userName/userColor
   gejoint). **Sichtbarkeit**
   prüft `lib/auditVisibility.ts` je Eintrag: Vorsorge nur eigene (außer
-  Ehepartner-Verknüpfung), Buchungen und Konten nur mit sichtbarem Konto,
-  gelöschte nur Urheber und Admins; der Rest ist haushaltsweit. Bis 1.31 sah
+  Ehepartner-Verknüpfung), Buchungen, Konten und Dauerbuchungen nur mit
+  sichtbarem Konto, gelöschte (und ältere Dauerbuchungs-Einträge ohne ID)
+  nur Urheber und Admins, Sparziel-Quellen nur, wenn das im Detail genannte
+  Konto sichtbar ist; der Rest ist haushaltsweit. Wer einen neuen
+  Audit-Eintrag mit Kontobezug schreibt, loggt die Entity-ID und ergänzt
+  hier eine Regel. Bis 1.31 sah
   jedes Mitglied alles, inklusive fremder Lohnbeträge. Tests:
   `api/auditLog.test.ts`, `api/auditVisibility.test.ts`.
 
@@ -860,7 +894,14 @@ die Frontend-Seite steht in `src/AGENTS.md`.
   Unterkategorien), `budgetCoverage` (unbudgetierte Ausgaben),
   `categoryStats` (Ø 3/6 Monate, Maximum — Budgetvorschlag), `upcoming`
   (Termine der Dauerbuchungen, Konten, die ins Minus fielen),
-  `projectSummary` (bezahlt/getragen je Person). Alles über sichtbare
-  Konten. Tests: `api/analysis.test.ts`.
+  `projectSummary` (bezahlt/getragen je Person), `fixedCosts` (aktive
+  Dauerbuchungen auf den Monat umgerechnet vs. Ø der letzten sechs
+  abgeschlossenen Monate, größte Fixposten, Schwankung der variablen
+  Ausgaben je Oberkategorie), `breakdown({ dimension, type, from?, to?,
+  compare })` (Summen nach Kategorie/Person = Zahler/Konto/Tag/Projekt, dazu
+  der Vergleichszeitraum: gleich lang davor oder `yearAgo`; eine Buchung mit
+  mehreren Tags zählt bei jedem). Alles über sichtbare Konten und ohne
+  Storno-Paare (`flows` aus `visibleData`; `txs` nur für Salden). Tests:
+  `api/analysis.test.ts`.
 - **`finance.yearComparison({ year, upTo? })`**: mit `upTo` (`MM-TT`) nur
   bis zu diesem Tag in beiden Jahren („bis heute“).

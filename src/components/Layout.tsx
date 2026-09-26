@@ -40,6 +40,7 @@ export default function Layout() {
   const { resolvedTheme, setTheme } = useTheme();
   // Salden rechnet listAccounts serverseitig — dieselbe Zahl wie auf der Kontenseite
   const total = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const visibility = trpc.finance.accountVisibility.useQuery().data;
   // Eingeklappte Seitenleiste (nur Icons) pro Gerät merken
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
   const [moreOpen, setMoreOpen] = useState(false);
@@ -103,7 +104,10 @@ export default function Layout() {
         </nav>
         {!collapsed && (
           <div className="border-t px-6 py-4">
-            <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
+            {/* Wie auf dem Dashboard: ehrliches Label, wenn Privatkonten anderer fehlen */}
+            <div className="text-xs text-muted-foreground" title={visibility?.hasHidden ? 'Ohne private Konten anderer' : undefined}>
+              {visibility?.hasHidden ? 'Sichtbares Vermögen' : 'Gesamtvermögen'}
+            </div>
             <div className={cn('font-serif text-xl font-semibold tabular-nums', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
             <div className="mt-2 flex items-center gap-1.5 text-xs text-stamp">
               <ShieldCheck className="h-3.5 w-3.5" />

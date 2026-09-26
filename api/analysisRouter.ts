@@ -631,6 +631,8 @@ export const analysisRouter = createRouter({
         type: z.enum(["expense", "income"]).default("expense"),
         from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        /** Vergleich: gleich langer Zeitraum direkt davor oder dieselben Tage ein Jahr früher */
+        compare: z.enum(["previous", "yearAgo"]).default("previous"),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -644,11 +646,14 @@ export const analysisRouter = createRouter({
           db.select({ id: users.id, name: users.name, color: users.color }).from(users),
         ]);
       const range = input.from && input.to ? { from: input.from, to: input.to } : null;
+      const yearAgo = (iso: string) => `${Number(iso.slice(0, 4)) - 1}${iso.slice(4)}`.replace(/-02-29$/, "-02-28");
       const previous = range
-        ? (() => {
-            const len = daySpan(range.from, range.to);
-            return { from: shiftDays(range.from, -len), to: shiftDays(range.from, -1) };
-          })()
+        ? input.compare === "yearAgo"
+          ? { from: yearAgo(range.from), to: yearAgo(range.to) }
+          : (() => {
+              const len = daySpan(range.from, range.to);
+              return { from: shiftDays(range.from, -len), to: shiftDays(range.from, -1) };
+            })()
         : null;
       const tagsOf = new Map<number, number[]>();
       for (const l of tagLinks) {

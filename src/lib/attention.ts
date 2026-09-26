@@ -47,7 +47,9 @@ export function attentionEntry(
     case "negative_cash":
       return {
         text: `„${item.accountName}“ steht bei ${formatCents(item.balance)} — vermutlich fehlt eine Bargeld-Abhebung.`,
-        to: "/konten",
+        // Die Kontenseite bietet dort „Abhebung nachtragen“ und „Kasse zählen“
+        to: `/konten?verlauf=${item.accountId}`,
+        action: "Nachtragen",
       };
     case "goal_behind":
       return {

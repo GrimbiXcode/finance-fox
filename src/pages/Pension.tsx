@@ -81,6 +81,7 @@ import PensionFundDialog, {
 } from "@/components/PensionFundDialog";
 import PensionFundStatement from "@/components/PensionFundStatement";
 import AhvYearsDialog from "@/components/AhvYearsDialog";
+import SetupChecklist from "@/components/SetupChecklist";
 import AhvStatement from "@/components/AhvStatement";
 import PensionPillar3Dialog, {
   type DialogPillar3,
@@ -620,7 +621,17 @@ function OverviewSection({
               )}
             </div>
 
-            {chartData.length > 1 && (
+            {/* Ohne Kapital in Säule 2 oder 3a zeigte das Diagramm nur eine
+                Nulllinie — dann lieber der Hinweis, was fehlt */}
+            {chartData.length > 1 &&
+              !chartData.some(d => d["Säule 2"] > 0 || d["Säule 3a"] > 0) && (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                  Das Kapital-Diagramm erscheint, sobald eine Pensionskasse oder
+                  ein Säule-3a-Konto erfasst ist.
+                </p>
+              )}
+            {chartData.length > 1 &&
+              chartData.some(d => d["Säule 2"] > 0 || d["Säule 3a"] > 0) && (
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
@@ -2323,6 +2334,71 @@ function HistoryCard() {
 
 /* ---------------------------------- Seite ---------------------------------- */
 
+/**
+ * Was der Vorsorge noch fehlt und was es freischaltet — statt Nullkarten.
+ * Jede offene Angabe hat ihren Dialog direkt am Punkt.
+ */
+function PensionChecklist({
+  hasSalary,
+  ahv,
+  ahvYears,
+  hasFunds,
+  hasPillar3,
+}: {
+  hasSalary: boolean;
+  ahv: AhvRow | null;
+  ahvYears: number;
+  hasFunds: boolean;
+  hasPillar3: boolean;
+}) {
+  const button = (label: string) => (
+    <Button size="sm" variant="outline" className="shrink-0">
+      <Plus className="mr-1.5 h-4 w-4" /> {label}
+    </Button>
+  );
+  return (
+    <SetupChecklist
+      title="Vorsorge vervollständigen"
+      description="Jede Angabe macht die Prognose genauer — fehlende Säulen rechnet sie mit null."
+      items={[
+        {
+          key: "salary",
+          done: hasSalary,
+          label: "Lohn erfassen",
+          unlocks: "Nettolohn, Abzüge und die Sparbeiträge der Pensionskasse",
+          action: <SalaryDialog trigger={button("Lohn")} />,
+        },
+        {
+          key: "ahv",
+          done: ahv !== null && ahvYears > 0,
+          label: "AHV-Angaben und Beitragsjahre",
+          unlocks: "AHV-Rente (1. Säule) und Lücken in den Beitragsjahren",
+          action:
+            ahv === null ? (
+              <AhvDialog ahv={null} trigger={button("AHV")} />
+            ) : (
+              <AhvYearsDialog trigger={button("Beitragsjahre")} />
+            ),
+        },
+        {
+          key: "fund",
+          done: hasFunds,
+          label: "Pensionskasse erfassen",
+          unlocks: "Altersguthaben und Rente der 2. Säule (Versicherungsausweis)",
+          action: <PensionFundDialog trigger={button("Pensionskasse")} />,
+        },
+        {
+          key: "pillar3",
+          done: hasPillar3,
+          label: "Säule 3a erfassen",
+          unlocks: "Kapital der 3. Säule im Diagramm und in der Prognose",
+          action: <PensionPillar3Dialog trigger={button("Säule 3a")} />,
+        },
+      ]}
+    />
+  );
+}
+
 export default function Pension() {
   const profileQuery = trpc.pension.getProfile.useQuery();
   const profile = profileQuery.data ?? null;
@@ -2346,6 +2422,17 @@ export default function Pension() {
   const pillar3Query = trpc.pension.listPillar3.useQuery(undefined, {
     enabled: hasProfile,
   });
+  const ahvYearsQuery = trpc.pension.listAhvYears.useQuery(undefined, {
+    enabled: hasProfile,
+  });
+  // Checkliste erst zeigen, wenn alles geladen ist — sonst blinken „offene“
+  // Punkte kurz auf
+  const checklistReady =
+    salariesQuery.isSuccess &&
+    ahvQuery.isSuccess &&
+    fundsQuery.isSuccess &&
+    pillar3Query.isSuccess &&
+    ahvYearsQuery.isSuccess;
 
   return (
     <div className="space-y-6">
@@ -2362,6 +2449,15 @@ export default function Pension() {
         <SetupCard />
       ) : (
         <>
+          {checklistReady && (
+            <PensionChecklist
+              hasSalary={(salariesQuery.data ?? []).length > 0}
+              ahv={ahvQuery.data ?? null}
+              ahvYears={(ahvYearsQuery.data ?? []).length}
+              hasFunds={(fundsQuery.data ?? []).length > 0}
+              hasPillar3={(pillar3Query.data ?? []).length > 0}
+            />
+          )}
           <OverviewSection
             forecast={forecastQuery.data}
             isLoading={forecastQuery.isLoading}

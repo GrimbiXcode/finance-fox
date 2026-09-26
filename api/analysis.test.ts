@@ -70,6 +70,11 @@ describe("analysis.categoryMatrix", () => {
     expect(m.totals).toEqual([0, 35_000, 15_000]);
   });
 
+  it("vergleicht wahlweise mit denselben Tagen ein Jahr früher", async () => {
+    const r = await analysis(admin).breakdown({ dimension: "category", compare: "yearAgo", from: "2024-02-01", to: "2024-02-29" });
+    expect(r.previousRange).toEqual({ from: "2023-02-01", to: "2023-02-28" });
+  });
+
   it("zählt fremde Privatkonten nicht mit", async () => {
     const m = await analysis(member).categoryMatrix({ months: 3 });
     expect(m.totals[2]).toBe(6_000);

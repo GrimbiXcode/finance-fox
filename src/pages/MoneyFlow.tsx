@@ -14,8 +14,20 @@ import { cn } from '@/lib/utils';
 type ViewMode = 'chart' | 'list';
 const VIEW_KEY = 'ff-moneyflow-view';
 
-/** Letzte Darstellungsart aus localStorage lesen (Default: Diagramm) */
-const readViewMode = (): ViewMode => (localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'chart');
+/**
+ * Letzte Darstellungsart aus localStorage lesen. Ohne gespeicherte Wahl:
+ * unter 640 px die Liste (das Diagramm müsste man dort zusammenkneifen),
+ * sonst das Diagramm.
+ */
+const readViewMode = (): ViewMode => {
+  try {
+    const stored = localStorage.getItem(VIEW_KEY);
+    if (stored === 'list' || stored === 'chart') return stored;
+  } catch {
+    // ohne Speicher: Standard nach Breite
+  }
+  return window.matchMedia('(max-width: 639px)').matches ? 'list' : 'chart';
+};
 
 /** Geldfluss-Übersicht: Konten als Knoten, Dauerbuchungen als gerichtete Ströme */
 export default function MoneyFlow() {
@@ -103,6 +115,7 @@ export default function MoneyFlow() {
               gestrichelte Linien sind pausierte Dauerbuchungen. Tippe auf ein Konto oder fahre mit
               der Maus darüber, um seine Ströme hervorzuheben — die Beträge erscheinen dann auch als
               Liste unter dem Diagramm.
+              <span className="block pt-1 sm:hidden">Tipp: Handy quer halten — oder oben auf die Liste wechseln.</span>
             </CardDescription>
             {flow.dense && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-xs text-muted-foreground">

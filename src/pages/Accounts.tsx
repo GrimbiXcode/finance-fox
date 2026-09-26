@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Banknote, ChevronDown, ChevronUp, CreditCard, LayoutGrid, Pencil, PiggyBank, Plus, Search, Table as TableIcon, Wallet } from 'lucide-react';
+import { useSearchParams } from 'react-router';
+import { Banknote, ChevronDown, ChevronUp, CreditCard, LayoutGrid, Pencil, PiggyBank, Plus, Scale, Search, Table as TableIcon, Wallet } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,9 @@ import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AccountDialog from '@/components/AccountDialog';
+import { ReconcileDialog } from '@/components/ReconcileForm';
+import Note from '@/components/Note';
+import { useActions } from '@/providers/actions';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
@@ -153,7 +157,10 @@ function BalanceHistory({ accountId }: { accountId: number }) {
 
 export default function Accounts() {
   const { accounts, accountTypes, banks, users } = useFinanceData();
-  const [openId, setOpenId] = useState<number | null>(null);
+  const actions = useActions();
+  // `?verlauf=<id>` (Dashboard-Kontenliste) öffnet den Saldo-Verlauf
+  const [params] = useSearchParams();
+  const [openId, setOpenId] = useState<number | null>(() => Number(params.get('verlauf')) || null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [bankFilter, setBankFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -339,6 +346,31 @@ export default function Accounts() {
                     {a.bankId !== null && <div>{bankName.get(a.bankId) ?? 'Unbekannte Bank'}</div>}
                     {a.iban && <div className="font-mono">{formatIban(a.iban)}</div>}
                   </div>
+                )}
+                {/* Kasse im Minus: fast immer eine vergessene Abhebung */}
+                {a.type === 'cash' && a.balance < 0 && (
+                  <Note className="mt-3" tilt={-0.4}>
+                    Kasse im Minus — vermutlich fehlt eine Abhebung.
+                    {a.access === 'edit' && (
+                      <Button
+                        variant="link" size="sm" className="h-auto px-1 py-0 text-note-foreground underline"
+                        onClick={() => actions.show('quick', { quickMode: 'withdrawal', cashAccountId: a.id })}
+                      >
+                        Abhebung nachtragen
+                      </Button>
+                    )}
+                  </Note>
+                )}
+                {a.access === 'edit' && (
+                  <ReconcileDialog
+                    accountId={a.id}
+                    accountName={a.name}
+                    trigger={
+                      <Button variant="ghost" size="sm" className="-ml-2 mt-2 h-7 px-2 text-xs text-muted-foreground">
+                        <Scale className="mr-1 h-3.5 w-3.5" /> {a.type === 'cash' ? 'Kasse zählen' : 'Saldo abgleichen'}
+                      </Button>
+                    }
+                  />
                 )}
               </CardContent>
               {openId === a.id && <BalanceHistory accountId={a.id} />}

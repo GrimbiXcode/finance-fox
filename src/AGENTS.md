@@ -161,7 +161,9 @@ der Antwort.
 ## UI-State in localStorage
 
 Darstellungsart der Konten-Seite (Karten/Tabelle) unter dem Key
-`ff-accounts-view`, der Dauerbuchungen-Seite unter `ff-recurring-view`;
+`ff-accounts-view`, der Dauerbuchungen-Seite unter `ff-recurring-view`,
+des Geldflusses unter `ff-moneyflow-view` (ohne gespeicherte Wahl unter
+640 px die Liste);
 eingeklappte Seitenleiste unter `ff-sidebar-collapsed`; gewählte
 Berichts-Abschnitte unter `ff-report-sections`; ausgeblendete „Erste
 Schritte“ unter `ff-getting-started-hidden`; Gruppierung der
@@ -185,12 +187,17 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   Budget-Verlauf, Monatsmatrix, Jahresvergleich, Befehlspalette,
   Projekt-Karte).
 - **Dashboard**: `monat` (fehlt = aktueller Monat).
-- **Auswertung**: `ansicht` (`kategorien|jahr`, fehlt = Verlauf).
+- **Auswertung**: `ansicht` (`kategorien|aufschluesselung|jahr`, fehlt =
+  Verlauf); in der Aufschlüsselung zusätzlich der Zeitraum wie bei den
+  Transaktionen, `nach` (`person|konto|tag|projekt`, fehlt = Kategorie),
+  `art=einnahmen`, `vergleich=vorjahr`. Ein Reiterwechsel verwirft sie.
+- **Konten**: `verlauf=<id>` öffnet den Saldo-Verlauf eines Kontos.
 - **Einstellungen**: `tab` (`haushalt|benachrichtigungen|daten`, fehlt =
   Profil & Sicherheit).
 - **Wiederkehrend**: `neu=1` öffnet den Anlegen-Dialog, vorbefüllt aus
-  `typ`, `von`, `nach`, `kategorie`, `betrag` (Cent), `notiz`; die Parameter
-  werden danach entfernt. So schlägt z. B. die Sparziel-Karte eine
+  `typ`, `von`, `nach`, `kategorie`, `betrag` (Cent), `notiz`, `person`,
+  `start` (nächste Fälligkeit) und `quelle` (Ursprungsbuchung fürs
+  Aktivitäten-Log); die Parameter werden danach entfernt. So schlägt z. B. die Sparziel-Karte eine
   Sparrate vor.
 
 ## Beträge und Achsen
@@ -211,8 +218,14 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
 ## Seiten-Besonderheiten
 
 - **Schnellerfassung**: `components/QuickAddDialog.tsx` (Button „Schnell" im
-  Layout-Header) bucht mit nur Betrag + Notiz; positiv = Ausgabe, negativ
-  (mit „-") = Einnahme. Das Buchungskonto ist pro Benutzer konfigurierbar
+  Layout-Header, Taste `s`) bucht mit nur Betrag + Notiz. Die Art wählt ein
+  Schalter „Ausgabe | Einnahme“ (plus „Abhebung“ = Umbuchung aufs
+  Bargeldkonto, sobald eins existiert); ein „-“ vor dem Betrag gilt weiter
+  als Einnahme. Chips der häufigsten Kategorien (`categoryUsage.frequent`),
+  Toast mit „Rückgängig“ (zehn Sekunden, löscht die Buchung über
+  `utils.client`, weil der Dialog dann schon zu ist). Vorwahl von außen:
+  `useActions().show('quick', { quickMode: 'withdrawal', cashAccountId })`
+  (Kontenseite: „Abhebung nachtragen“). Das Buchungskonto ist pro Benutzer konfigurierbar
   (`users.quickAccountId` via `auth.setQuickAccount`, erfordert `edit`-
   Recht; null/Default = erstes Konto mit `access === "edit"`) und wird im
   Dialog per SearchableSelect angezeigt/gewählt (Wahl wird direkt
@@ -247,6 +260,31 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
 - **Kennzahl-Karten**: `components/KpiCard.tsx` (Dashboard, Hypotheken,
   Versicherungen) — mobil im 2×2-Raster (`grid-cols-2`) mit kleinerer
   Schrift und ohne Symbol.
+- **Dashboard**: „Sichtbares Vermögen“ statt „Gesamtvermögen“, sobald
+  Privatkonten anderer fehlen (`finance.accountVisibility`, auch in der
+  Seitenleiste); Karten „Konten“ (Link `/konten?verlauf=<id>` öffnet den
+  Saldo-Verlauf) und „Sparziele“ (bis zu drei Ziele, nächster Stichtag
+  zuerst, Prognose oder nötige Rate) im laufenden Monat.
+- **Konten**: Karte mit „Saldo abgleichen“ bzw. „Kasse zählen“
+  (`components/ReconcileForm.tsx`, auch im AccountDialog), Bargeldkonto im
+  Minus zeigt einen Zettel mit „Abhebung nachtragen“.
+- **Zeitraum-Wahl**: `components/PeriodPicker.tsx` (Transaktionen und
+  Auswertung → Aufschlüsselung), Anzeigetext `periodLabel` in
+  `lib/period.ts`.
+- **Gemeinsame Formularteile**: `components/TypeSegment.tsx` (Buchungsart im
+  Buchungs- und Dauerbuchungs-Dialog), `components/DateField.tsx` (natives
+  Datumsfeld plus „Heute“/„Gestern“).
+- **Einrichtungs-Checklisten**: `components/SetupChecklist.tsx` in Vorsorge
+  (Lohn, AHV + Beitragsjahre, Pensionskasse, 3a — das Kapital-Diagramm
+  erscheint erst mit Kapital), Hypotheken (Verkehrswert, Einkommen,
+  Tranchen, aktuelle Restschuld, Zins als Dauerbuchung) und Versicherungen
+  (Deckungen, Belastungskonto, Prämie als Dauerbuchung); jede offene Angabe
+  mit ihrem Dialog. Verschwindet, wenn alles erledigt ist.
+- **Hinweise mit Aktion**: Hypotheken-Hinweise öffnen die betroffene
+  Tranche bzw. Liegenschaft; der Deckungs-Check gruppiert in „Jetzt
+  handeln“, „Prüfen“, „Datenqualität“ (`gapGroup`, `gapBundleText` in
+  `lib/insuranceText.ts`), bündelt gleichartige Hinweise aufklappbar und
+  bietet „Police erfassen“ (Sparte vorgewählt) bzw. „Bearbeiten“.
 - **Budgets**: „Verlauf & Details“ klappt `components/BudgetDetail.tsx` auf
   (letzte sechs Perioden als Mini-Balken mit Limit-Strich, eingehalten/
   Durchschnitt, Aufschlüsselung auf Unterkategorien, Links in die
@@ -295,8 +333,12 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   Kategorien × Monate (`components/CategoryMatrix.tsx`: Zellen mit
   zeilenweise normierter Tönung in `--pencil-1`, sticky erste Spalte,
   aufklappbare Unterkategorien, startet mobil bei den jüngsten Monaten)
-  und Jahresvergleich (Zeilen verlinken auf die Buchungen). Jeder Wert
-  führt per Klick zur gefilterten Transaktionsliste.
+  Aufschlüsselung (`components/BreakdownView.tsx`: Dimension, Art, freier
+  Zeitraum, Vergleich „Zeitraum davor“ oder „Vorjahr“; Zeitraum und Filter
+  in der URL) und Jahresvergleich (Zeilen und Säulen verlinken auf die
+  Buchungen). Unter dem Verlauf die Fixkosten-Karte
+  (`components/FixedCostsCard.tsx`). Jeder Wert führt per Klick zur
+  gefilterten Transaktionsliste.
 - **Dauerbuchungen**: `components/UpcomingCard.tsx` zeigt die Termine der
   nächsten 7/30/90 Tage (`analysis.upcoming`) samt Warnung, wenn ein Konto
   dabei ins Minus fiele.

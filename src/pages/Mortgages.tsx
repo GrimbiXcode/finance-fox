@@ -63,6 +63,7 @@ import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, ha
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
 import { warningText } from "@/lib/mortgageText";
+import SetupChecklist from "@/components/SetupChecklist";
 import { pencil } from "@/lib/pencil";
 import KpiCard from "@/components/KpiCard";
 
@@ -180,14 +181,61 @@ function Kpi({
 
 /* -------------------------------- Übersicht ------------------------------- */
 
+/**
+ * Aktion zu einem Hinweis: „bitte aktualisieren“ soll ein Klick sein.
+ * Veraltete Restschuld und ablaufende Zinsbindung öffnen die betroffene
+ * Tranche, fehlender Verkehrswert oder fehlendes Einkommen die Liegenschaft.
+ */
+function WarningAction({
+  warning,
+  property,
+  tranches,
+}: {
+  warning: Schedule["warnings"][number];
+  property: PropertyRow;
+  tranches: TrancheRow[];
+}) {
+  const link = (label: string) => (
+    <Button variant="link" size="sm" className="h-auto px-1 py-0 text-note-foreground underline">
+      {label}
+    </Button>
+  );
+  if (warning.kind === "no_market_value" || warning.kind === "no_income") {
+    return (
+      <MortgagePropertyDialog
+        property={property}
+        trigger={link(warning.kind === "no_income" ? "Einkommen erfassen" : "Verkehrswert erfassen")}
+      />
+    );
+  }
+  if (
+    warning.kind === "stale_balance" ||
+    warning.kind === "maturity_due" ||
+    warning.kind === "maturity_passed"
+  ) {
+    const tranche = tranches.find(t => t.name === warning.tranche);
+    if (!tranche) return null;
+    return (
+      <MortgageTrancheDialog
+        propertyId={property.id}
+        tranche={tranche}
+        trigger={link(warning.kind === "stale_balance" ? "Restschuld aktualisieren" : "Konditionen erfassen")}
+      />
+    );
+  }
+  return null;
+}
+
 function OverviewSection({
   property,
   schedule,
   isLoading,
+  tranches,
 }: {
   property: PropertyRow;
   schedule: Schedule | undefined;
   isLoading: boolean;
+  tranches: TrancheRow[];
 }) {
   const { accounts } = useFinanceData();
   const liquid = accounts.reduce((sum, a) => sum + a.balance, 0);
@@ -361,7 +409,10 @@ function OverviewSection({
         <Note title="Hinweise" icon={AlertTriangle}>
           <ul className="list-inside list-disc space-y-1">
             {schedule.warnings.map((w, i) => (
-              <li key={`${w.kind}-${i}`}>{warningText(w)}</li>
+              <li key={`${w.kind}-${i}`}>
+                {warningText(w)}{" "}
+                <WarningAction warning={w} property={property} tranches={tranches} />
+              </li>
             ))}
           </ul>
         </Note>
@@ -406,7 +457,7 @@ function OverviewSection({
                   />
                   <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                   <Legend iconType="square" iconSize={10} />
-                  {bands.map(b => (
+                  {bands.map((b, i) => (
                     <ReferenceArea
                       ifOverflow="hidden"
                       key={`${b.name}-${b.year}`}
@@ -415,9 +466,14 @@ function OverviewSection({
                       stroke={CHART.warning}
                       strokeOpacity={0.8}
                       fill="none"
+                      // Beschriftungen gestaffelt: Läuft mehr als eine Tranche
+                      // im selben oder nächsten Jahr ab, lagen sie aufeinander.
+                      // Linksbündig ab der Marke — mittig wurde ein Ablauf im
+                      // ersten Jahr am Rand abgeschnitten.
                       label={{
                         value: `Ablauf ${b.name}`,
-                        position: "insideTop",
+                        position: "insideTopLeft",
+                        offset: 6 + (i % 3) * 13,
                         fontSize: 10,
                         fill: CHART.muted,
                       }}
@@ -835,6 +891,86 @@ function HistoryCard() {
   );
 }
 
+/**
+ * Was der Liegenschaft noch fehlt und was es freischaltet — statt Nullwerten
+ * bei Belehnung und Tragbarkeit.
+ */
+function MortgageChecklist({
+  property,
+  tranches,
+  schedule,
+}: {
+  property: PropertyRow;
+  tranches: TrancheRow[];
+  schedule: Schedule | undefined;
+}) {
+  const { recurring } = useFinanceData();
+  if (!schedule) return null;
+  const kinds = new Set(schedule.warnings.map(w => w.kind));
+  const stale = schedule.warnings.find(w => w.kind === "stale_balance");
+  const staleTranche =
+    stale && stale.kind === "stale_balance"
+      ? tranches.find(t => t.name === stale.tranche)
+      : undefined;
+  const recurringIds = new Set(recurring.map(r => r.id));
+  const withoutRecurring = tranches.filter(
+    t =>
+      t.principal > 0 &&
+      (t.interestRecurringId === null || !recurringIds.has(t.interestRecurringId))
+  );
+  const button = (label: string) => (
+    <Button size="sm" variant="outline" className="shrink-0">
+      {label}
+    </Button>
+  );
+  return (
+    <SetupChecklist
+      title="Liegenschaft vervollständigen"
+      items={[
+        {
+          key: "value",
+          done: !kinds.has("no_market_value"),
+          label: "Verkehrswert erfassen",
+          unlocks: "Belehnung und Nettovermögen inklusive Immobilie",
+          action: <MortgagePropertyDialog property={property} trigger={button("Liegenschaft")} />,
+        },
+        {
+          key: "income",
+          done: !kinds.has("no_income"),
+          label: "Bruttojahreseinkommen des Haushalts erfassen",
+          unlocks: "Tragbarkeit nach Bankenregel",
+          action: <MortgagePropertyDialog property={property} trigger={button("Liegenschaft")} />,
+        },
+        {
+          key: "tranches",
+          done: tranches.length > 0,
+          label: "Hypothekar-Tranchen erfassen",
+          unlocks: "Zinskosten, Restschuld und Zinsbindungs-Fristen",
+          action: <MortgageTrancheDialog propertyId={property.id} trigger={button("Tranche")} />,
+        },
+        {
+          key: "balance",
+          done: tranches.length > 0 && !stale,
+          label: staleTranche
+            ? `Restschuld von „${staleTranche.name}“ aktualisieren`
+            : "Restschulden aktuell",
+          unlocks: "Schuldenverlauf und Belehnung stimmen",
+          action: staleTranche && (
+            <MortgageTrancheDialog propertyId={property.id} tranche={staleTranche} trigger={button("Tranche")} />
+          ),
+        },
+        {
+          key: "recurring",
+          done: tranches.length > 0 && withoutRecurring.length === 0,
+          label: "Hypothekarzins als Dauerbuchung übernehmen",
+          unlocks:
+            "Zinsen erscheinen in Fixkosten, Fälligkeiten und Kontoprognose (Knopf mit den Pfeilen auf der Tranche)",
+        },
+      ]}
+    />
+  );
+}
+
 /* ---------------------------------- Seite --------------------------------- */
 
 export default function Mortgages() {
@@ -935,11 +1071,21 @@ export default function Mortgages() {
               </CardContent>
             </Card>
           ) : (
+            <>
+            {tranchesQuery.isSuccess && (
+              <MortgageChecklist
+                property={property}
+                tranches={tranchesQuery.data}
+                schedule={scheduleQuery.data}
+              />
+            )}
             <OverviewSection
               property={property}
               schedule={scheduleQuery.data}
               isLoading={scheduleQuery.isLoading}
+              tranches={tranchesQuery.data ?? []}
             />
+            </>
           )}
 
           <TranchesSection

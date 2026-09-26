@@ -64,6 +64,25 @@ Welle 3 ist umgesetzt:
 | H2 (teils) | Projekt-Karte in der Aufteilung; „abgeschlossen“-Status folgt mit Welle 5 (braucht Schema)                                 |
 | H4         | Seite „Verlauf“ (Person, Zeitraum, Bereich) und Dashboard-Karte „Zuletzt im Haushalt“                                      |
 
+Welle 4 ist umgesetzt:
+
+| Story        | Umsetzung                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| B4           | Massenbearbeitung: Auswahl je Zeile, Kategorie/Projekt/Person/Tags setzen oder löschen, Verlauf und Audit je Buchung      |
+| B5 (+B3)     | Schnellerfassung mit Schalter Ausgabe/Einnahme, Kategorie-Chips der häufigsten, „Rückgängig“ im Toast                     |
+| B7           | „Wiederkehrend“ im Detail-Blatt: vorbefüllte Dauerbuchung, erste Fälligkeit nach heute, Ursprung im Aktivitäten-Log       |
+| B8           | „Abhebung“ in der Schnellerfassung, Kasse im Minus mit „Abhebung nachtragen“, „Kasse zählen“ direkt an der Karte          |
+| D5, D6       | Dashboard-Karten „Konten“ und „Sparziele“                                                                                 |
+| F4           | Fixkosten-Karte: Quote, größte Fixposten, Schwankung der variablen Ausgaben                                               |
+| F6, F8       | Aufschlüsselung nach Kategorie, Person, Konto, Tag oder Projekt für einen freien Zeitraum, Vergleich davor oder Vorjahr   |
+| G7           | Geldfluss mobil standardmäßig als Liste                                                                                   |
+| H1           | „Sichtbares Vermögen“ mit Hinweis, wenn Privatkonten anderer fehlen; „davon N nur lesend“ für Admins                      |
+| I1           | Einrichtungs-Checklisten in Vorsorge, Hypotheken und Versicherungen; Vorsorge-Diagramm erst mit Kapital                   |
+| I2, I3       | Deckungs-Check gruppiert und gebündelt, Hinweise mit Aktion (Police erfassen/bearbeiten, Tranche, Liegenschaft)           |
+| J3, J4       | Weniger Monats-Ticks in der Prognose, gestaffelte Ablauf-Beschriftungen im Schuldenverlauf                                |
+| J6, J7, J8   | „Spalten“ als Beschriftung vor dem Select, gemeinsames Buchungsart-Segment, Datumsfeld mit „Heute“/„Gestern“              |
+| (Befund)     | Stornierte Buchungen zählen in keiner Summe mehr doppelt (siehe E-18)                                                     |
+
 ## 1. Kurzfassung
 
 Finance Fox hat funktional mehr an Bord als die meisten Haushalts-Apps: sechs
@@ -1630,3 +1649,90 @@ sieht alles aus wie vorher.
   für Mitglieder, Tags im Blatt ohne Bearbeitungsrecht klickbar, „Ohne
   Budget“ nur sichtbar, wenn schon Budgets existierten, Jahresvergleichs-
   Säulen ohne Drilldown.
+
+### Welle 4
+
+**E-18 · Stornos in allen Summen neutral (Befund beim Umsetzen).** Ein
+Storno ist eine Gegenbuchung mit umgekehrter Art. Für Salden stimmt das —
+in Summen stand die stornierte Ausgabe aber weiter in Ausgaben, Budget und
+Auswertung, und die Gegenbuchung erschien als „Einnahme“ in einer
+Ausgabenkategorie. Wer eine Fehlbuchung storniert, erwartet ein korrigiertes
+Budget.
+
+- _Alternative A:_ Gegenbuchung am Storno-Datum negativ gegen die Ausgaben
+  rechnen. Der Monat der Fehlbuchung bliebe falsch, der Storno-Monat bekäme
+  negative Kategoriewerte.
+- _Gewählt:_ Original und Gegenbuchung zählen in Summen **beide nicht**
+  (`contracts/flows.ts`) — das entspricht einer Verrechnung am Datum des
+  Originals. Salden, Listen und die Kostenaufteilung rechnen unverändert mit
+  beiden Buchungen. Die Summen der Transaktionsliste bestimmen die Paare aus
+  allen sichtbaren Buchungen, damit ein Storno im Folgemonat den Vormonat
+  korrigiert.
+
+**E-19 · Massenbearbeitung als eigener Endpunkt, alles oder nichts (B4).**
+
+- _Alternative:_ Im Browser `updateTransaction` je Buchung aufrufen. Keine
+  Atomarität, 500 Anfragen, 500 Budget-Prüfungen.
+- _Gewählt:_ `bulkUpdateTransactions` prüft zuerst alles (Existenz,
+  Schreibrecht auf jedem Konto, Ziele) und schreibt dann in einer
+  Transaktion — ein fremdes Privatkonto in der Auswahl ändert nichts. Jede
+  Buchung bekommt trotzdem ihren eigenen Verlaufs- und Audit-Eintrag.
+  Kategorien, die nicht zur Art passen (Ausgaben-Kategorie auf einer
+  Einnahme, Umbuchungen), werden übersprungen und gemeldet statt die ganze
+  Auswahl abzulehnen — typisch enthält eine Import-Auswahl eine Umbuchung.
+  Die Auswahl gibt es nur am Desktop; mobil fehlt der Platz für eine
+  Checkbox-Spalte, und Massenarbeit nach einem Import findet dort kaum statt.
+
+**E-20 · „Wiederkehrend machen“ über die bestehende Vorbefüllung (B7).** Das
+Detail-Blatt öffnet den Dauerbuchungs-Dialog über dieselben URL-Parameter
+wie „Sparrate einrichten“. Die erste Fälligkeit ist der erste Termin **nach
+heute** im Monatstakt der Buchung (`nextOccurrenceAfter`) — aus einer
+Buchung vom März würde sonst eine Fälligkeit im April, die der Cron sofort
+fünfmal nachbuchte. `advanceDate` wanderte dafür nach
+`contracts/planning.ts`, damit Frontend und Cron dieselben Termine rechnen.
+Den Ursprung nennt nur das Aktivitäten-Log; ein Schemafeld wäre für diese
+Information zu viel.
+
+**E-21 · „Sichtbares Vermögen“ ohne Anzahl der verborgenen Konten (H1).**
+Die Story schlug „1 privates Konto ohne Einsicht“ vor. Schon die Anzahl
+verrät etwas über die privaten Finanzen des Partners. Gezeigt wird deshalb
+nur, **dass** die Summe nicht alles enthält („ohne private Konten
+anderer“); Admins sehen „davon N nur lesend“ für die fremden Privatkonten,
+die sie ohnehin lesen dürfen.
+
+**E-22 · Aufschlüsselung mit ehrlichem Vergleich (F6, F8).** Reicht der
+Zeitraum in die Zukunft (laufender Monat, „dieses Jahr“), wird er für die
+Rechnung auf heute gekürzt — sonst verglich man einen halben Monat mit einem
+ganzen. Vergleich wahlweise mit dem gleich langen Zeitraum davor oder
+denselben Tagen im Vorjahr (für Jahresvergleiche natürlicher). „Person“
+heißt „bezahlt von“ (`userId`); wer eine Ausgabe *getragen* hat, zeigt die
+Aufteilung. Eine Buchung mit mehreren Tags zählt bei jedem Tag — der Hinweis
+steht direkt über der Tabelle.
+
+**E-23 · Schnellerfassung: Schalter statt Vorzeichen, Rückgängig statt
+Bestätigung (B5, B8).** Das „-“ funktioniert weiter (Gewohnheit), der
+Schalter macht die Einnahme aber ohne Minuszeichen erreichbar, das auf
+Handy-Tastaturen versteckt liegt. Statt einer Rückfrage vor dem Buchen gibt
+es zehn Sekunden „Rückgängig“ — schneller für den Normalfall, sicher für den
+Tippfehler. „Abhebung“ erscheint nur, wenn es ein Bargeldkonto gibt; im
+großen Buchungsdialog bleibt die Abhebung eine normale Umbuchung.
+
+**E-24 · Natives Datumsfeld plus „Heute“/„Gestern“ (J8).** Ein eigener
+Kalender (`react-day-picker`) wäre auf dem Handy schlechter als der
+System-Kalender, bräuchte eigene Barrierefreiheit und eine Übersetzung. Das
+native Feld zeigt das Datum im Format des Geräts; die zwei Knöpfe decken die
+Tage ab, an denen fast alle Belege entstehen.
+
+**E-25 · Checklisten und Hinweise mit Aktion statt Nullwerten (I1–I3).**
+Jedes Modul zeigt oben, was fehlt und was es freischaltet, mit dem passenden
+Dialog am Punkt; die Karte verschwindet, wenn alles erledigt ist. Der
+Deckungs-Check gruppiert nach Dringlichkeit und bündelt gleichartige
+Hinweise („2 Policen ohne erfasste Deckungen“). „Als gekündigt markieren“
+aus der Story wurde bewusst nicht als Ein-Klick-Aktion gebaut: Ohne
+Vertragsende gilt eine gekündigte Police als weiter deckend, der Check fände
+die entstehende Lücke nie. Deshalb öffnet „Kündigung erfassen“ die Police,
+wo Status und Enddatum zusammen gesetzt werden.
+
+**E-26 · Geldfluss mobil als Liste nur ohne gespeicherte Wahl (G7).** Wer das
+Diagramm einmal gewählt hat, bekommt es wieder — die Breite entscheidet nur
+den Standard.

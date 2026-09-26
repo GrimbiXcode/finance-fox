@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
 import UpcomingCard from '@/components/UpcomingCard';
+import TypeSegment from '@/components/TypeSegment';
 import { useAuth } from '@/providers/auth';
 import {
   amountPlaceholder, currencySymbol, formatAmountInput, formatCents, formatDate, parseEuro, todayISO,
@@ -137,27 +138,17 @@ function RecurringForm({
   const [values, setValues] = useState(initial);
   const set = <K extends keyof RecurringFormValues>(key: K, value: RecurringFormValues[K]) =>
     setValues((prev) => ({ ...prev, [key]: value }));
-  const typeButton = (t: RecType, label: string, activeClass: string) => (
-    <Button
-      type="button"
-      variant={values.type === t ? 'default' : 'outline'}
-      className={values.type === t ? activeClass : ''}
-      disabled={editMode}
-      title={editMode ? 'Die Art kann nicht geändert werden — lösche die Dauerbuchung und lege sie neu an.' : undefined}
-      onClick={() => set('type', t)}
-    >
-      {label}
-    </Button>
-  );
+
 
   return (
     <>
       <div className="grid gap-4 py-2">
-        <div className="grid grid-cols-3 gap-2">
-          {typeButton('expense', 'Ausgabe', 'bg-negative hover:bg-negative/90')}
-          {typeButton('income', 'Einnahme', 'bg-positive hover:bg-positive/90')}
-          {typeButton('transfer', 'Umbuchung', 'bg-pencil-1 hover:bg-pencil-1/90')}
-        </div>
+        <TypeSegment
+          value={values.type}
+          onChange={(t) => set('type', t)}
+          disabled={editMode}
+          disabledTitle="Die Art kann nicht geändert werden — lösche die Dauerbuchung und lege sie neu an."
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Betrag ({currencySymbol()})</Label>
@@ -462,7 +453,10 @@ export default function Recurring() {
               <Button><Plus className="mr-2 h-4 w-4" /> Neue Dauerbuchung</Button>
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-              <DialogHeader><DialogTitle>Neue wiederkehrende Buchung</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle>Neue wiederkehrende Buchung</DialogTitle>
+                <DialogDescription>Wird ab der nächsten Fälligkeit automatisch verbucht.</DialogDescription>
+              </DialogHeader>
               <RecurringForm
                 initial={createInitial}
                 editMode={false}
@@ -750,7 +744,10 @@ export default function Recurring() {
 
       <Dialog open={editing !== null} onOpenChange={(o) => { if (!o) setEditing(null); }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Dauerbuchung bearbeiten</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Dauerbuchung bearbeiten</DialogTitle>
+            <DialogDescription>Änderungen gelten für alle künftigen Termine; bereits verbuchte bleiben unverändert.</DialogDescription>
+          </DialogHeader>
           {editing && (
             <RecurringForm
               key={editing.id}

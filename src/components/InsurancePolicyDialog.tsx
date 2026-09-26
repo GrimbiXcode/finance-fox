@@ -89,16 +89,21 @@ const centsInput = (cents: number | null): string =>
 /** Dialog zum Anlegen/Bearbeiten einer Police */
 export default function InsurancePolicyDialog({
   policy,
+  initialBranch,
   trigger,
 }: {
   policy?: DialogPolicy;
+  /** Neue Police: Sparte vorwählen (aus einem Hinweis des Deckungs-Checks) */
+  initialBranch?: InsuranceBranch;
   trigger: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      {open && <PolicyForm policy={policy} close={() => setOpen(false)} />}
+      {open && (
+        <PolicyForm policy={policy} initialBranch={initialBranch} close={() => setOpen(false)} />
+      )}
     </Dialog>
   );
 }
@@ -116,9 +121,11 @@ function SectionTitle({ children }: { children: ReactNode }) {
 /** Wird bei jedem Öffnen neu gemountet, damit die Initialwerte stimmen */
 function PolicyForm({
   policy,
+  initialBranch,
   close,
 }: {
   policy?: DialogPolicy;
+  initialBranch?: InsuranceBranch;
   close: () => void;
 }) {
   const invalidate = useInvalidateInsurance();
@@ -129,7 +136,7 @@ function PolicyForm({
 
   const [name, setName] = useState(policy?.name ?? "");
   const [branch, setBranch] = useState<InsuranceBranch>(
-    policy?.branch ?? "hausrat"
+    policy?.branch ?? initialBranch ?? "hausrat"
   );
   const [insurer, setInsurer] = useState(policy?.insurer ?? "");
   const [policyNumber, setPolicyNumber] = useState(policy?.policyNumber ?? "");

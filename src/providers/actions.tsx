@@ -6,12 +6,21 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
  * rendert — statt dass jede Seite einen eigenen Dialog mitbringt.
  */
 type Dialog = 'transaction' | 'quick' | 'palette' | 'shortcuts';
+/** Vorwahl der Schnellerfassung (z. B. „Abhebung nachtragen“ von der Kasse) */
+export type QuickMode = 'expense' | 'income' | 'withdrawal';
+
+export interface QuickOptions {
+  quickMode?: QuickMode;
+  /** Abhebung: auf dieses Bargeldkonto */
+  cashAccountId?: number;
+}
 
 interface ActionsValue {
   open: Dialog | null;
+  quick: QuickOptions;
   /** Zählt jedes Öffnen — als `key` setzt er Formulare je Öffnen neu auf */
   seq: number;
-  show: (dialog: Dialog) => void;
+  show: (dialog: Dialog, options?: QuickOptions) => void;
   close: () => void;
   /**
    * Für `onCloseAutoFocus` der globalen Dialoge: Radix gäbe den Fokus an
@@ -41,14 +50,16 @@ const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="listbox"], [role=
 export function ActionsProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState<Dialog | null>(null);
   const [seq, setSeq] = useState(0);
+  const [quick, setQuick] = useState<QuickOptions>({});
   const lastFocus = useRef<HTMLElement | null>(null);
-  const show = useCallback((dialog: Dialog) => {
+  const show = useCallback((dialog: Dialog, options?: QuickOptions) => {
     // Nur beim Öffnen aus der Seite merken — nicht, wenn ein globaler Dialog
     // (Befehlspalette) den nächsten öffnet
     if (!document.activeElement?.closest('[role="dialog"]')) {
       lastFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     }
     setSeq((n) => n + 1);
+    setQuick(options ?? {});
     setOpen(dialog);
   }, []);
   const close = useCallback(() => setOpen(null), []);
@@ -88,8 +99,8 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
   }, [show]);
 
   const value = useMemo(
-    () => ({ open, seq, show, close, restoreFocus }),
-    [open, seq, show, close, restoreFocus],
+    () => ({ open, quick, seq, show, close, restoreFocus }),
+    [open, quick, seq, show, close, restoreFocus],
   );
   return <ActionsContext.Provider value={value}>{children}</ActionsContext.Provider>;
 }

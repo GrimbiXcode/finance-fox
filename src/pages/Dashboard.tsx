@@ -2,15 +2,16 @@ import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { keepPreviousData } from '@tanstack/react-query';
 import {
-  AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Info,
-  Scale, TrendingDown, TrendingUp, Wallet,
+  AlertCircle, AlertTriangle, ArrowRight, Banknote, CheckCircle2, ChevronLeft, ChevronRight, CreditCard, Info,
+  PiggyBank, Scale, TrendingDown, TrendingUp, Wallet,
 } from 'lucide-react';
 import {
   Area, AreaChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { budgetPace, percentChange, periodElapsed, shiftMonth } from '@contracts/planning';
+import { budgetPace, percentChange, periodElapsed, requiredMonthlyRate, shiftMonth } from '@contracts/planning';
 import { useFinanceData } from '@/lib/data';
 import {
   currentMonthKey, formatCents, formatDate, formatMonth, formatMonthShort, getUserLocale, todayISO,
@@ -236,6 +237,113 @@ function BudgetsCard() {
   );
 }
 
+const ACCOUNT_ICONS: Record<string, typeof Wallet> = { checking: CreditCard, cash: Banknote, savings: PiggyBank };
+
+/**
+ * Konten auf einen Blick: Saldo je sichtbarem Konto, Minus hervorgehoben,
+ * Privatkonten markiert. Ein Klick öffnet die Kontenseite mit dem
+ * Saldo-Verlauf dieses Kontos.
+ */
+function AccountsCard() {
+  const { accounts } = useFinanceData();
+  const LIMIT = 8;
+  const sorted = [...accounts].sort((a, b) => b.balance - a.balance);
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle>Konten</CardTitle>
+        <Link to="/konten" className="shrink-0 text-sm text-stamp hover:underline">Alle</Link>
+      </CardHeader>
+      <CardContent>
+        {sorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Noch keine Konten.</p>
+        ) : (
+          <ul className="divide-y text-sm">
+            {sorted.slice(0, LIMIT).map((a) => {
+              const Icon = ACCOUNT_ICONS[a.type] ?? Wallet;
+              return (
+                <li key={a.id}>
+                  <Link
+                    to={`/konten?verlauf=${a.id}`}
+                    className="flex items-center gap-2 py-1.5 hover:bg-muted/40"
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate" title={a.name}>{a.name}</span>
+                    {a.owners.length > 0 && <Badge variant="stamp" tone="ink">Privat</Badge>}
+                    <span className={cn('shrink-0 font-mono tabular-nums', a.balance < 0 && 'text-negative')}>
+                      {formatCents(a.balance)}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {sorted.length > LIMIT && (
+          <p className="pt-2 text-xs text-muted-foreground">+ {sorted.length - LIMIT} weitere Konten</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Sparziele auf dem Dashboard: bis zu drei offene Ziele mit Zielbetrag,
+ * nächster Stichtag zuerst. Balken in der Zielfarbe, dazu die Prognose
+ * („erreicht im …“) oder die nötige Monatsrate, wenn es sonst nicht reicht.
+ */
+function GoalsCard() {
+  const { goals } = useFinanceData();
+  const forecast = trpc.forecast.goalForecast.useQuery().data;
+  const byGoal = new Map((forecast ?? []).map((f) => [f.goalId, f]));
+  const today = todayISO();
+  const active = goals
+    .filter((g) => g.targetAmount !== null && g.totalSaved < g.targetAmount)
+    .sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || (b.percent ?? 0) - (a.percent ?? 0))
+    .slice(0, 3);
+  if (active.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle>Sparziele</CardTitle>
+        <Link to="/sparziele" className="shrink-0 text-sm text-stamp hover:underline">Alle</Link>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {active.map((g) => {
+          const fc = byGoal.get(g.id);
+          const late = g.deadline && (!fc?.etaMonth || fc.etaMonth > g.deadline.slice(0, 7));
+          const rate = late ? requiredMonthlyRate(g.targetAmount! - g.totalSaved, g.deadline!, today) : null;
+          return (
+            <div key={g.id} className="space-y-1">
+              <div className="flex items-baseline justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate font-medium" title={g.name}>{g.name}</span>
+                <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                  {formatCents(g.totalSaved)} / {formatCents(g.targetAmount!)}
+                </span>
+              </div>
+              <div
+                className="h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar" aria-valuenow={g.percent ?? 0} aria-valuemin={0} aria-valuemax={100}
+                aria-label={`${g.name}: ${g.percent ?? 0} %`}
+              >
+                <div className="h-full rounded-full" style={{ width: `${g.percent ?? 0}%`, backgroundColor: pencil(g.color) }} />
+              </div>
+              <p className={cn('text-xs', rate ? 'text-warning' : 'text-muted-foreground')}>
+                {g.percent ?? 0} %
+                {rate
+                  ? ` · bis ${formatDate(g.deadline!)} nötig: ${formatCents(rate)} pro Monat`
+                  : fc?.etaMonth
+                    ? ` · erreicht voraussichtlich im ${formatMonth(fc.etaMonth)}`
+                    : ''}
+              </p>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 const HOUSEHOLD_ENTITIES = AUDIT_ENTITY_GROUPS
   .filter(([key]) => !['user', 'settings', 'pension'].includes(key))
   .flatMap(([, , entities]) => entities);
@@ -296,6 +404,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   // Liegenschaften/Hypotheken für die Zusatzzeile im Gesamtvermögen
   const mortgage = trpc.mortgage.summary.useQuery().data;
+  // Fehlen Privatkonten anderer in der Summe? Dann ehrliches Label (H1)
+  const visibility = trpc.finance.accountVisibility.useQuery().data;
   // Gewählter Monat steht in der URL (`#/?monat=2026-08`) — Standard: aktueller
   const [params, setParams] = useSearchParams();
   const thisMonth = currentMonthKey();
@@ -369,7 +479,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Kpi
-          title="Gesamtvermögen"
+          title={visibility?.hasHidden ? 'Sichtbares Vermögen' : 'Gesamtvermögen'}
           icon={<Wallet className="h-4 w-4 text-muted-foreground" />}
           value={summary.balance.current}
           to="/konten"
@@ -378,6 +488,8 @@ export default function Dashboard() {
             {isCurrent
               ? `${summary.accountCount} ${summary.accountCount === 1 ? 'Konto' : 'Konten'}`
               : `Stand Ende ${formatMonth(month)}`}
+            {visibility?.hasHidden && ' · ohne private Konten anderer'}
+            {(visibility?.readOnly ?? 0) > 0 && ` · davon ${visibility!.readOnly} nur lesend`}
           </p>
           <Change
             current={summary.balance.current} previous={summary.balance.previous}
@@ -556,6 +668,13 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {isCurrent && (
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <AccountsCard />
+          <GoalsCard />
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">

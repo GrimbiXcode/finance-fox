@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, KeyRound, Plus, UserCheck, UserX } from 'lucide-react';
+import { KeyRound, Plus, UserCheck, UserX } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/providers/auth';
+import InviteLinkShare from '@/components/InviteLinkShare';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import { PENCIL_COLORS, pencil } from '@/lib/pencil';
@@ -87,13 +88,7 @@ export default function UsersPage() {
               {inviteLink ? (
                 <div className="space-y-3 py-2">
                   <p className="text-sm font-medium">Einladungslink (7 Tage gültig):</p>
-                  <code className="block break-all rounded bg-muted px-3 py-2 text-xs">{inviteLink}</code>
-                  <Button
-                    variant="outline" className="w-full"
-                    onClick={() => { navigator.clipboard.writeText(inviteLink); toast.success('Link kopiert.'); }}
-                  >
-                    <Copy className="mr-2 h-4 w-4" /> Link kopieren
-                  </Button>
+                  <InviteLinkShare link={inviteLink} name={name.trim() || undefined} />
                 </div>
               ) : (
                 <div className="grid gap-4 py-2">

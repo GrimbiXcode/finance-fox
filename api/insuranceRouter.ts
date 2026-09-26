@@ -24,7 +24,7 @@ import {
   INSURANCE_STATUS_LABELS,
   type InsuranceBranch,
 } from "@contracts/insurance";
-import { requireAccountAccess } from "./lib/accountAccess";
+import { requireAccountAccess, visibleAccountIds } from "./lib/accountAccess";
 import { auditAmount, logAudit } from "./lib/audit";
 import { recordInsuranceChange } from "./lib/insurance/history";
 import { getInsuranceRules } from "./lib/insurance";
@@ -1178,5 +1178,73 @@ export const insuranceRouter = createRouter({
         `Prämie „${policy.name}“ ${auditAmount(policy.premium)} ${INTERVAL_LABELS[interval]}`
       );
       return { id: recurringId, amount: policy.premium, interval, nextDate };
+    }),
+
+  /**
+   * Eine schon bestehende Dauerbuchung als Prämie der Police eintragen —
+   * für den häufigen Fall, dass der Dauerauftrag älter ist als die Police
+   * in der App. Ohne diesen Weg bliebe nur „Übernehmen“, und das legte
+   * dieselbe Belastung ein zweites Mal an. Die Dauerbuchung selbst bleibt
+   * unverändert; verknüpfen darf, wer sie sieht (unsichtbare verhalten sich
+   * wie nicht vorhandene).
+   */
+  linkPremiumToRecurring: authedQuery
+    .input(
+      z.object({
+        policyId: z.number().int().positive(),
+        recurringId: z.number().int().positive(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const policy = await loadPolicy(input.policyId);
+      await assertNoLiveRecurring(
+        policy.premiumRecurringId,
+        "Für diese Police ist bereits eine Dauerbuchung hinterlegt."
+      );
+      const [rule] = await db
+        .select()
+        .from(recurring)
+        .where(eq(recurring.id, input.recurringId));
+      const visible = await visibleAccountIds(db, ctx.user);
+      if (!rule || !visible.has(rule.accountId)) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Dauerbuchung nicht gefunden.",
+        });
+      }
+      if (rule.type !== "expense") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Nur eine wiederkehrende Ausgabe lässt sich als Prämie verknüpfen.",
+        });
+      }
+      const holders = await db
+        .select({ id: insurancePolicies.id, name: insurancePolicies.name })
+        .from(insurancePolicies)
+        .where(eq(insurancePolicies.premiumRecurringId, rule.id));
+      const other = holders.find(h => h.id !== policy.id);
+      if (other) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Diese Dauerbuchung gehört schon zur Police „${other.name}“.`,
+        });
+      }
+      await db
+        .update(insurancePolicies)
+        .set({ premiumRecurringId: rule.id })
+        .where(eq(insurancePolicies.id, policy.id));
+      logAudit(
+        db,
+        ctx.user.id,
+        "insurance.premium.linked",
+        "insurance",
+        policy.id,
+        // Ohne Betrag: die Dauerbuchung kann auf einem Privatkonto liegen,
+        // das Log der Police sieht aber der ganze Haushalt
+        `Prämie „${policy.name}“ mit bestehender Dauerbuchung verknüpft`
+      );
+      return { id: rule.id };
     }),
 });

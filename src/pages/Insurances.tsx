@@ -63,6 +63,7 @@ import {
 import { SearchableSelect } from "@/components/SearchableSelect";
 import InsuranceAttachments from "@/components/InsuranceAttachments";
 import InsuranceCoverageDialog from "@/components/InsuranceCoverageDialog";
+import SetupChecklist from "@/components/SetupChecklist";
 import InsurancePolicyDialog from "@/components/InsurancePolicyDialog";
 import InsuranceTransferDialog from "@/components/InsuranceTransferDialog";
 import { trpc } from "@/providers/trpc";
@@ -85,6 +86,15 @@ import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { pencil } from "@/lib/pencil";
+import {
+  GAP_GROUP_LABELS,
+  gapBundleText,
+  gapGroup,
+  gapText,
+  type GapGroup,
+} from "@/lib/insuranceText";
+import InfoTip from "@/components/InfoTip";
+import KpiCard from "@/components/KpiCard";
 
 type Outputs = inferRouterOutputs<AppRouter>;
 type Policy = Outputs["insurance"]["listPolicies"][number];
@@ -130,43 +140,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat(getUserLocale(), {
   timeStyle: "short",
 });
 
-/* ------------------------------- Lückentexte ------------------------------ */
-
-/**
- * Hinweise kommen als strukturierte Daten vom Server — Beträge und
- * Datumsangaben werden erst hier locale-konform formatiert.
- */
-function gapText(g: Gap): string {
-  switch (g.kind) {
-    case "missing_person":
-      return `${g.personName} hat keine ${INSURANCE_BRANCH_LABELS[g.branch]} erfasst.`;
-    case "missing_household":
-      return `Für den Haushalt ist keine ${INSURANCE_BRANCH_LABELS[g.branch]} erfasst.`;
-    case "missing_building":
-      return g.propertyName
-        ? `Für „${g.propertyName}“ ist keine Gebäudeversicherung erfasst.`
-        : "Es ist Wohneigentum erfasst, aber keine Gebäudeversicherung.";
-    case "coverage_ending":
-      return `Die Deckung von „${g.policy}“ (${INSURANCE_BRANCH_LABELS[g.branch]}) endet am ${formatDate(g.endDate)} — in ${g.days} Tagen — und es gibt keine Nachfolge.`;
-    case "notice_soon":
-      return `„${g.policy}“ muss bis zum ${formatDate(g.cancelBy)} gekündigt werden (in ${g.days} Tagen), sonst verlängert sie sich.`;
-    case "notice_missed":
-      return g.nextCancelBy
-        ? `Die Kündigungsfrist von „${g.policy}“ für den ${formatDate(g.dueDate)} ist verstrichen — nächste Möglichkeit: kündigen bis ${formatDate(g.nextCancelBy)}.`
-        : `Die Kündigungsfrist von „${g.policy}“ für den ${formatDate(g.dueDate)} ist verstrichen.`;
-    case "expiring":
-      return `„${g.policy}“ läuft am ${formatDate(g.dueDate)} aus (in ${g.days} Tagen).`;
-    case "no_end_date":
-      return `„${g.policy}“ ist als befristet markiert, hat aber kein Vertragsende.`;
-    case "no_premium":
-      return `Für „${g.policy}“ ist keine Prämie erfasst.`;
-    case "no_coverage":
-      return `Für „${g.policy}“ sind keine Deckungen erfasst — dann lässt sich nicht nachschlagen, wofür sie aufkommt.`;
-    case "quote_pending":
-      return `Das Angebot „${g.policy}“ liegt seit ${g.days} Tagen unentschieden herum.`;
-  }
-}
-
 /* ------------------------------ Leerer Zustand ---------------------------- */
 
 function SetupCard() {
@@ -202,35 +175,27 @@ function Kpi({
   label,
   value,
   hint,
+  info,
   icon,
   tone,
 }: {
   label: string;
   value: string;
   hint?: string;
+  info?: React.ReactNode;
   icon: React.ReactNode;
   tone?: "warn";
 }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div
-          className={cn(
-            "font-serif text-2xl font-semibold",
-            tone === "warn" && "text-destructive"
-          )}
-        >
-          {value}
-        </div>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
+    <KpiCard
+      title={label}
+      info={info}
+      icon={icon}
+      value={value}
+      valueClassName={tone === "warn" ? "text-destructive" : undefined}
+    >
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </KpiCard>
   );
 }
 
@@ -238,14 +203,60 @@ function Kpi({
 
 type DismissedGap = Outputs["insurance"]["gapAnalysis"]["dismissed"][number];
 
+/**
+ * Handeln direkt aus dem Hinweis: fehlt eine Versicherung, „Police
+ * erfassen“ mit vorgewählter Sparte; betrifft er eine Police (Frist,
+ * fehlende Prämie oder Deckung), „Bearbeiten“ öffnet genau diese.
+ */
+function GapAction({ gap, policies }: { gap: Gap; policies: Policy[] }) {
+  if (gap.kind === "missing_person" || gap.kind === "missing_household") {
+    return (
+      <InsurancePolicyDialog
+        initialBranch={gap.branch}
+        trigger={
+          <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs text-stamp">
+            Police erfassen
+          </Button>
+        }
+      />
+    );
+  }
+  if (gap.kind === "missing_building") {
+    return (
+      <InsurancePolicyDialog
+        initialBranch="gebaeude"
+        trigger={
+          <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs text-stamp">
+            Police erfassen
+          </Button>
+        }
+      />
+    );
+  }
+  const policy = "policyId" in gap ? policies.find(p => p.id === gap.policyId) : undefined;
+  if (!policy) return null;
+  return (
+    <InsurancePolicyDialog
+      policy={policy}
+      trigger={
+        <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs text-stamp">
+          {gap.kind === "notice_soon" ? "Kündigung erfassen" : "Bearbeiten"}
+        </Button>
+      }
+    />
+  );
+}
+
 function GapRow({
   gap,
   dismissal,
   dismissed,
+  action,
 }: {
   gap: Gap;
   dismissal?: DismissedGap["dismissal"];
   dismissed?: boolean;
+  action?: React.ReactNode;
 }) {
   const invalidate = useInvalidateInsurance();
   const [note, setNote] = useState("");
@@ -291,6 +302,7 @@ function GapRow({
           </p>
         )}
       </div>
+      {!dismissed && action}
       {dismissed ? (
         <Button
           variant="ghost"
@@ -345,11 +357,47 @@ function GapRow({
   );
 }
 
-function GapCard() {
+/** Mehrere gleichartige Hinweise als eine aufklappbare Zeile */
+function GapBundle({ gaps, policies }: { gaps: Gap[]; policies: Policy[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="border-b last:border-0">
+      <CollapsibleTrigger asChild>
+        <button type="button" className="flex w-full items-center gap-3 py-2 text-left text-sm">
+          {gaps[0].severity === "warn" ? (
+            <AlertTriangle className="h-4 w-4 shrink-0 text-negative" />
+          ) : (
+            <Info className="h-4 w-4 shrink-0 text-warning" />
+          )}
+          <span className="flex-1">{gapBundleText(gaps[0].kind, gaps.length)}</span>
+          <ChevronDown
+            className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pl-7">
+        {gaps.map(g => (
+          <GapRow key={g.key} gap={g} action={<GapAction gap={g} policies={policies} />} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function GapCard({ policies }: { policies: Policy[] }) {
   const gapsQuery = trpc.insurance.gapAnalysis.useQuery();
   const [showDismissed, setShowDismissed] = useState(false);
   const gaps = gapsQuery.data?.gaps ?? [];
   const dismissed = gapsQuery.data?.dismissed ?? [];
+  // Gruppen in fester Reihenfolge; darin gleichartige Hinweise gebündelt
+  const groups = (["act", "check", "data"] as GapGroup[])
+    .map(group => {
+      const inGroup = gaps.filter(g => gapGroup(g) === group);
+      const byKind = new Map<string, Gap[]>();
+      for (const g of inGroup) byKind.set(g.kind, [...(byKind.get(g.kind) ?? []), g]);
+      return { group, count: inGroup.length, kinds: [...byKind.values()] };
+    })
+    .filter(g => g.count > 0);
 
   return (
     <Card>
@@ -372,9 +420,25 @@ function GapCard() {
             Keine Lücken gefunden.
           </p>
         ) : (
-          <div>
-            {gaps.map(g => (
-              <GapRow key={g.key} gap={g} />
+          <div className="space-y-4">
+            {groups.map(({ group, count, kinds }) => (
+              <section key={group}>
+                <h3 className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {GAP_GROUP_LABELS[group]}
+                  <Badge variant="label">{count}</Badge>
+                </h3>
+                {kinds.map(list =>
+                  list.length > 1 ? (
+                    <GapBundle key={list[0].kind} gaps={list} policies={policies} />
+                  ) : (
+                    <GapRow
+                      key={list[0].key}
+                      gap={list[0]}
+                      action={<GapAction gap={list[0]} policies={policies} />}
+                    />
+                  )
+                )}
+              </section>
             ))}
           </div>
         )}
@@ -409,6 +473,80 @@ function GapCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Was den Policen noch fehlt — Deckungen machen das Nachschlagen möglich,
+ * die Dauerbuchung bringt die Prämie in Budget und Prognose. Nur aktive
+ * Policen zählen; Angebote und gekündigte bleiben außen vor.
+ */
+function InsuranceChecklist({
+  policies,
+  coverages,
+}: {
+  policies: Policy[];
+  coverages: Coverage[];
+}) {
+  const active = policies.filter(p => p.status === "active");
+  if (active.length === 0) return null;
+  const withCoverage = new Set(coverages.map(c => c.policyId));
+  const noCoverage = active.filter(p => !withCoverage.has(p.id));
+  const noRecurring = active.filter(
+    p => p.premium > 0 && p.premiumRecurringId === null
+  );
+  const noAccount = active.filter(p => p.premium > 0 && p.accountId === null);
+  const names = (list: Policy[]) =>
+    list.length <= 3
+      ? list.map(p => `„${p.name}“`).join(", ")
+      : `${list.slice(0, 2).map(p => `„${p.name}“`).join(", ")} und ${list.length - 2} weitere`;
+  const editFirst = (list: Policy[], label: string) =>
+    list[0] && (
+      <InsurancePolicyDialog
+        policy={list[0]}
+        trigger={
+          <Button size="sm" variant="outline" className="shrink-0">
+            {label}
+          </Button>
+        }
+      />
+    );
+  return (
+    <SetupChecklist
+      title="Policen vervollständigen"
+      items={[
+        {
+          key: "coverage",
+          done: noCoverage.length === 0,
+          label:
+            noCoverage.length === 0
+              ? "Deckungen je Police erfasst"
+              : `Deckungen erfassen für ${names(noCoverage)}`,
+          unlocks: "nachschlagen, was gedeckt ist — auch unterwegs beim Arzt",
+          action: editFirst(noCoverage, "Police öffnen"),
+        },
+        {
+          key: "account",
+          done: noAccount.length === 0,
+          label:
+            noAccount.length === 0
+              ? "Belastungskonto je Police gewählt"
+              : `Belastungskonto wählen für ${names(noAccount)}`,
+          unlocks: "Prämie lässt sich als Dauerbuchung übernehmen",
+          action: editFirst(noAccount, "Police öffnen"),
+        },
+        {
+          key: "recurring",
+          done: noRecurring.length === 0,
+          label:
+            noRecurring.length === 0
+              ? "Prämien als Dauerbuchung übernommen"
+              : `Prämie als Dauerbuchung übernehmen für ${names(noRecurring)}`,
+          unlocks:
+            "Prämien erscheinen in Fixkosten, Fälligkeiten und Kontoprognose (Knopf mit den Pfeilen auf der Police)",
+        },
+      ]}
+    />
   );
 }
 
@@ -549,14 +687,19 @@ function DetailRow({
   label,
   value,
   tone,
+  info,
 }: {
   label: string;
   value: string;
   tone?: "warn" | "danger";
+  info?: React.ReactNode;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2 text-sm">
-      <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+      <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
+        <span className="truncate">{label}</span>
+        {info}
+      </span>
       <span
         className={cn(
           "shrink-0 font-medium",
@@ -664,7 +807,7 @@ function PolicyCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <p className="font-serif text-xl font-semibold">{formatCents(policy.premium)}</p>
+          <p className="font-serif text-xl font-semibold tabular-nums">{formatCents(policy.premium)}</p>
           <p className="text-xs text-muted-foreground">
             {
               RECURRING_INTERVAL_LABELS[
@@ -691,6 +834,7 @@ function PolicyCard({
           {notice.cancelBy && (
             <DetailRow
               label={notice.currentPeriodMissed ? "Nächste Frist" : "Kündigen bis"}
+              info={<InfoTip term="kuendigungsfrist" />}
               value={formatDate(notice.cancelBy)}
               tone={
                 notice.currentPeriodMissed
@@ -704,6 +848,11 @@ function PolicyCard({
           {notice.dueDate && (
             <DetailRow
               label={policy.renewal === "fixed" ? "Vertragsende" : "Hauptverfall"}
+              info={
+                policy.renewal === "fixed" ? undefined : (
+                  <InfoTip term="hauptverfall" />
+                )
+              }
               value={formatDate(notice.dueDate)}
             />
           )}
@@ -1015,7 +1164,7 @@ export default function Insurances() {
       </div>
 
       {summary && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <Kpi
             label="Policen"
             value={String(summary.activeCount)}
@@ -1039,6 +1188,7 @@ export default function Insurances() {
           />
           <Kpi
             label="Nächste Kündigungsfrist"
+            info={<InfoTip term="kuendigungsfrist" />}
             value={
               summary.nextCancelBy ? formatDate(summary.nextCancelBy) : "—"
             }
@@ -1053,7 +1203,8 @@ export default function Insurances() {
         </div>
       )}
 
-      <GapCard />
+      <GapCard policies={policies} />
+      <InsuranceChecklist policies={policies} coverages={coverages} />
 
       <Card>
         <CardHeader className="pb-3">

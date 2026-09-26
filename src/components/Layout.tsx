@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useTheme } from 'next-themes';
 import {
-  LayoutDashboard, ArrowLeftRight, Wallet, Target, Users, Repeat, PiggyBank,
-  Settings, ShieldCheck, TrendingUp, UserCog, LogOut, Sun, Moon, ChartColumn, Landmark,
-  PanelLeftClose, PanelLeftOpen, GitBranch, House, Menu, Umbrella, FileDown,
-  RefreshCw,
+  ShieldCheck, LogOut, Sun, Moon, PanelLeftClose, PanelLeftOpen, Menu, Search, User, Users,
 } from 'lucide-react';
+import { navGroups } from '@/lib/navigation';
+import { useActions } from '@/providers/actions';
+import { useScope } from '@/providers/scope';
+import CommandPalette from '@/components/CommandPalette';
+import ShortcutsDialog from '@/components/ShortcutsDialog';
+import TransactionDialog from '@/components/TransactionDialog';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
-import { formatCents, setAppCurrency, totalBalance } from '@/lib/finance';
+import { formatCents, setAppCurrency } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -21,52 +24,7 @@ import SyncStatus from '@/components/SyncStatus';
 import BrandMark from '@/components/BrandMark';
 import { pencil } from '@/lib/pencil';
 
-// Menüstruktur (Desktop-Seitenleiste und mobiles „Mehr“-Menü): thematisch
-// gruppiert — Alltag (buchen & teilen), Konten, Planung, Analyse, Verwaltung.
-const navGroups = [
-  {
-    label: 'Alltag',
-    items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/transaktionen', label: 'Transaktionen', icon: ArrowLeftRight },
-      { to: '/wiederkehrend', label: 'Wiederkehrend', icon: Repeat },
-      { to: '/aufteilung', label: 'Aufteilung', icon: Users },
-    ],
-  },
-  {
-    label: 'Konten',
-    items: [
-      { to: '/konten', label: 'Konten', icon: Wallet },
-      { to: '/geldfluss', label: 'Geldfluss', icon: GitBranch },
-    ],
-  },
-  {
-    label: 'Planung',
-    items: [
-      { to: '/budgets', label: 'Budgets', icon: Target },
-      { to: '/sparziele', label: 'Sparziele', icon: PiggyBank },
-      { to: '/vorsorge', label: 'Vorsorge', icon: Landmark },
-      { to: '/hypotheken', label: 'Hypotheken', icon: House },
-      { to: '/versicherungen', label: 'Versicherungen', icon: Umbrella },
-    ],
-  },
-  {
-    label: 'Analyse',
-    items: [
-      { to: '/prognosen', label: 'Prognosen', icon: TrendingUp },
-      { to: '/auswertung', label: 'Auswertung', icon: ChartColumn },
-      { to: '/bericht', label: 'Bericht', icon: FileDown },
-    ],
-  },
-  {
-    label: 'Verwaltung',
-    items: [
-      { to: '/personen', label: 'Personen', icon: UserCog },
-      { to: '/abgleich', label: 'Abgleich', icon: RefreshCw },
-      { to: '/einstellungen', label: 'Einstellungen', icon: Settings },
-    ],
-  },
-];
+// Menüstruktur: `lib/navigation.ts` (geteilt mit der Befehlspalette)
 
 // Mobile Schnellzugriffe in der unteren Leiste — alles Weitere über „Mehr“.
 const mobilePrimary = ['/', '/transaktionen', '/konten', '/budgets'];
@@ -78,9 +36,16 @@ const SIDEBAR_KEY = 'ff-sidebar-collapsed';
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const { accounts, transactions, users } = useFinanceData();
+  const actions = useActions();
+  const scope = useScope();
+  const { accounts, users: allUsers } = useFinanceData();
+  // Der Briefkopf zeigt, wer heute zum Haushalt gehört — deaktivierte
+  // Personen bleiben nur für ihre alten Buchungen in den Listen
+  const users = allUsers.filter((u) => u.active);
   const { resolvedTheme, setTheme } = useTheme();
-  const total = totalBalance(accounts, transactions);
+  // Salden rechnet listAccounts serverseitig — dieselbe Zahl wie auf der Kontenseite
+  const total = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const visibility = trpc.finance.accountVisibility.useQuery().data;
   // Eingeklappte Seitenleiste (nur Icons) pro Gerät merken
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
   const [moreOpen, setMoreOpen] = useState(false);
@@ -144,8 +109,11 @@ export default function Layout() {
         </nav>
         {!collapsed && (
           <div className="border-t px-6 py-4">
-            <div className="text-xs text-muted-foreground">Gesamtvermögen</div>
-            <div className={cn('font-serif text-xl font-semibold', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
+            {/* Wie auf dem Dashboard: ehrliches Label, wenn Privatkonten anderer fehlen */}
+            <div className="text-xs text-muted-foreground" title={visibility?.hasHidden ? 'Ohne private Konten anderer' : undefined}>
+              {visibility?.hasHidden ? 'Sichtbares Vermögen' : 'Gesamtvermögen'}
+            </div>
+            <div className={cn('font-serif text-xl font-semibold tabular-nums', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
             <div className="mt-2 flex items-center gap-1.5 text-xs text-stamp">
               <ShieldCheck className="h-3.5 w-3.5" />
               Daten bleiben auf deinem Server
@@ -175,7 +143,32 @@ export default function Layout() {
             Gemeinsamer Haushalt · {users.map((u) => u.name).join(' & ')}
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            <Button
+              variant="outline" size="sm" className="gap-1.5 text-muted-foreground"
+              title="Suchen und Befehle (⌘K / Strg+K)"
+              onClick={() => actions.show('palette')}
+            >
+              <Search className="h-4 w-4" />
+              <span className="hidden lg:inline">Suchen</span>
+              <kbd className="hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline">⌘K</kbd>
+            </Button>
             <QuickAddDialog />
+            {users.length > 1 && (
+              <Button
+                variant={scope.scope === 'mine' ? 'outline' : 'ghost'}
+                size="sm"
+                className={cn('gap-1.5', scope.scope === 'mine' ? 'border-stamp text-stamp' : 'text-muted-foreground')}
+                aria-pressed={scope.scope === 'mine'}
+                title={scope.scope === 'mine'
+                  ? 'Meine Sicht: nur eigene Buchungen in Dashboard, Transaktionen und Auswertung — zum Haushalt wechseln'
+                  : 'Haushaltssicht: alle Buchungen — zu „Meine Sicht“ wechseln'}
+                onClick={() => scope.setScope(scope.scope === 'mine' ? 'household' : 'mine')}
+              >
+                {scope.scope === 'mine' ? <User className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+                {/* Unter lg nur das Symbol — der Text bleibt für Screenreader */}
+                <span className="sr-only lg:not-sr-only">{scope.scope === 'mine' ? 'Meine Sicht' : 'Haushalt'}</span>
+              </Button>
+            )}
             <SyncStatus />
             <Button
               variant="ghost"
@@ -214,6 +207,16 @@ export default function Layout() {
         <main className="min-w-0 flex-1 overflow-x-clip px-4 py-6 md:px-8">
           <Outlet />
         </main>
+        {/* Global geöffnete Dialoge: Befehlspalette, Kürzel-Hilfe, „N“ */}
+        <CommandPalette />
+        <ShortcutsDialog />
+        {/* key: jedes Öffnen beginnt mit frischem Formular (heutiges Datum) */}
+        <TransactionDialog
+          key={actions.seq}
+          open={actions.open === 'transaction'}
+          onOpenChange={(o) => (o ? actions.show('transaction') : actions.close())}
+          onCloseAutoFocus={actions.restoreFocus}
+        />
         <nav className="sticky bottom-0 z-10 flex justify-around border-t bg-background py-2 md:hidden">
           {mobilePrimaryItems.map((item) => (
             <NavLink

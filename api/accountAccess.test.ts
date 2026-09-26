@@ -146,6 +146,16 @@ describe("listAccounts (Sichtbarkeit)", () => {
     expect(byId(strangerList)).toBeUndefined();
   });
 
+  it("accountVisibility verrät nur, dass die Summe nicht alles ist", async () => {
+    const forStranger = await callerFor(stranger).finance.accountVisibility();
+    expect(forStranger).toEqual({ hasHidden: true, readOnly: 0 });
+    const forAdmin = await callerFor(admin).finance.accountVisibility();
+    expect(forAdmin.hasHidden).toBe(false);
+    expect(forAdmin.readOnly).toBeGreaterThan(0);
+    const forOwner = await callerFor(owner).finance.accountVisibility();
+    expect(forOwner.readOnly).toBe(0);
+  });
+
   it("createAccount mit private: true setzt den Besitzer", async () => {
     await callerFor(owner).finance.createAccount({
       name: "Privates Anlagekonto",
@@ -175,9 +185,9 @@ describe("updateAccount (Rechte)", () => {
     await callerFor(editor).finance.updateAccount(input);
 
     await expect(callerFor(viewer).finance.updateAccount(input))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerFor(admin).finance.updateAccount(input))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerFor(stranger).finance.updateAccount(input))
       .rejects.toMatchObject({ code: "NOT_FOUND" });
 
@@ -304,7 +314,7 @@ describe("createTransaction / deleteTransaction (Rechte)", () => {
     await callerFor(owner).finance.createTransaction(base);
     await callerFor(editor).finance.createTransaction(base);
     await expect(callerFor(viewer).finance.createTransaction(base))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerFor(stranger).finance.createTransaction(base))
       .rejects.toMatchObject({ code: "NOT_FOUND" });
   });
@@ -339,10 +349,50 @@ describe("createTransaction / deleteTransaction (Rechte)", () => {
     const txRow = (await getDb().select().from(transactions)
       .where(eq(transactions.note, "zum-loeschen")))[0];
     await expect(callerFor(viewer).finance.deleteTransaction({ id: txRow.id }))
-      .rejects.toMatchObject({ code: "NOT_FOUND" });
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
     await callerFor(owner).finance.deleteTransaction({ id: txRow.id });
     expect(await getDb().query.transactions
       .findFirst({ where: eq(transactions.id, txRow.id) })).toBeUndefined();
+  });
+
+  it("unsichtbare Buchungen wie fehlende, sichtbare Umbuchung vom fremden Konto nur lesbar", async () => {
+    const privateId = await insertAccount(owner.id);
+    const sharedId = await insertAccount(null);
+    const hidden = await callerFor(owner).finance.createTransaction({
+      type: "expense",
+      accountId: privateId,
+      amount: 100,
+      userId: owner.id,
+      date: "2026-07-06",
+      note: "",
+    });
+    const missing = { code: "NOT_FOUND", message: "Buchung nicht gefunden." };
+    // Löschen, Stornieren, Verlauf: gleiche Antwort wie für eine fehlende ID
+    for (const id of [hidden.id, 999_999]) {
+      await expect(callerFor(stranger).finance.deleteTransaction({ id }))
+        .rejects.toMatchObject(missing);
+      await expect(callerFor(stranger).finance.reverseTransaction({ id }))
+        .rejects.toMatchObject(missing);
+      await expect(
+        callerFor(stranger).finance.listTransactionChanges({ transactionId: id }),
+      ).rejects.toMatchObject(missing);
+    }
+    // Umbuchung vom Privatkonto aufs Gemeinschaftskonto: sieht jeder,
+    // ändern darf sie nur, wer das Quellkonto bearbeiten darf
+    const transfer = await callerFor(owner).finance.createTransaction({
+      type: "transfer",
+      accountId: privateId,
+      toAccountId: sharedId,
+      amount: 100,
+      userId: owner.id,
+      date: "2026-07-06",
+      note: "",
+    });
+    await expect(
+      callerFor(stranger).finance.listTransactionChanges({ transactionId: transfer.id }),
+    ).resolves.toEqual([]);
+    await expect(callerFor(stranger).finance.deleteTransaction({ id: transfer.id }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

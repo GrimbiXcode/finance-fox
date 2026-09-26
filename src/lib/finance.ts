@@ -225,59 +225,7 @@ export function expensesByRootCategory(
   return map;
 }
 
-/**
- * Netto-Salden zwischen Personen aus geteilten Buchungen.
- * Geteilte Ausgaben: Zahler +Betrag, Split-Partner −Anteil.
- * Einnahmen MIT Splits zählen umgekehrt (Zahler −Betrag, Split-Partner
- * +Anteil) — so hebt eine Storno-Buchung (Ausgabe → Einnahme mit denselben
- * Splits, siehe finance.reverseTransaction) die ursprüngliche
- * Aufteilungs-Wirkung exakt auf.
- */
-export function memberBalances(txs: TxLike[], userIds: number[]): Map<number, number> {
-  const net = new Map<number, number>();
-  for (const id of userIds) net.set(id, 0);
-  for (const t of txs) {
-    if (t.splits.length === 0) continue;
-    if (t.type !== 'expense' && t.type !== 'income') continue;
-    // Vorzeichen: Ausgabe wie bisher, Einnahme mit Splits spiegelverkehrt
-    const sign = t.type === 'expense' ? 1 : -1;
-    const payer = t as TxLike & { userId: number };
-    net.set(payer.userId, (net.get(payer.userId) ?? 0) + sign * t.amount);
-    for (const s of t.splits) {
-      net.set(s.userId, (net.get(s.userId) ?? 0) - sign * s.amount);
-    }
-  }
-  return net;
-}
-
-export interface SettlementLike {
-  fromId: number;
-  toId: number;
-  amount: number;
-}
-
-/** Greedy-Ausgleich: minimale Anzahl an Überweisungen */
-export function computeSettlements(txs: TxLike[], userIds: number[]): SettlementLike[] {
-  const net = memberBalances(txs, userIds);
-  const debtors = userIds
-    .filter((id) => (net.get(id) ?? 0) < -0.5)
-    .map((id) => ({ id, amount: -(net.get(id) ?? 0) }))
-    .sort((a, b) => b.amount - a.amount);
-  const creditors = userIds
-    .filter((id) => (net.get(id) ?? 0) > 0.5)
-    .map((id) => ({ id, amount: net.get(id) ?? 0 }))
-    .sort((a, b) => b.amount - a.amount);
-
-  const result: SettlementLike[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < debtors.length && j < creditors.length) {
-    const pay = Math.min(debtors[i].amount, creditors[j].amount);
-    result.push({ fromId: debtors[i].id, toId: creditors[j].id, amount: Math.round(pay) });
-    debtors[i].amount -= pay;
-    creditors[j].amount -= pay;
-    if (debtors[i].amount < 0.5) i += 1;
-    if (creditors[j].amount < 0.5) j += 1;
-  }
-  return result;
-}
+// Aufteilungs-Salden liegen in contracts/settlement.ts, damit Server
+// (Dashboard-Aggregat) und Seite „Aufteilung“ dieselbe Rechnung nutzen.
+export { computeSettlements, memberBalances } from '@contracts/settlement';
+export type { Settlement as SettlementLike } from '@contracts/settlement';

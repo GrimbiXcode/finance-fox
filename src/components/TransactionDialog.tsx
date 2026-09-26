@@ -12,6 +12,9 @@ import {
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import TypeSegment from '@/components/TypeSegment';
+import DateField from '@/components/DateField';
+import NoteSuggestInput, { type NoteSuggestion } from '@/components/NoteSuggestInput';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
 import {
@@ -66,31 +69,60 @@ const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application
 export default function TransactionDialog({
   defaultType = 'expense',
   transaction,
+  template,
   trigger,
+  open: controlledOpen,
+  onOpenChange,
+  onCloseAutoFocus,
 }: {
   defaultType?: TxType;
   transaction?: EditableTransaction;
+  /**
+   * Duplizieren (B6): neue Buchung, vorbefüllt aus einer bestehenden —
+   * Datum heute, ohne Belege und ohne Änderungskommentar.
+   */
+  template?: EditableTransaction;
   trigger?: ReactNode;
+  /**
+   * Gesteuert von außen (Tastaturkürzel „N“, Befehlspalette): dann ohne
+   * eigenen Auslöser, sofern kein `trigger` übergeben wird.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Fokus nach dem Schließen (globaler Dialog: zurück aufs Element davor) */
+  onCloseAutoFocus?: (e: Event) => void;
 }) {
   const { user } = useAuth();
   const { accounts, banks, categories, users, projects, splitTemplates, tags } = useFinanceData();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const isEdit = transaction !== undefined;
-  const [open, setOpen] = useState(false);
-  const [type, setType] = useState<TxType>(transaction?.type ?? defaultType);
-  const [amount, setAmount] = useState(transaction ? shareFormatter.format(transaction.amount / 100) : '');
-  const [accountId, setAccountId] = useState(transaction ? String(transaction.accountId) : '');
-  const [toAccountId, setToAccountId] = useState(transaction?.toAccountId ? String(transaction.toAccountId) : '');
-  const [categoryId, setCategoryId] = useState(transaction?.categoryId ? String(transaction.categoryId) : '');
-  const [userId, setUserId] = useState(transaction ? String(transaction.userId) : '');
-  const [projectId, setProjectId] = useState(transaction?.projectId ? String(transaction.projectId) : ''); // '' = Haushalt
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
+  // Vorbelegung: beim Bearbeiten die Buchung, beim Duplizieren die Vorlage
+  const source = transaction ?? template;
+  // Beim Duplizieren kein abgeschlossenes Projekt übernehmen — es nimmt
+  // keine neuen Buchungen mehr auf; beim Bearbeiten bleibt es, wie es ist
+  const seedProjectId = (id: number | null | undefined) =>
+    id && (isEdit || !projects.some((p) => p.id === id && p.closedAt)) ? String(id) : '';
+  const [type, setType] = useState<TxType>(source?.type ?? defaultType);
+  const [amount, setAmount] = useState(source ? shareFormatter.format(source.amount / 100) : '');
+  const [accountId, setAccountId] = useState(source ? String(source.accountId) : '');
+  const [toAccountId, setToAccountId] = useState(source?.toAccountId ? String(source.toAccountId) : '');
+  const [categoryId, setCategoryId] = useState(source?.categoryId ? String(source.categoryId) : '');
+  const [userId, setUserId] = useState(source ? String(source.userId) : '');
+  const [projectId, setProjectId] = useState(seedProjectId(source?.projectId)); // '' = Haushalt
   const [date, setDate] = useState(transaction?.date ?? todayISO());
-  const [note, setNote] = useState(transaction?.note ?? '');
-  const [splitEnabled, setSplitEnabled] = useState((transaction?.splits.length ?? 0) > 0);
+  const [note, setNote] = useState(source?.note ?? '');
+  const [splitEnabled, setSplitEnabled] = useState((source?.splits.length ?? 0) > 0);
   const [shares, setShares] = useState<Record<number, string>>(() => {
     const next: Record<number, string> = {};
-    for (const s of transaction?.splits ?? []) next[s.userId] = shareFormatter.format(s.amount / 100);
+    for (const s of source?.splits ?? []) next[s.userId] = shareFormatter.format(s.amount / 100);
     return next;
   });
   // Optionaler Kommentar für die Änderungshistorie (nur Edit-Modus)
@@ -104,7 +136,7 @@ export default function TransactionDialog({
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   // Gewählte Tags der Buchung + Inline-Bereich für "+ Neuer Tag"
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(transaction?.tags.map((t) => t.id) ?? []);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(source?.tags.map((t) => t.id) ?? []);
   const [newTagOpen, setNewTagOpen] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   // Inline-Anlage als Unterkategorie der aktuell gewählten Oberkategorie
@@ -112,7 +144,10 @@ export default function TransactionDialog({
   // Gewählte Beleg-Dateien (werden nach dem Speichern der Buchung hochgeladen)
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  // „Speichern & weitere“: Anzahl der in diesem Durchgang erfassten Buchungen
+  const [savedCount, setSavedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const amountInput = useRef<HTMLInputElement>(null);
 
   const createTx = trpc.finance.createTransaction.useMutation();
   const updateTx = trpc.finance.updateTransaction.useMutation();
@@ -168,7 +203,11 @@ export default function TransactionDialog({
   };
 
   const effectiveUserId = userId ? Number(userId) : (user?.id ?? 0);
-  const effectiveAccountId = accountId ? Number(accountId) : (accounts[0]?.id ?? 0);
+  // Buchen darf man nur auf Konten mit Bearbeitungsrecht; nur lesend
+  // sichtbare Konten taugen als Ziel einer Umbuchung, nicht als Quelle
+  const editableAccounts = accounts.filter((a) => a.access === 'edit');
+  const sourceOptions = editableAccounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }));
+  const effectiveAccountId = accountId ? Number(accountId) : (editableAccounts[0]?.id ?? 0);
   const effectiveToAccountId = toAccountId ? Number(toAccountId) : (accounts.find((a) => a.id !== effectiveAccountId)?.id ?? 0);
 
   const filteredCategories = useMemo(
@@ -187,6 +226,11 @@ export default function TransactionDialog({
       ...filteredCategories.filter((c) => c.parentId === root.id),
     ]);
   }, [filteredCategories]);
+
+  const usage = trpc.finance.categoryUsage.useQuery(undefined, { enabled: open && type !== 'transfer', staleTime: 60_000 });
+  const frequentCategories = (type === 'transfer' ? [] : (usage.data?.[type].frequent ?? []))
+    .map((id) => filteredCategories.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => c !== undefined);
 
   // Gewählte Kategorie, falls es eine Oberkategorie ist — dann kann die
   // Inline-Anlage optional eine Unterkategorie davon anlegen
@@ -249,7 +293,62 @@ export default function TransactionDialog({
     }
   };
 
-  const submit = async () => {
+  /**
+   * Vorschlag aus der Historie übernehmen (siehe NoteSuggestInput). Beim
+   * Bearbeiten nur die Notiz — sonst verschöbe ein Enter im Notizfeld die
+   * Buchung still auf ein anderes Konto oder in eine andere Kategorie.
+   */
+  const applySuggestion = (s: NoteSuggestion) => {
+    setNote(s.note);
+    if (isEdit) return;
+    if (s.categoryId !== null && categories.some((c) => c.id === s.categoryId && c.type === type)) {
+      setCategoryId(String(s.categoryId));
+    }
+    if (accounts.some((a) => a.id === s.accountId && a.access === 'edit')) {
+      setAccountId(String(s.accountId));
+    }
+    // Zielkonto nur, wenn es für mich sichtbar ist (Umbuchungen des Partners
+    // auf dessen Privatkonto)
+    if (type === 'transfer' && s.toAccountId !== null && accounts.some((a) => a.id === s.toAccountId)) {
+      setToAccountId(String(s.toAccountId));
+    }
+    if (s.projectId !== null && projects.some((p) => p.id === s.projectId && !p.closedAt)) {
+      setProjectId(String(s.projectId));
+    }
+    if (parseEuro(amount) <= 0) setAmount(shareFormatter.format(s.amount / 100));
+  };
+
+  /** Dialog öffnen/schließen — der Zähler gilt nur für einen Durchgang */
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    if (!next) setSavedCount(0);
+    // Neu öffnen beginnt beim heutigen Datum — auch wenn der Dialog seit
+    // gestern gemountet ist oder zuletzt ein Stapel rückdatiert wurde
+    if (next && !isEdit) setDate(todayISO());
+    // Duplizieren: jedes Öffnen beginnt wieder bei der Vorlage (nach dem
+    // Speichern waren Betrag, Notiz usw. geleert)
+    if (next && template && !isEdit) {
+      setType(template.type);
+      setAmount(shareFormatter.format(template.amount / 100));
+      setAccountId(String(template.accountId));
+      setToAccountId(template.toAccountId ? String(template.toAccountId) : '');
+      setCategoryId(template.categoryId ? String(template.categoryId) : '');
+      setUserId(String(template.userId));
+      setProjectId(seedProjectId(template.projectId));
+      setNote(template.note);
+      setSplitEnabled(template.splits.length > 0);
+      setShares(Object.fromEntries(template.splits.map((s) => [s.userId, shareFormatter.format(s.amount / 100)])));
+      setSelectedTagIds(template.tags.map((t) => t.id));
+    }
+  };
+
+  /**
+   * Speichern. Mit `keepOpen` (nur beim Anlegen) bleibt der Dialog offen:
+   * Art, Datum, Konto, Person und Projekt bleiben stehen, Betrag, Notiz,
+   * Kategorie, Aufteilung, Tags und Belege werden für die nächste Buchung
+   * geleert — so lässt sich ein Stapel Belege in einem Zug nachtragen.
+   */
+  const submit = async (keepOpen = false) => {
     const cents = parseEuro(amount);
     if (cents <= 0) { toast.error('Bitte einen gültigen Betrag eingeben.'); return; }
     if (!effectiveAccountId) { toast.error('Bitte zuerst ein Konto anlegen.'); return; }
@@ -291,7 +390,7 @@ export default function TransactionDialog({
         });
         toast.success('Buchung aktualisiert.');
         invalidate();
-        setOpen(false);
+        changeOpen(false);
         return;
       }
       // Erst die Buchung speichern, dann die Belege zur neuen ID hochladen
@@ -311,11 +410,17 @@ export default function TransactionDialog({
       }
       toast.success('Buchung gespeichert.');
       invalidate();
-      setOpen(false);
       setAmount(''); setNote(''); setCategoryId(''); setSplitEnabled(false); setShares({});
-      setProjectId(''); setSaveTplOpen(false); setSaveTplName('');
+      setSaveTplOpen(false); setSaveTplName('');
       setSelectedTagIds([]); setNewTagOpen(false); setNewTagName('');
       setFiles([]);
+      if (keepOpen) {
+        setSavedCount((n) => n + 1);
+        amountInput.current?.focus();
+        return;
+      }
+      changeOpen(false);
+      setProjectId('');
       setDate(todayISO());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Die Buchung konnte nicht gespeichert werden.');
@@ -378,54 +483,89 @@ export default function TransactionDialog({
   const isTransfer = type === 'transfer';
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button>
-            <Plus className="mr-2 h-4 w-4" /> Neue Buchung
-          </Button>
-        )}
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+    <Dialog open={open} onOpenChange={changeOpen}>
+      {(trigger || !controlled) && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button title="Neue Buchung (Taste N)">
+              <Plus className="mr-2 h-4 w-4" /> Neue Buchung
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        // Neue Buchung: gleich im Betragsfeld beginnen (Kürzel „n“)
+        onOpenAutoFocus={(e) => {
+          if (isEdit) return;
+          e.preventDefault();
+          amountInput.current?.focus();
+        }}
+        onCloseAutoFocus={onCloseAutoFocus}
+        onEscapeKeyDown={(e) => {
+          // Radix hört Escape schon in der Capture-Phase — bei offener
+          // Vorschlagsliste schließt Escape nur die Liste, nicht den Dialog
+          if ((e.target as HTMLElement | null)?.getAttribute?.('aria-expanded') === 'true') e.preventDefault();
+        }}
+        onKeyDown={(e) => {
+          // ⌘/Strg+Enter speichert, mit Umschalt „Speichern & weitere“
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !saving) {
+            e.preventDefault();
+            void submit(e.shiftKey && !isEdit);
+          }
+        }}
+      >
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Buchung bearbeiten' : 'Neue Buchung'}</DialogTitle>
+          <DialogTitle>{isEdit ? 'Buchung bearbeiten' : template ? 'Buchung duplizieren' : 'Neue Buchung'}</DialogTitle>
           <DialogDescription>
             {isEdit
               ? 'Bestehende Buchung anpassen — jede Änderung wird protokolliert.'
-              : 'Einnahme, Ausgabe oder Umbuchung zwischen Konten erfassen.'}
+              : savedCount > 0
+                ? `${savedCount} ${savedCount === 1 ? 'Buchung' : 'Buchungen'} erfasst — Datum, Konto und Person bleiben für die nächste stehen.`
+                : 'Einnahme, Ausgabe oder Umbuchung zwischen Konten erfassen.'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/40 p-1">
-            {([['expense', 'Ausgabe'], ['income', 'Einnahme'], ['transfer', 'Umbuchung']] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                disabled={isEdit}
-                title={isEdit ? 'Die Buchungsart kann nicht geändert werden — bitte löschen und neu anlegen.' : undefined}
-                className={cn(
-                  'rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
-                  'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground',
-                  type === value && 'bg-background text-foreground shadow-sm',
-                  type === value && value === 'expense' && 'text-negative',
-                  type === value && value === 'income' && 'text-positive',
-                )}
-                onClick={() => changeType(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <TypeSegment
+            value={type}
+            onChange={changeType}
+            disabled={isEdit}
+            disabledTitle="Die Buchungsart kann nicht geändert werden — bitte löschen und neu anlegen."
+          />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="amount">Betrag ({currencySymbol()})</Label>
-              <Input id="amount" inputMode="decimal" placeholder={amountPlaceholder} value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input
+                ref={amountInput} id="amount" inputMode="decimal" placeholder={amountPlaceholder}
+                value={amount} onChange={(e) => setAmount(e.target.value)}
+                // Enter springt zur Beschreibung (⌘/Strg+Enter speichert weiterhin)
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                    e.preventDefault();
+                    document.getElementById('note')?.focus();
+                  }
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="date">Datum</Label>
-              <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <DateField id="date" value={date} onChange={setDate} />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="note">Beschreibung</Label>
+            {/* Vorschläge aus früheren Buchungen belegen Kategorie, Konto,
+                Projekt und — bei leerem Feld — den Betrag vor */}
+            <NoteSuggestInput
+              id="note"
+              type={type}
+              placeholder="z. B. Wocheneinkauf Coop"
+              value={note}
+              onChange={setNote}
+              onPick={applySuggestion}
+            />
           </div>
 
           {isTransfer ? (
@@ -436,7 +576,7 @@ export default function TransactionDialog({
                   value={String(effectiveAccountId || '')}
                   onValueChange={setAccountId}
                   placeholder="Konto wählen"
-                  options={accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                  options={sourceOptions}
                 />
               </div>
               <div className="space-y-2">
@@ -447,7 +587,10 @@ export default function TransactionDialog({
                   placeholder="Zielkonto"
                   options={accounts
                     .filter((a) => a.id !== effectiveAccountId)
-                    .map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                    .map((a) => ({
+                      value: String(a.id),
+                      label: `${accountLabel(a, banks)}${a.access === 'view' ? ' (nur lesend)' : ''}`,
+                    }))}
                 />
               </div>
             </div>
@@ -459,7 +602,7 @@ export default function TransactionDialog({
                   value={String(effectiveAccountId || '')}
                   onValueChange={setAccountId}
                   placeholder="Konto wählen"
-                  options={accounts.map((a) => ({ value: String(a.id), label: accountLabel(a, banks) }))}
+                  options={sourceOptions}
                 />
               </div>
               <div className="space-y-2">
@@ -470,6 +613,8 @@ export default function TransactionDialog({
                   value={categoryId || 'none'}
                   onValueChange={(v) => setCategoryId(v === 'none' ? '' : v)}
                   placeholder="Optional"
+                  // Die meistgenutzten der letzten 90 Tage oben (B3)
+                  pinned={frequentCategories.map((c) => ({ value: String(c.id), label: c.name }))}
                   options={[
                     { value: 'none', label: 'Keine Kategorie' },
                     ...groupedCategories.map((c) => ({
@@ -616,7 +761,7 @@ export default function TransactionDialog({
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', detailsOpen && 'rotate-90')} />
-                Details (Person, Notiz, Projekt, Tags)
+                Details (Person, Projekt, Tags{isEdit ? ', Kommentar' : ''})
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
@@ -634,10 +779,6 @@ export default function TransactionDialog({
                     options={users.map((u) => ({ value: String(u.id), label: u.name }))}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="note">Notiz</Label>
-                  <Input id="note" placeholder="z. B. Wocheneinkauf" value={note} onChange={(e) => setNote(e.target.value)} />
-                </div>
                 {projects.length > 0 && (
                   <div className="space-y-2">
                     <Label>Projekt</Label>
@@ -647,7 +788,10 @@ export default function TransactionDialog({
                       onValueChange={(v) => setProjectId(v === 'household' ? '' : v)}
                       options={[
                         { value: 'household', label: 'Haushalt' },
-                        ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+                        // Abgeschlossene Projekte nur, wenn die Buchung schon dazugehört
+                        ...projects
+                          .filter((p) => !p.closedAt || String(p.id) === projectId)
+                          .map((p) => ({ value: String(p.id), label: p.closedAt ? `${p.name} (abgeschlossen)` : p.name })),
                       ]}
                     />
                   </div>
@@ -766,10 +910,23 @@ export default function TransactionDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Abbrechen</Button>
+          <Button variant="outline" onClick={() => changeOpen(false)}>
+            {savedCount > 0 ? 'Fertig' : 'Abbrechen'}
+          </Button>
+          {!isEdit && (
+            <Button
+              variant="outline"
+              onClick={() => void submit(true)}
+              disabled={saving}
+              title="Speichern und direkt die nächste Buchung erfassen (⌘/Strg+Umschalt+Enter)"
+            >
+              Speichern &amp; weitere
+            </Button>
+          )}
           <Button
-            onClick={submit}
+            onClick={() => void submit()}
             disabled={saving}
+            title="⌘/Strg+Enter"
           >
             {saving ? 'Speichern…' : isEdit ? 'Änderungen speichern' : 'Speichern'}
           </Button>

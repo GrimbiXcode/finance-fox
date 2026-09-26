@@ -118,21 +118,29 @@ export function ForecastTable({ scenario }: ForecastTableProps) {
                 ))}
               </SelectContent>
             </Select>
-            <Select
-              value={granularity}
-              onValueChange={v => setGranularity(v as ForecastGranularity)}
-            >
-              <SelectTrigger className="w-36 min-w-0 [&>span]:truncate">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {FORECAST_GRANULARITIES.map(g => (
-                  <SelectItem key={g} value={g}>
-                    Spalten: {FORECAST_GRANULARITY_LABELS[g]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* „Spalten“ als Beschriftung vor dem Feld statt im Trigger —
+                dort wurde „Spalten: Quartale“ abgeschnitten */}
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              Spalten
+              <Select
+                value={granularity}
+                onValueChange={v => setGranularity(v as ForecastGranularity)}
+              >
+                <SelectTrigger
+                  className="w-32 min-w-0 [&>span]:truncate"
+                  title={FORECAST_GRANULARITY_LABELS[granularity]}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FORECAST_GRANULARITIES.map(g => (
+                    <SelectItem key={g} value={g}>
+                      {FORECAST_GRANULARITY_LABELS[g]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 pt-2">

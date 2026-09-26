@@ -62,6 +62,10 @@ export const ONLINE_ONLY_PROCEDURES: ReadonlySet<string> = new Set([
   // in den nächsten Abgleich laufen
   "finance.resetFinanceData",
   "finance.importLocalFull",
+  // Sparziel abschließen löst ALLE Quellen — die Replik kennt aber nur die
+  // auf sichtbaren Konten; offline blieben Quellen auf fremden Privatkonten
+  // hängen und hielten deren Geld verplant
+  "finance.setGoalArchived",
   // Der Abgleich selbst
   "sync.claimDevice",
   "sync.pull",

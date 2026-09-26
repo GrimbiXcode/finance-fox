@@ -145,13 +145,13 @@ describe("updateRecurring (Rechte)", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("Konto-Wechsel ohne edit auf dem Zielkonto → NOT_FOUND", async () => {
+  it("Konto-Wechsel ohne edit auf dem Zielkonto → FORBIDDEN (nur Leserecht)", async () => {
     const priv = await insertAccount(owner.id);
     const id = await insertRecurring(owner); // Gemeinschaftskonto
     // Admin darf fremde Privatkonten nur ansehen (view), nicht bearbeiten
     await expect(
       callerFor(admin).finance.updateRecurring({ id, accountId: priv })
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("Umbuchung: Zielwechsel mit view aufs Ziel erlaubt, ohne Sichtbarkeit nicht", async () => {

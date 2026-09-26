@@ -229,7 +229,17 @@ describe("Tags: Zuordnung zu Buchungen", () => {
       })
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
-      message: "Konto nicht gefunden.",
+      message: "Buchung nicht gefunden.",
+    });
+    // Gleiche Antwort wie für eine ID, die es nicht gibt — kein Orakel
+    await expect(
+      callerFor(member).finance.setTransactionTags({
+        transactionId: 999_999,
+        tagIds: [tagA],
+      })
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Buchung nicht gefunden.",
     });
   });
 

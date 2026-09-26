@@ -18,8 +18,8 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   und den Abschnitt „Die App selbst durchklicken" in der Root-AGENTS.md.
   Die Route stellt ein reguläres Session-Cookie aus; am Auth-Pfad
   (`getSessionUser`, `verifySessionToken`) ändert sie **nichts**.
-- `router.ts` — `appRouter: { ping, auth, finance, forecast, insurance,
-  mortgage, pension }`. Der
+- `router.ts` — `appRouter: { ping, analysis, auth, dashboard, finance,
+  forecast, insurance, mortgage, pension, sync }`. Der
   Frontend-Client importiert den Typ `AppRouter` direkt von hier
   (`src/providers/trpc.tsx`) — Typänderungen wirken sofort auf den Client.
 - `middleware.ts` — tRPC-Setup: `publicQuery` / `authedQuery` / `adminQuery`.
@@ -32,11 +32,20 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   `auth.setQuickAccount` konfiguriert das Konto der Schnellerfassung pro
   Benutzer (`users.quick_account_id`, erfordert `edit`-Recht, null =
   automatisch); `auth.me` liefert `quickAccountId`. Tests:
-  `api/quickAccount.test.ts`.
+  `api/quickAccount.test.ts`. `auth.setDashboardLayout({ layout | null })`
+  speichert die Karten-Anordnung des Dashboards pro Benutzer
+  (`users.dashboard_layout`, JSON; null = Standard); `auth.me` liefert sie
+  bereinigt (`normalizeDashboardLayout` aus `contracts/dashboard.ts`:
+  Unbekanntes raus, neue Karten hinten sichtbar dran) plus
+  `dashboardCustomized`. Tests: `api/dashboardLayout.test.ts`.
 - `financeRouter.ts` — Konten (inkl. Besitz/Sichtbarkeit, Kontotypen,
   Banken), Transaktionen (inkl. CSV-Export/-Import), Kategorien, Tags,
   Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele.
 - `forecastRouter.ts` — Prognosen.
+- `dashboardRouter.ts` — Aggregate fürs Dashboard (siehe „Dashboard &
+  Auswertungen“).
+- `analysisRouter.ts` — Auswertungen (Monatsmatrix, Verlauf, Budget-Detail,
+  Fälligkeiten, Projekt-Zusammenfassung; siehe „Dashboard & Auswertungen“).
 - `pensionRouter.ts` — Vorsorge-Modul (Schweizer 3-Säulen-Prinzip, siehe
   Abschnitt „Vorsorge").
 - `mortgageRouter.ts` — Hypotheken-Modul (siehe Abschnitt „Hypotheken").
@@ -362,6 +371,14 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   "active"` (Angebote buchen nichts) und `premium > 0`. `endDate` der Police
   wird auf die Dauerbuchung übernommen — befristete Police, befristete
   Buchung.
+- **Bestehende Dauerbuchung verknüpfen**: `linkPremiumToRecurring({
+  policyId, recurringId })` trägt eine schon vorhandene Dauerbuchung als
+  Prämie ein, statt eine zweite anzulegen (häufig: Dauerauftrag älter als
+  die Police in der App). Nur Ausgaben, nur sichtbare (unsichtbare →
+  NOT_FOUND), nicht schon einer anderen Police zugeordnet (CONFLICT); die
+  Dauerbuchung bleibt unverändert. Das Audit nennt keinen Betrag — sie kann
+  auf einem Privatkonto liegen. Passende Kandidaten (gleicher Betrag und
+  Intervall) sucht das Frontend (`premiumMatches` in `src/lib/insurance.ts`).
 - **Kaskaden im Finanz-Modul**: `deleteAccount` nullt
   `insurance_policies.account_id` (die Police bleibt), `deleteRecurring`
   räumt `premium_recurring_id` ab, `resetFinanceData` löscht alle sechs
@@ -411,6 +428,18 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   `requireAccountAccess`, `visibleAccountIds`) — nicht nur im Frontend
   ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen) sind pro
   anfragendem Nutzer gefiltert.
+- **Fehlercodes**: `requireAccountAccess(…, "edit")` antwortet auf ein Konto,
+  das man nur **lesend** sieht, mit `FORBIDDEN` („Für das Konto „X“ hast du
+  nur Leserecht.“) — die Person weiß ja, dass es existiert. Ein
+  **unsichtbares** Konto bleibt `NOT_FOUND`, genau wie ein nicht
+  existierendes (kein Existenz-Orakel). Dieselbe Regel gilt für Buchungen,
+  Massen-Endpunkte und Ursprungsbuchungen: Unsichtbares verhält sich wie
+  Fehlendes. Endpunkte auf **eine** Buchung (Tags, Bearbeiten, Verlauf,
+  Löschen, Stornieren, Beleg-Routen) laden sie über
+  `requireTransactionAccess(db, user, id, "view" | "edit")`: unsichtbar →
+  „Buchung nicht gefunden.“ wie eine fehlende ID; `view` genügt, wenn Quell-
+  oder Zielkonto sichtbar ist; `edit` braucht das Recht aufs Buchungskonto,
+  sonst FORBIDDEN.
 - `finance.listAccounts` liefert pro Konto `owners: number[]`; die
   Besitzerliste ersetzt `finance.setAccountOwners` komplett (mindestens 1
   Besitzer, nur Besitzer oder Admin, Selbstentfernung erlaubt; Freigaben
@@ -438,6 +467,52 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
 
 ## Transaktionen
 
+- **Laden**: Das Frontend lädt die Buchungsliste **nicht** mehr pauschal
+  (`useFinanceData` enthält keine Buchungen). `finance.searchTransactions`
+  filtert (Zeitraum `from`/`to`, Art, Konto als Quelle oder Ziel, Kategorie
+  inkl. Unterkategorien bzw. `-1` = ohne, Person, Tag, Projekt `0` =
+  Haushalt, nur geteilte), sucht (Notiz, Kategorie- und Tag-Namen, Betrag in
+  beiden Schreibweisen — `parseAmountTerm`), sortiert (Datum, Betrag,
+  Kategorie, Konto, Person; Gleichstand Datum, dann ID) und blättert per
+  `cursor` (Versatz, passend zu tRPC-Infinite-Queries). `total`, `income`
+  und `expense` gelten für **alle** Treffer. Reine Logik in
+  `lib/transactionSearch.ts`, angereichert (Splits, Belege, Tags,
+  `changeCount`, `isReversed`) über `enrichTransactions` nur für die Seite.
+  `listTransactions` bleibt für Bericht und `sharedOnly` (Aufteilung).
+  `finance.categoryUsage` (zuletzt/häufig genutzte Kategorien je Art) und
+  `finance.noteSuggestions` (frühere Notizen mit Kategorie, Konto, Projekt,
+  Betrag; nur Konten mit `edit`) ignorieren Storno-Buchungen.
+  `listAccounts` liefert zusätzlich `txCount`; `finance.accountVisibility`
+  sagt nur, ob es verborgene Konten gibt (`hasHidden`) und wie viele man nur
+  lesend sieht — ohne Anzahl, Namen oder Beträge der verborgenen. Mit `id`
+  liefert `searchTransactions` genau eine (sichtbare) Buchung — für das
+  Detail-Blatt eines `fokus`-Links. Mit `accountId` trägt jede Zeile
+  `balanceAfter`: den Kontostand nach dieser Buchung, gerechnet aus
+  Anfangsbestand und **allen** Buchungen des Kontos (unabhängig von weiteren
+  Filtern; gleiche Reihenfolge wie die Datumssortierung: Datum, dann ID —
+  bei Datumssortierung folgt auch der Gleichstand der gewählten Richtung,
+  damit der Saldo aufsteigend wie absteigend Zeile für Zeile stimmt).
+  `note` filtert auf genau eine Notiz, normalisiert wie die Aufschlüsselung
+  nach Empfänger (`normalizeNote` aus `contracts/notes.ts`).
+  Tests: `api/transactionSearch.test.ts`.
+- **Stornos in Summen** (`contracts/flows.ts`, `withoutReversals`): Eine
+  stornierte Buchung und ihre Gegenbuchung zählen in **Einnahmen-/
+  Ausgaben-Summen** beide nicht — Dashboard, Budgets, Auswertungen,
+  Jahresvergleich, Bericht, Ø-variable Buchungen der Prognose, Summen der
+  Transaktionsliste (dort werden die Paare aus allen sichtbaren Zeilen
+  bestimmt, nicht nur aus den Treffern). Salden, Listen und die
+  Kostenaufteilung rechnen weiter mit beiden. Neue Summen-Endpunkte müssen
+  das ebenfalls tun. Tests: `api/reversals.test.ts`.
+- **Massenbearbeitung**: `finance.bulkUpdateTransactions({ ids, categoryId?,
+  projectId?, userId?, addTagIds?, removeTagIds? })` und
+  `finance.bulkDeleteTransactions({ ids })`, je höchstens 500. Erst prüfen
+  (Existenz, `edit` auf jedem Konto, Ziele), dann in einer Transaktion
+  schreiben — alles oder nichts. Eine Kategorie passt nur zu Buchungen
+  derselben Art (Umbuchungen haben keine): Unpassende werden übersprungen
+  und in `skipped` gezählt. Jede geänderte Buchung bekommt einen
+  Historien-Eintrag (Kommentar „Massenbearbeitung“) und einen Audit-Eintrag;
+  die Budget-Kipp-Prüfung läuft einmal für die ganze Auswahl. Tests:
+  `api/bulkTransactions.test.ts`.
 - **CSV-Import/-Export**: Format in `lib/csv.ts` (für de-Locales Semikolon +
   Dezimalkomma, sonst Komma + Dezimalpunkt, RFC-4180-Quoting; der Import
   erkennt das Trennzeichen automatisch). Kategorien werden rein per Name
@@ -489,10 +564,13 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   aber die Terminrechnung `advanceDate` (`lib/recurringSchedule.ts`) muss
   es kennen. `quarterly`/`semiannual` kamen mit dem Hypotheken-Modul dazu
   (Schweizer Hypothekarzins wird quartalsweise belastet).
-- **Terminrechnung**: `advanceDate` ist der Einzelschritt,
+- **Terminrechnung**: `advanceDate` ist der Einzelschritt (liegt mit
+  `localISO` und `nextOccurrenceAfter` in `contracts/planning.ts`, damit das
+  Frontend bei „Wiederkehrend machen“ dieselben Termine rechnet;
+  `lib/recurringSchedule.ts` exportiert beide weiter),
   `occurrencesInRange(rule, from, to, cap)` zählt alle Fälligkeiten eines
-  Zeitraums auf (inklusive Grenzen, `endDate` inklusiv respektiert). Beides in
-  `lib/recurringSchedule.ts` — die Schleife darüber lag früher dreifach
+  Zeitraums auf (inklusive Grenzen, `endDate` inklusiv respektiert). Die
+  Schleife liegt in `lib/recurringSchedule.ts` — die Schleife darüber lag früher dreifach
   kopiert im Cron-Job und in zwei Prognose-Endpunkten, wobei die beiden
   Prognose-Kopien `endDate` ignorierten (abgelaufene Regeln projizierten
   endlos weiter) und sich einen Zähler mit dem Vorspulen teilten (lange
@@ -521,6 +599,12 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   (endDate < heute) = „archiviert". Logik in `src/lib/recurring.ts`
   (`isRecurringArchived`, `sortRecurring`). Tests:
   `api/recurringEndDate.test.ts`.
+- **Aus einer Buchung** („Wiederkehrend machen“ im Detail-Blatt):
+  `createRecurring` nimmt optional `sourceTransactionId` (braucht `view` auf
+  deren Konto) und nennt die Ursprungsbuchung nur im Audit-Detail; das
+  Formular wird per URL vorbefüllt (`src/pages/Recurring.tsx`,
+  `formFromParams`). Der Audit-Eintrag trägt seit Welle 3 die ID der Regel —
+  das Aktivitäten-Log filtert Dauerbuchungen nach ihren Konten.
 
 ## Kategorien & Budgets
 
@@ -560,7 +644,18 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   (z. B. Urlaub). Endpunkte `finance.listProjects`/`createProject`/
   `deleteProject` — Löschen gesperrt (CONFLICT mit Anzahl), solange Buchungen
   referenzieren. `createTransaction` nimmt optional `projectId` (Existenz
-  wird geprüft). Tests: `api/projectsSplits.test.ts`.
+  wird geprüft). `finance.setProjectClosed({ id, closed })` setzt
+  `projects.closed_at` (erneutes Abschließen behält das erste Datum, Audit
+  `project.closed`/`project.reopened`). Abgeschlossen ist ein reiner
+  Oberflächen-Status: Der Server nimmt weiter Buchungen an — der Ausgleich
+  eines beendeten Urlaubs gehört noch ins Projekt. Tests:
+  `api/projectsSplits.test.ts`.
+- **Verbuchte Ausgleiche** erkennt `isSettlementShape`
+  (`contracts/settlement.ts`) an ihrer Form: Ausgabe, deren Betrag ganz eine
+  andere Person trägt — so legt sie „Verbuchen“ auf der Aufteilung an.
+  `analysis.projectSummary` zählt sie nicht als Projektkosten
+  (`settledTotal`/`settledCount`, je Person `settled`), die Aufteilung zeigt
+  sie als eigene Liste.
 - **Tags/Labels**: Tabellen `tags` (Name unique, Farbe) und
   `transaction_tags` (Unique-Index (transactionId, tagId)) — mehrere Tags pro
   Buchung, haushaltsweit (keine Konto-Bindung, keine Sichtbarkeitslogik; die
@@ -615,6 +710,22 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   ({accountId}, view-Recht). Nachträgliche Saldoänderungen können die Summe
   über den Saldo heben — gewollt, die Kappung in `sourceAmount` greift dann
   in der Fortschrittsanzeige.
+- **Archiv**: `finance.setGoalArchived({ id, archived })` setzt
+  `savings_goals.archived_at` und löst **im selben Schritt** alle Quellen
+  des Ziels (das Geld ist danach für neue Ziele frei; Zurückholen bringt die
+  Quellen nicht zurück). Bewusst **kein** gespeicherter Endbetrag: Er
+  enthielte Anteile fremder Privatkonten, die nicht jede Person sehen darf.
+  Archivierte Ziele fallen aus Prognose (`forecast.*`) und Bericht; die
+  Oberfläche zeigt sie unter „Archiv“. Audit `goal.archived`/
+  `goal.restored` (nur bei echtem Wechsel; erneutes Abschließen behält das
+  Datum). Die Prozedur steht in `ONLINE_ONLY_PROCEDURES`: Die Replik kennt
+  nur Quellen auf sichtbaren Konten und könnte die auf fremden Privatkonten
+  nicht lösen. Landet trotzdem eine Quelle an einem archivierten Ziel (ein
+  offline hinzugefügter Abgleich), zählt sie nirgends — `availableForAccount`
+  und `pillar3AccountSync` lesen über `liveSourcesOfAccount`,
+  `computeGoalProgress` ignoriert Quellen archivierter Ziele, Meilensteine
+  entfallen; `addGoalSource` lehnt archivierte Ziele ab, und Zurückholen
+  löst verbliebene Quellen. Tests: `api/dashboardLayout.test.ts`.
 - **Offene Sparziele (ohne Zielbetrag)**: `savings_goals.target_amount` ist
   nullable — NULL = offenes Ziel, der Fortschritt zeigt dann nur den
   angesparten Betrag. `createGoal`/`updateGoal` nehmen `targetAmount` nullish
@@ -677,8 +788,10 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   wiederkehrende Größen: Einnahmen werden skaliert, wiederkehrende Ausgaben
   der gewählten Oberkategorie inkl. Unterkategorien entfallen; Historie,
   Ist-Buchungen und variable Durchschnitte bleiben unverändert. Die Antwort
-  enthält die wirksamen Parameter im Feld `scenario`. Tests:
-  `api/scenario.test.ts`.
+  enthält die wirksamen Parameter im Feld `scenario`. `variableMonths`
+  (0–3) nennt, aus wie vielen abgeschlossenen Monaten mit Buchungen der Ø
+  variabler Buchungen stammt — die Prognosen-Seite sagt damit, ab wann die
+  Kurve belastbar ist. Tests: `api/scenario.test.ts`.
 - **Jahresvergleich**: `finance.yearComparison` liefert pro Ausgaben-
   Oberkategorie (Unterkategorien aufgerollt, Sichtbarkeitsfilter) die Summen
   von Jahr und Vorjahr; Ausgaben ohne Kategorie als Zeile `categoryId: null`.
@@ -708,9 +821,20 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   der Eintrag im selben Transaktionskontext landet). Instrumentiert sind die
   fachlichen Mutationen in `financeRouter.ts` und `authRouter.ts` (Login
   Erfolg/Fehlschlag, Logout, TOTP, Benutzer-Verwaltung, Profil, Passwort).
-  Lesen für alle Mitglieder über `finance.listAuditLog` (neueste zuerst,
-  Limit max 500, optionaler entity-Filter, userName/userColor gejoint).
-  Tests: `api/auditLog.test.ts`.
+  Lesen über `finance.listAuditLog` (neueste zuerst, Limit max 500, Filter
+  `entities`, `userId`, `othersOnly` — nur Einträge anderer Personen, ohne
+  System — und das Zeitfenster `since`/`until` in Epoch-Millisekunden, damit
+  der Client „heute“ in seiner Zeitzone rechnet; userName/userColor
+  gejoint). **Sichtbarkeit**
+  prüft `lib/auditVisibility.ts` je Eintrag: Vorsorge nur eigene (außer
+  Ehepartner-Verknüpfung), Buchungen, Konten und Dauerbuchungen nur mit
+  sichtbarem Konto, gelöschte (und ältere Dauerbuchungs-Einträge ohne ID)
+  nur Urheber und Admins, Sparziel-Quellen nur, wenn das im Detail genannte
+  Konto sichtbar ist; der Rest ist haushaltsweit. Wer einen neuen
+  Audit-Eintrag mit Kontobezug schreibt, loggt die Entity-ID und ergänzt
+  hier eine Regel. Bis 1.31 sah
+  jedes Mitglied alles, inklusive fremder Lohnbeträge. Tests:
+  `api/auditLog.test.ts`, `api/auditVisibility.test.ts`.
 
 ## Beleg-Anhänge
 
@@ -807,3 +931,47 @@ die Frontend-Seite steht in `src/AGENTS.md`.
     ausgeschriebenen Spaltensatz (nicht mehr, nicht weniger) und die
     Gegenprobe, dass die Rechnung mit den projizierten Zeilen dasselbe
     Ergebnis liefert.
+
+## Dashboard & Auswertungen
+
+- **`dashboard.summary({ month, today? })`**: Monatssummen mit Vormonat und
+  Vorjahresmonat, Vermögen (laufender Monat: alle Buchungen; sonst Stand am
+  Monatsende), 6-Monats-Cashflow, Ausgaben je Oberkategorie (`-1` = ohne),
+  letzte Buchungen, Aufteilungs-Salden (`contracts/settlement.ts`, geteilt
+  mit der Seite „Aufteilung“). `today` kommt vom Gerät, weil der Server oft
+  in UTC läuft. Optional `userId` („Meine Sicht“): Einnahmen, Ausgaben,
+  Kategorien, Cashflow und letzte Buchungen nur mit diesem Zahler (`userId`
+  der Buchung); Vermögen und Salden bleiben haushaltsweit.
+- **`dashboard.attention()`**: strukturierte Hinweise (`AttentionItem`) —
+  Budgets überschritten/zu schnell (`contracts/planning.ts`), Bargeld im
+  Minus, Dauerbuchungen der nächsten 7 Tage (nur solche, die der Cron noch
+  verbucht), offene Ausgleichszahlungen ab 1.00, Sparziele mit Stichtag, die
+  nicht reichen (ohne Ziele mit verborgenen Quellen), Hypotheken-Hinweise
+  (ohne Einrichtungs-Hinweise), dringende Versicherungs-Hinweise. Module
+  werden per `createCaller` gefragt (Muster: Bericht); scheitert eines,
+  erscheint `section_failed` statt einer leeren, beruhigenden Liste. Sätze
+  baut das Frontend (`src/lib/attention.ts`). Tests: `api/dashboard.test.ts`.
+- **`analysis.*`**: `categoryMatrix` (Kategorie × Monat, Oberkategorien
+  enthalten Unterkategorien, Summenzeile ohne Doppelzählung),
+  `monthlyTrend` (Einnahmen, Ausgaben, Sparquote), `budgetDetail`
+  (Perioden-Verlauf, Treffer-Quote ab der ersten Buchung,
+  Unterkategorien), `budgetCoverage` (unbudgetierte Ausgaben),
+  `categoryStats` (Ø 3/6 Monate, Maximum — Budgetvorschlag), `upcoming`
+  (Termine der Dauerbuchungen, Konten, die ins Minus fielen),
+  `projectSummary` (bezahlt/getragen je Person), `fixedCosts` (aktive
+  Dauerbuchungen auf den Monat umgerechnet vs. Ø der letzten sechs
+  abgeschlossenen Monate, größte Fixposten, Schwankung der variablen
+  Ausgaben je Oberkategorie), `breakdown({ dimension, type, from?, to?,
+  compare })` (Summen nach Kategorie/Person = Zahler/Konto/Tag/Projekt oder
+  `note` = Empfänger/Notiz — Groß-/Kleinschreibung und Leerzeichen
+  normalisiert, höchstens 50 Zeilen —, dazu der Vergleichszeitraum: gleich
+  lang davor oder `yearAgo`; `yearAgo` fällt auf „davor“ zurück, sobald
+  der Vorjahreszeitraum in den eigenen reichte (Spanne ab einem Jahr);
+  `rank: "count"` ordnet nach Anzahl — **vor** dem Kappen auf 50 Zeilen;
+  eine Buchung mit mehreren Tags zählt bei jedem).
+  `monthlyTrend`, `categoryMatrix` und `breakdown` nehmen optional `userId`
+  („Meine Sicht“, nach Zahler). Alles über sichtbare Konten und ohne
+  Storno-Paare (`flows` aus `visibleData`; `txs` nur für Salden). Tests:
+  `api/analysis.test.ts`.
+- **`finance.yearComparison({ year, upTo? })`**: mit `upTo` (`MM-TT`) nur
+  bis zu diesem Tag in beiden Jahren („bis heute“).

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, count, desc, eq, inArray, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lt, ne, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -40,10 +40,15 @@ import {
   CURRENCY_CODES,
   DEFAULT_CURRENCY,
   RECURRING_INTERVAL_LABELS,
+  PENCIL_COLORS,
   RECURRING_INTERVALS,
   TAG_COLORS,
 } from "@contracts/types";
 import type { ShareWeight } from "@contracts/splitShares";
+import {
+  DEFAULT_CATEGORIES,
+  DEFAULT_CATEGORY_KEYS,
+} from "@contracts/defaultCategories";
 import { runRecurringJob } from "./lib/recurringJob";
 import {
   CSV_HEADER,
@@ -60,6 +65,7 @@ import {
   listVisibleAccounts,
   ownerIdsOf,
   requireAccountAccess,
+  requireTransactionAccess,
   touchesVisibleAccount,
   visibleAccountIds,
 } from "./lib/accountAccess";
@@ -68,6 +74,7 @@ import {
   deleteInsuranceAttachmentsFor,
 } from "./lib/attachments";
 import { parseCamt053 } from "./lib/camt";
+import { withoutReversals } from "@contracts/flows";
 import { computeBudgetStatuses } from "./lib/budgets";
 import {
   availableForAccount,
@@ -81,6 +88,14 @@ import {
   normalizeIban,
 } from "./lib/accountTypes";
 import { auditAmount, logAudit } from "./lib/audit";
+import {
+  isAuditRowVisible,
+  type AuditVisibilityContext,
+} from "./lib/auditVisibility";
+import {
+  searchTransactions as searchTransactionRows,
+  transactionSearchInput,
+} from "./lib/transactionSearch";
 
 /** Einzahl/Mehrzahl für deutsche Fehlermeldungen */
 const kontoAnzahl = (n: number) => (n === 1 ? "1 Konto" : `${n} Konten`);
@@ -97,6 +112,94 @@ const txDetail = (t: {
   `${TYPE_LABELS[t.type]} ${auditAmount(t.amount)} am ${t.date}${t.note ? ` — ${t.note}` : ""}`;
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
+
+/** Lokales Datum als YYYY-MM-DD (Serverzeit, wie der Cron-Job) */
+const localIsoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+type TransactionRow = typeof transactions.$inferSelect;
+
+/**
+ * Buchungen um Aufteilung, Belege, Tags, Anzahl Änderungen und den
+ * Storno-Status ergänzen — geteilt von `listTransactions` und
+ * `searchTransactions` (dort nur für die geladene Seite).
+ * `candidates` sind alle **sichtbaren** Buchungen, damit „storniert“ auch
+ * dann stimmt, wenn die Gegenbuchung nicht in der Auswahl liegt — und auf dem
+ * Gerät (Replik enthält nur Sichtbares) dasselbe ergibt wie am Server.
+ */
+async function enrichTransactions(
+  db: ReturnType<typeof getDb>,
+  txs: TransactionRow[],
+  candidates: { stornoOfId: number | null }[]
+) {
+  if (txs.length === 0) return [];
+  const ids = txs.map(t => t.id);
+  const idSet = new Set(ids);
+  const [splits, attachments, tagRows, allTags, changeCounts] =
+    await Promise.all([
+      db.select().from(transactionSplits),
+      db
+        .select({
+          id: transactionAttachments.id,
+          transactionId: transactionAttachments.transactionId,
+          originalName: transactionAttachments.originalName,
+          mimeType: transactionAttachments.mimeType,
+          sizeBytes: transactionAttachments.sizeBytes,
+        })
+        .from(transactionAttachments),
+      db.select().from(transactionTags),
+      db.select().from(tags),
+      db
+        .select({
+          transactionId: transactionChanges.transactionId,
+          count: count(),
+        })
+        .from(transactionChanges)
+        .groupBy(transactionChanges.transactionId),
+    ]);
+  const group = <T extends { transactionId: number }, R>(
+    rows: T[],
+    map: (row: T) => R | undefined
+  ) => {
+    const out = new Map<number, R[]>();
+    for (const r of rows) {
+      if (!idSet.has(r.transactionId)) continue;
+      const value = map(r);
+      if (value === undefined) continue;
+      const list = out.get(r.transactionId) ?? [];
+      list.push(value);
+      out.set(r.transactionId, list);
+    }
+    return out;
+  };
+  const byTx = group(splits, s => ({ userId: s.userId, amount: s.amount }));
+  const attsByTx = group(attachments, a => ({
+    id: a.id,
+    originalName: a.originalName,
+    mimeType: a.mimeType,
+    sizeBytes: a.sizeBytes,
+  }));
+  const tagById = new Map(allTags.map(t => [t.id, t]));
+  const tagsByTx = group(tagRows, r => {
+    const tag = tagById.get(r.tagId);
+    return tag ? { id: tag.id, name: tag.name, color: tag.color } : undefined;
+  });
+  const changeCountByTx = new Map(
+    changeCounts.map(c => [c.transactionId, c.count])
+  );
+  const reversed = new Set(
+    candidates.map(t => t.stornoOfId).filter((id): id is number => id !== null)
+  );
+  return txs.map(t => ({
+    ...t,
+    splits: byTx.get(t.id) ?? [],
+    attachments: attsByTx.get(t.id) ?? [],
+    tags: tagsByTx.get(t.id) ?? [],
+    changeCount: changeCountByTx.get(t.id) ?? 0,
+    /** Es existiert eine Gegenbuchung (stornoOfId = id) */
+    isReversed: reversed.has(t.id),
+  }));
+}
 
 /** Ein Feld-Diff-Eintrag der Änderungshistorie (transaction_changes.changes) */
 type ChangeEntry = {
@@ -150,6 +253,13 @@ async function notifyGoalMilestones(
   }
 }
 
+/** Modus einer Sparziel-Quelle, wie ihn das Aktivitäten-Log zeigt */
+const GOAL_SOURCE_MODE_TEXT = {
+  full: "ganzer Saldo",
+  absolute: "fester Betrag",
+  percent: "Anteil in %",
+} as const;
+
 export const financeRouter = createRouter({
   /* --------------------------------- Konten --------------------------------- */
 
@@ -168,7 +278,10 @@ export const financeRouter = createRouter({
     ]);
     return accs.map(a => {
       let balance = a.initialBalance;
+      // Anzahl Buchungen, die das Konto berühren (Kontenseite)
+      let txCount = 0;
       for (const t of txs) {
+        if (t.accountId === a.id || t.toAccountId === a.id) txCount += 1;
         if (t.type === "transfer") {
           if (t.accountId === a.id) balance -= t.amount;
           if (t.toAccountId === a.id) balance += t.amount;
@@ -176,8 +289,26 @@ export const financeRouter = createRouter({
           balance += t.type === "income" ? t.amount : -t.amount;
         }
       }
-      return { ...a, balance };
+      return { ...a, balance, txCount };
     });
+  }),
+
+  /**
+   * Was steckt im angezeigten Vermögen? Ob es Konten gibt, die der Benutzer
+   * nicht sieht (Privatkonten anderer), und wie viele er nur lesend sieht
+   * (Admins bei fremden Privatkonten). Bewusst ohne Anzahl, Namen oder
+   * Beträge der verborgenen Konten — nur, dass die Summe nicht alles ist.
+   */
+  accountVisibility: authedQuery.query(async ({ ctx }) => {
+    const db = getDb();
+    const [visible, all] = await Promise.all([
+      listVisibleAccounts(db, ctx.user),
+      db.select({ id: accounts.id }).from(accounts),
+    ]);
+    return {
+      hasHidden: all.length > visible.length,
+      readOnly: visible.filter(a => a.access === "view").length,
+    };
   }),
 
   /**
@@ -952,6 +1083,80 @@ export const financeRouter = createRouter({
     }),
 
   /**
+   * Startkategorien aus `DEFAULT_CATEGORIES` anlegen (Wizard und
+   * Einstellungen). Idempotent: Eine vorhandene Oberkategorie gleichen Namens
+   * und Typs wird wiederverwendet und nur um fehlende Unterkategorien
+   * ergänzt — mehrfaches Aufrufen dupliziert nichts. Liefert die Anzahl neu
+   * angelegter Kategorien.
+   */
+  addDefaultCategories: authedQuery
+    .input(z.object({ keys: z.array(z.enum(DEFAULT_CATEGORY_KEYS)).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const wanted = new Set(input.keys);
+      const existing = await db.select().from(categories);
+      const same = (a: string, b: string) =>
+        a.trim().toLowerCase() === b.trim().toLowerCase();
+      let created = 0;
+      db.transaction(tx => {
+        DEFAULT_CATEGORIES.forEach((def, index) => {
+          if (!wanted.has(def.key)) return;
+          let root = existing.find(
+            c =>
+              c.parentId === null &&
+              c.type === def.type &&
+              same(c.name, def.name)
+          );
+          if (!root) {
+            const color = PENCIL_COLORS[index % PENCIL_COLORS.length];
+            const row = tx
+              .insert(categories)
+              .values({ name: def.name, type: def.type, color, parentId: null })
+              .returning()
+              .all()[0];
+            root = row;
+            created += 1;
+            logAudit(
+              tx,
+              ctx.user.id,
+              "category.created",
+              "category",
+              row.id,
+              def.name
+            );
+          }
+          for (const child of def.children) {
+            if (
+              existing.some(c => c.parentId === root.id && same(c.name, child))
+            ) {
+              continue;
+            }
+            const row = tx
+              .insert(categories)
+              .values({
+                name: child,
+                type: def.type,
+                color: root.color,
+                parentId: root.id,
+              })
+              .returning()
+              .all()[0];
+            created += 1;
+            logAudit(
+              tx,
+              ctx.user.id,
+              "category.created",
+              "category",
+              row.id,
+              child
+            );
+          }
+        });
+      });
+      return { created };
+    }),
+
+  /**
    * Kategorie umbenennen/umfärben/verschieben — der Typ ist unveränderlich
    * (dafür löschen + neu anlegen). parentId: undefined = unverändert,
    * null = zur Oberkategorie machen, Zahl = unter diese Oberkategorie hängen.
@@ -1143,6 +1348,46 @@ export const financeRouter = createRouter({
         input.name
       );
       return rows[0];
+    }),
+
+  /**
+   * Projekt abschließen bzw. wieder öffnen (H2). Abgeschlossen heißt: für
+   * neue Buchungen nicht mehr angeboten, in Filtern, Auswertung und der
+   * Aufteilung weiter da — der Urlaub ist vorbei, seine Kosten nicht.
+   */
+  setProjectClosed: authedQuery
+    .input(
+      z.object({ id: z.number().int().positive(), closed: z.boolean() })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.projects.findFirst({
+        where: eq(projects.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Projekt nicht gefunden.",
+        });
+      }
+      const closedAt = input.closed
+        ? (row.closedAt ?? localIsoDate(new Date()))
+        : null;
+      await db
+        .update(projects)
+        .set({ closedAt })
+        .where(eq(projects.id, input.id));
+      if ((row.closedAt !== null) !== input.closed) {
+        logAudit(
+          db,
+          ctx.user.id,
+          input.closed ? "project.closed" : "project.reopened",
+          "project",
+          input.id,
+          row.name
+        );
+      }
+      return { closedAt };
     }),
 
   /** Löschen nur, wenn keine Buchung mehr dem Projekt zugeordnet ist */
@@ -1353,16 +1598,12 @@ export const financeRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.transactionId),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.transactionId,
+        "edit"
+      );
       const wanted = [...new Set(input.tagIds)];
       const allTags = await db.select().from(tags);
       const known = new Map(allTags.map(t => [t.id, t]));
@@ -1397,86 +1638,236 @@ export const financeRouter = createRouter({
 
   /* ------------------------------- Transaktionen ------------------------------ */
 
-  listTransactions: authedQuery.query(async ({ ctx }) => {
+  /**
+   * Alle sichtbaren Buchungen, neueste zuerst. `sharedOnly` liefert nur
+   * Buchungen mit Aufteilung (Seite „Aufteilung“) — die Transaktionsliste
+   * selbst nutzt `searchTransactions` mit Filtern und Seitenbildung.
+   */
+  listTransactions: authedQuery
+    .input(z.object({ sharedOnly: z.boolean().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const visible = await visibleAccountIds(db, ctx.user);
+      const allTxs = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.date), desc(transactions.id));
+      // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
+      const visibleTxs = allTxs.filter(t => touchesVisibleAccount(visible, t));
+      let txs = visibleTxs;
+      if (input?.sharedOnly) {
+        const shared = new Set(
+          (
+            await db
+              .select({ id: transactionSplits.transactionId })
+              .from(transactionSplits)
+          ).map(r => r.id)
+        );
+        txs = txs.filter(t => shared.has(t.id));
+      }
+      return enrichTransactions(db, txs, visibleTxs);
+    }),
+
+  /**
+   * Buchungen suchen, filtern, sortieren und seitenweise laden
+   * (Transaktionsliste, Drilldowns von Dashboard/Budgets/Auswertung). Die
+   * Summen gelten für alle Treffer, nicht nur für die geladene Seite.
+   * Logik: `lib/transactionSearch.ts`.
+   */
+  searchTransactions: authedQuery
+    .input(transactionSearchInput)
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const [visibleAccs, allTxs, cats, userRows, tagRows, allTags, splitRows] =
+        await Promise.all([
+          listVisibleAccounts(db, ctx.user),
+          db.select().from(transactions),
+          db
+            .select({
+              id: categories.id,
+              name: categories.name,
+              parentId: categories.parentId,
+            })
+            .from(categories),
+          db.select({ id: users.id, name: users.name }).from(users),
+          db.select().from(transactionTags),
+          db.select({ id: tags.id, name: tags.name }).from(tags),
+          db
+            .select({ id: transactionSplits.transactionId })
+            .from(transactionSplits),
+        ]);
+      const visible = new Set(visibleAccs.map(a => a.id));
+      const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
+      const tagName = new Map(allTags.map(t => [t.id, t.name]));
+      const tagsByTx = new Map<number, { id: number; name: string }[]>();
+      for (const r of tagRows) {
+        const name = tagName.get(r.tagId);
+        if (name === undefined) continue;
+        const list = tagsByTx.get(r.transactionId) ?? [];
+        list.push({ id: r.tagId, name });
+        tagsByTx.set(r.transactionId, list);
+      }
+      const result = searchTransactionRows(txs, input, {
+        categories: cats,
+        accountNames: new Map(visibleAccs.map(a => [a.id, a.name])),
+        userNames: new Map(userRows.map(u => [u.id, u.name])),
+        tagsByTx,
+        sharedTxIds: new Set(splitRows.map(r => r.id)),
+      });
+      // Laufender Saldo (C7): bei genau einem Konto im Filter der Stand nach
+      // jeder Buchung — über ALLE Buchungen des Kontos gerechnet, damit er
+      // mit dem Kontoauszug übereinstimmt, auch wenn weitere Filter Zeilen
+      // ausblenden. Reihenfolge wie in der Liste: Datum, dann ID.
+      const balanceAfter = new Map<number, number>();
+      const account =
+        input.accountId !== undefined
+          ? visibleAccs.find(a => a.id === input.accountId)
+          : undefined;
+      if (account) {
+        let running = account.initialBalance;
+        const own = txs
+          .filter(t => t.accountId === account.id || t.toAccountId === account.id)
+          .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+        for (const t of own) {
+          if (t.type === "transfer") {
+            if (t.accountId === account.id) running -= t.amount;
+            if (t.toAccountId === account.id) running += t.amount;
+          } else {
+            running += t.type === "income" ? t.amount : -t.amount;
+          }
+          balanceAfter.set(t.id, running);
+        }
+      }
+      const enriched = await enrichTransactions(db, result.items, txs);
+      return {
+        ...result,
+        items: enriched.map(t => ({
+          ...t,
+          /** Nur bei Kontofilter gesetzt, sonst null */
+          balanceAfter: balanceAfter.get(t.id) ?? null,
+        })),
+      };
+    }),
+
+  /**
+   * Nutzung der Kategorien für Vorschläge: zuletzt verwendete Kategorie je
+   * Art (Schnellerfassung) und die meistgenutzten der letzten 90 Tage
+   * („Häufig“ im Kategorie-Select).
+   */
+  categoryUsage: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
-    const [allTxs, splits, attachments, tagRows, allTags, changeCounts] =
-      await Promise.all([
-        db
-          .select()
-          .from(transactions)
-          .orderBy(desc(transactions.date), desc(transactions.id)),
-        db.select().from(transactionSplits),
-        db
-          .select({
-            id: transactionAttachments.id,
-            transactionId: transactionAttachments.transactionId,
-            originalName: transactionAttachments.originalName,
-            mimeType: transactionAttachments.mimeType,
-            sizeBytes: transactionAttachments.sizeBytes,
-          })
-          .from(transactionAttachments),
-        db.select().from(transactionTags),
-        db.select().from(tags),
-        // Anzahl Änderungshistorie-Einträge pro Buchung („Bearbeitet"-Indikator)
-        db
-          .select({
-            transactionId: transactionChanges.transactionId,
-            count: count(),
-          })
-          .from(transactionChanges)
-          .groupBy(transactionChanges.transactionId),
-      ]);
-    // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
-    const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
-    const byTx = new Map<number, { userId: number; amount: number }[]>();
-    for (const s of splits) {
-      const list = byTx.get(s.transactionId) ?? [];
-      list.push({ userId: s.userId, amount: s.amount });
-      byTx.set(s.transactionId, list);
-    }
-    const attsByTx = new Map<
-      number,
-      {
-        id: number;
-        originalName: string;
-        mimeType: string;
-        sizeBytes: number;
-      }[]
-    >();
-    for (const a of attachments) {
-      const list = attsByTx.get(a.transactionId) ?? [];
-      list.push({
-        id: a.id,
-        originalName: a.originalName,
-        mimeType: a.mimeType,
-        sizeBytes: a.sizeBytes,
-      });
-      attsByTx.set(a.transactionId, list);
-    }
-    const tagById = new Map(allTags.map(t => [t.id, t]));
-    const tagsByTx = new Map<
-      number,
-      { id: number; name: string; color: string }[]
-    >();
-    for (const r of tagRows) {
-      const tag = tagById.get(r.tagId);
-      if (!tag) continue;
-      const list = tagsByTx.get(r.transactionId) ?? [];
-      list.push({ id: tag.id, name: tag.name, color: tag.color });
-      tagsByTx.set(r.transactionId, list);
-    }
-    const changeCountByTx = new Map(
-      changeCounts.map(c => [c.transactionId, c.count])
+    const rows = (
+      await db
+        .select({
+          type: transactions.type,
+          accountId: transactions.accountId,
+          toAccountId: transactions.toAccountId,
+          categoryId: transactions.categoryId,
+          date: transactions.date,
+          stornoOfId: transactions.stornoOfId,
+        })
+        .from(transactions)
+        .orderBy(desc(transactions.date), desc(transactions.id))
+    ).filter(
+      // Gegenbuchungen eines Stornos sind keine Nutzung der Kategorie
+      t =>
+        t.categoryId !== null &&
+        t.stornoOfId === null &&
+        touchesVisibleAccount(visible, t)
     );
-    return txs.map(t => ({
-      ...t,
-      splits: byTx.get(t.id) ?? [],
-      attachments: attsByTx.get(t.id) ?? [],
-      tags: tagsByTx.get(t.id) ?? [],
-      changeCount: changeCountByTx.get(t.id) ?? 0,
-    }));
+    const since = new Date();
+    since.setDate(since.getDate() - 90);
+    const sinceIso = localIsoDate(since);
+    const usage = (type: "income" | "expense") => {
+      const ofType = rows.filter(r => r.type === type);
+      const counts = new Map<number, number>();
+      for (const r of ofType) {
+        if (r.date < sinceIso) break; // Liste ist neueste zuerst
+        counts.set(r.categoryId!, (counts.get(r.categoryId!) ?? 0) + 1);
+      }
+      return {
+        last: ofType[0]?.categoryId ?? null,
+        frequent: [...counts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([id]) => id),
+      };
+    };
+    return { income: usage("income"), expense: usage("expense") };
   }),
+
+  /**
+   * Vorschläge beim Tippen der Notiz: frühere Buchungen mit passender Notiz,
+   * häufigste zuerst, mit der zuletzt verwendeten Kategorie, Konto, Projekt
+   * und Betrag. Nur Konten mit Bearbeitungsrecht werden vorgeschlagen.
+   */
+  noteSuggestions: authedQuery
+    .input(
+      z.object({
+        query: z.string().trim().min(2).max(100),
+        type: z.enum(["income", "expense", "transfer"]),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const accs = await listVisibleAccounts(db, ctx.user);
+      const editable = new Set(
+        accs.filter(a => a.access === "edit").map(a => a.id)
+      );
+      const needle = input.query.toLowerCase();
+      const rows = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.type, input.type))
+        .orderBy(desc(transactions.date), desc(transactions.id));
+      const byNote = new Map<
+        string,
+        {
+          note: string;
+          count: number;
+          categoryId: number | null;
+          accountId: number;
+          toAccountId: number | null;
+          projectId: number | null;
+          amount: number;
+          date: string;
+        }
+      >();
+      for (const t of rows) {
+        const note = t.note.trim();
+        if (t.stornoOfId !== null) continue; // Stornos nicht vorschlagen
+        if (!note || !note.toLowerCase().includes(needle)) continue;
+        if (!editable.has(t.accountId)) continue;
+        const key = note.toLowerCase();
+        const entry = byNote.get(key);
+        if (entry) {
+          entry.count += 1;
+          continue;
+        }
+        // Erste Fundstelle = neueste Buchung mit dieser Notiz
+        byNote.set(key, {
+          note,
+          count: 1,
+          categoryId: t.categoryId,
+          accountId: t.accountId,
+          toAccountId: t.toAccountId,
+          projectId: t.projectId,
+          amount: t.amount,
+          date: t.date,
+        });
+      }
+      // Anfangstreffer vor Treffern mitten im Wort, dann nach Häufigkeit
+      return [...byNote.values()]
+        .sort(
+          (a, b) =>
+            Number(b.note.toLowerCase().startsWith(needle)) -
+              Number(a.note.toLowerCase().startsWith(needle)) ||
+            b.count - a.count ||
+            b.date.localeCompare(a.date)
+        )
+        .slice(0, 6);
+    }),
 
   createTransaction: authedQuery
     .input(
@@ -1566,8 +1957,8 @@ export const financeRouter = createRouter({
         const goal = await db.query.savingsGoals.findFirst({
           where: eq(savingsGoals.id, goalId),
         });
-        // Offene Ziele (ohne Zielbetrag) haben keine Meilensteine
-        if (goal && goal.targetAmount !== null) {
+        // Offene und abgeschlossene Ziele haben keine Meilensteine
+        if (goal && goal.targetAmount !== null && !goal.archivedAt) {
           goalTotalsBefore.set(goalId, {
             goal,
             total: (await computeGoalProgress(db, null, goal)).total,
@@ -1685,16 +2076,12 @@ export const financeRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.id),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      const txRow = await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.id,
+        "edit"
+      );
       // Verschieben auf ein anderes Konto: „edit" auch dort erforderlich
       if (input.accountId !== undefined && input.accountId !== txRow.accountId) {
         await requireAccountAccess(db, ctx.user, input.accountId, "edit");
@@ -1997,16 +2384,12 @@ export const financeRouter = createRouter({
     .input(z.object({ transactionId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.transactionId),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "view");
+      await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.transactionId,
+        "view"
+      );
       const rows = await db
         .select({
           id: transactionChanges.id,
@@ -2032,16 +2415,12 @@ export const financeRouter = createRouter({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.id),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      const txRow = await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.id,
+        "edit"
+      );
       // Beleg-Zeilen + Dateien entfernen, bevor die Buchung gelöscht wird
       await deleteAttachmentsForTransactions(db, [input.id]);
       db.transaction(tx => {
@@ -2068,6 +2447,305 @@ export const financeRouter = createRouter({
     }),
 
   /**
+   * Massenbearbeitung (z. B. nach einem CAMT-Import): Kategorie, Projekt,
+   * Person und Tags für mehrere Buchungen in **einer** Transaktion setzen.
+   * Jede geänderte Buchung bekommt wie beim Einzel-Bearbeiten einen
+   * Historien- und einen Audit-Eintrag. Erst wird alles geprüft (Existenz,
+   * `edit`-Recht auf jedem Konto, Ziele der Änderung), dann geschrieben —
+   * ein Fehler ändert also nichts.
+   *
+   * Eine Kategorie passt nur zu Buchungen derselben Art; Umbuchungen haben
+   * keine. Solche Buchungen werden übersprungen und gezählt statt die ganze
+   * Auswahl abzulehnen (typisch: Auswahl enthält eine Umbuchung).
+   */
+  bulkUpdateTransactions: authedQuery
+    .input(
+      z
+        .object({
+          ids: z.array(z.number().int().positive()).min(1).max(500),
+          /** null = Kategorie entfernen */
+          categoryId: z.number().int().positive().nullable().optional(),
+          /** null = aus dem Projekt nehmen */
+          projectId: z.number().int().positive().nullable().optional(),
+          userId: z.number().int().positive().optional(),
+          addTagIds: z.array(z.number().int().positive()).max(50).optional(),
+          removeTagIds: z.array(z.number().int().positive()).max(50).optional(),
+        })
+        .refine(
+          i =>
+            i.categoryId !== undefined ||
+            i.projectId !== undefined ||
+            i.userId !== undefined ||
+            (i.addTagIds?.length ?? 0) > 0 ||
+            (i.removeTagIds?.length ?? 0) > 0,
+          { message: "Keine Änderung angegeben." }
+        )
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const ids = [...new Set(input.ids)];
+      const rows = await db
+        .select()
+        .from(transactions)
+        .where(inArray(transactions.id, ids));
+      // Unsichtbare Buchungen (fremde Privatkonten) melden wie fehlende —
+      // sonst verriete die Fehlermeldung, dass es sie gibt
+      const visibleIds = await visibleAccountIds(db, ctx.user);
+      if (
+        rows.length !== ids.length ||
+        rows.some(r => !touchesVisibleAccount(visibleIds, r))
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Mindestens eine Buchung wurde nicht gefunden.",
+        });
+      }
+      for (const accountId of new Set(rows.map(r => r.accountId))) {
+        await requireAccountAccess(db, ctx.user, accountId, "edit");
+      }
+      const [allCats, allProjects, allUsers, allTags, tagRows] =
+        await Promise.all([
+          db.select().from(categories),
+          db.select().from(projects),
+          db.select().from(users),
+          db.select().from(tags),
+          db
+            .select()
+            .from(transactionTags)
+            .where(inArray(transactionTags.transactionId, ids)),
+        ]);
+      const category =
+        input.categoryId === undefined || input.categoryId === null
+          ? null
+          : allCats.find(c => c.id === input.categoryId);
+      if (category === undefined) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Die angegebene Kategorie existiert nicht.",
+        });
+      }
+      if (
+        input.projectId &&
+        !allProjects.some(p => p.id === input.projectId)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Das angegebene Projekt existiert nicht.",
+        });
+      }
+      if (
+        input.userId !== undefined &&
+        !allUsers.some(u => u.id === input.userId && u.active)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Die angegebene Person existiert nicht.",
+        });
+      }
+      const knownTags = new Set(allTags.map(t => t.id));
+      const addTags = [...new Set(input.addTagIds ?? [])];
+      const removeTags = new Set(input.removeTagIds ?? []);
+      if ([...addTags, ...removeTags].some(id => !knownTags.has(id))) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Mindestens ein Tag existiert nicht.",
+        });
+      }
+
+      const catName = (id: number | null) =>
+        id === null ? null : (allCats.find(c => c.id === id)?.name ?? "?");
+      const projectName = (id: number | null) =>
+        id === null ? null : (allProjects.find(p => p.id === id)?.name ?? "?");
+      const userName = (id: number) =>
+        allUsers.find(u => u.id === id)?.name ?? "?";
+      const tagNames = (list: number[]) =>
+        list.map(id => allTags.find(t => t.id === id)?.name ?? "?").join(", ") ||
+        null;
+      const tagsByTx = new Map<number, number[]>();
+      for (const r of tagRows) {
+        tagsByTx.set(r.transactionId, [...(tagsByTx.get(r.transactionId) ?? []), r.tagId]);
+      }
+
+      type Plan = {
+        row: TransactionRow;
+        next: Pick<TransactionRow, "categoryId" | "projectId" | "userId">;
+        tagIds: number[] | null;
+        changes: ChangeEntry[];
+      };
+      const plans: Plan[] = [];
+      let skipped = 0;
+      for (const row of rows) {
+        const changes: ChangeEntry[] = [];
+        let categoryId = row.categoryId;
+        if (input.categoryId !== undefined) {
+          // Umbuchungen haben keine Kategorie: „entfernen“ ist dort keine
+          // Änderung, „setzen“ passt nicht
+          if (row.type === "transfer" && category !== null) {
+            skipped++;
+            continue;
+          }
+          if (category !== null && category.type !== row.type) {
+            skipped++;
+            continue;
+          }
+          if (row.type !== "transfer") categoryId = input.categoryId;
+        }
+        const next = {
+          categoryId,
+          projectId:
+            input.projectId === undefined ? row.projectId : input.projectId,
+          userId: input.userId ?? row.userId,
+        };
+        const push = (
+          field: string,
+          from: string | number | null,
+          to: string | number | null
+        ) => {
+          if (from !== to) changes.push({ field, from, to });
+        };
+        push("categoryId", catName(row.categoryId), catName(next.categoryId));
+        push("userId", userName(row.userId), userName(next.userId));
+        push("projectId", projectName(row.projectId), projectName(next.projectId));
+        const oldTags = tagsByTx.get(row.id) ?? [];
+        let tagIds: number[] | null = null;
+        if (addTags.length > 0 || removeTags.size > 0) {
+          const wanted = [
+            ...oldTags.filter(id => !removeTags.has(id)),
+            ...addTags.filter(id => !oldTags.includes(id)),
+          ];
+          const same =
+            wanted.length === oldTags.length &&
+            wanted.every(id => oldTags.includes(id));
+          if (!same) {
+            tagIds = wanted;
+            changes.push({
+              field: "tags",
+              from: tagNames(oldTags),
+              to: tagNames(wanted),
+            });
+          }
+        }
+        if (changes.length > 0) plans.push({ row, next, tagIds, changes });
+      }
+
+      const budgetsBefore = await computeBudgetStatuses(db, ctx.user);
+      const now = new Date();
+      db.transaction(tx => {
+        for (const plan of plans) {
+          tx.update(transactions)
+            .set(plan.next)
+            .where(eq(transactions.id, plan.row.id))
+            .run();
+          if (plan.tagIds !== null) {
+            tx.delete(transactionTags)
+              .where(eq(transactionTags.transactionId, plan.row.id))
+              .run();
+            for (const tagId of plan.tagIds) {
+              tx.insert(transactionTags)
+                .values({ transactionId: plan.row.id, tagId })
+                .run();
+            }
+          }
+          tx.insert(transactionChanges)
+            .values({
+              transactionId: plan.row.id,
+              userId: ctx.user.id,
+              comment: "Massenbearbeitung",
+              changes: JSON.stringify(plan.changes),
+              createdAt: now,
+            })
+            .run();
+        }
+      });
+      for (const plan of plans) {
+        const fields = plan.changes
+          .map(c => TX_CHANGE_FIELD_LABELS[c.field] ?? c.field)
+          .join(", ");
+        logAudit(
+          db,
+          ctx.user.id,
+          "transaction.updated",
+          "transaction",
+          plan.row.id,
+          `${txDetail(plan.row)} — geändert: ${fields} — Massenbearbeitung`
+        );
+      }
+
+      // Budget-Wächter wie beim Einzel-Bearbeiten: einmal für die ganze
+      // Auswahl, Meldung beim Kippen über 100 %
+      if (plans.length > 0) {
+        const budgetsAfter = await computeBudgetStatuses(db, ctx.user);
+        for (const status of budgetsAfter) {
+          const before = budgetsBefore.find(b => b.budget.id === status.budget.id);
+          if (before && before.percent <= 100 && status.percent > 100) {
+            const name = catName(status.budget.categoryId) ?? "Unbekannt";
+            await sendNotification(
+              db,
+              "budget",
+              `Budget überschritten: ${name}`,
+              `Das Budget „${name}“ liegt jetzt bei ${status.percent} %.`
+            );
+          }
+        }
+      }
+      return { updated: plans.length, skipped, unchanged: rows.length - plans.length - skipped };
+    }),
+
+  /**
+   * Mehrere Buchungen löschen — alles oder nichts: erst Rechte prüfen, dann
+   * Belege und Buchungen in einer Transaktion entfernen. Audit je Buchung.
+   */
+  bulkDeleteTransactions: authedQuery
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const ids = [...new Set(input.ids)];
+      const rows = await db
+        .select()
+        .from(transactions)
+        .where(inArray(transactions.id, ids));
+      // Unsichtbare Buchungen (fremde Privatkonten) melden wie fehlende —
+      // sonst verriete die Fehlermeldung, dass es sie gibt
+      const visibleIds = await visibleAccountIds(db, ctx.user);
+      if (
+        rows.length !== ids.length ||
+        rows.some(r => !touchesVisibleAccount(visibleIds, r))
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Mindestens eine Buchung wurde nicht gefunden.",
+        });
+      }
+      for (const accountId of new Set(rows.map(r => r.accountId))) {
+        await requireAccountAccess(db, ctx.user, accountId, "edit");
+      }
+      await deleteAttachmentsForTransactions(db, ids);
+      db.transaction(tx => {
+        tx.delete(transactionSplits)
+          .where(inArray(transactionSplits.transactionId, ids))
+          .run();
+        tx.delete(transactionTags)
+          .where(inArray(transactionTags.transactionId, ids))
+          .run();
+        tx.delete(transactionChanges)
+          .where(inArray(transactionChanges.transactionId, ids))
+          .run();
+        tx.delete(transactions).where(inArray(transactions.id, ids)).run();
+      });
+      for (const row of rows) {
+        logAudit(
+          db,
+          ctx.user.id,
+          "transaction.deleted",
+          "transaction",
+          row.id,
+          `${txDetail(row)} — Massenlöschung`
+        );
+      }
+      return { deleted: rows.length };
+    }),
+
+  /**
    * Buchung stornieren: legt eine Gegenbuchung mit heutigem Datum an, die
    * den Saldo-Effekt des Originals exakt aufhebt (Ausgabe → Einnahme,
    * Einnahme → Ausgabe, Umbuchung mit getauschten Konten; Splits werden
@@ -2085,16 +2763,12 @@ export const financeRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.id),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      const txRow = await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.id,
+        "edit"
+      );
       if (txRow.stornoOfId !== null) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -2271,10 +2945,13 @@ export const financeRouter = createRouter({
         nextDate: isoDate,
         // Optionales Enddatum (letztes verbuchtes Vorkommen, YYYY-MM-DD)
         endDate: isoDate.optional(),
+        /** „Wiederkehrend machen“: Ursprungsbuchung, nur fürs Audit-Log */
+        sourceTransactionId: z.number().int().positive().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      const { sourceTransactionId, ...values } = input;
       await requireAccountAccess(db, ctx.user, input.accountId, "edit");
       if (input.endDate && input.endDate < input.nextDate) {
         throw new TRPCError({
@@ -2298,21 +2975,39 @@ export const financeRouter = createRouter({
         // Zielkonto muss zumindest sichtbar sein (wie bei createTransaction)
         await requireAccountAccess(db, ctx.user, input.toAccountId, "view");
       }
-      await db.insert(recurring).values({
-        ...input,
-        // Kategorie ist bei Umbuchungen irrelevant
-        categoryId: input.type === "transfer" ? undefined : input.categoryId,
-        toAccountId: input.type === "transfer" ? input.toAccountId : undefined,
-        active: true,
-        createdAt: new Date(),
-      });
+      // Rückverweis nur auf eine Buchung, die man sehen darf — eine
+      // unsichtbare wird wie eine fehlende still übergangen (kein Hinweis
+      // auf ihre Existenz)
+      let source = "";
+      if (sourceTransactionId !== undefined) {
+        const src = await db.query.transactions.findFirst({
+          where: eq(transactions.id, sourceTransactionId),
+        });
+        const visibleIds = await visibleAccountIds(db, ctx.user);
+        if (src && touchesVisibleAccount(visibleIds, src)) {
+          source = ` (aus Buchung vom ${src.date})`;
+        }
+      }
+      const inserted = await db
+        .insert(recurring)
+        .values({
+          ...values,
+          // Kategorie ist bei Umbuchungen irrelevant
+          categoryId: input.type === "transfer" ? undefined : input.categoryId,
+          toAccountId: input.type === "transfer" ? input.toAccountId : undefined,
+          active: true,
+          createdAt: new Date(),
+        })
+        .returning({ id: recurring.id });
+      // Mit ID, damit das Aktivitäten-Log den Eintrag nach den Konten der
+      // Dauerbuchung filtern kann (auditVisibility)
       logAudit(
         db,
         ctx.user.id,
         "recurring.created",
         "recurring",
-        null,
-        `${TYPE_LABELS[input.type]} ${auditAmount(input.amount)}, ${RECURRING_INTERVAL_LABELS[input.interval].toLowerCase()} ab ${input.nextDate}${input.note ? ` — ${input.note}` : ""}`
+        inserted[0]?.id ?? null,
+        `${TYPE_LABELS[input.type]} ${auditAmount(input.amount)}, ${RECURRING_INTERVAL_LABELS[input.interval].toLowerCase()} ab ${input.nextDate}${input.note ? ` — ${input.note}` : ""}${source}`
       );
       return { ok: true };
     }),
@@ -2620,6 +3315,13 @@ export const financeRouter = createRouter({
           message: "Sparziel nicht gefunden.",
         });
       }
+      if (goal.archivedAt) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Das Sparziel ist abgeschlossen — erst aus dem Archiv zurückholen.",
+        });
+      }
       const account = await requireAccountAccess(
         db,
         ctx.user,
@@ -2717,7 +3419,7 @@ export const financeRouter = createRouter({
         "goal.sourceAdded",
         "goal",
         input.goalId,
-        `Konto „${account.name}“ (${input.mode})`
+        `Konto „${account.name}“ (${GOAL_SOURCE_MODE_TEXT[input.mode]})`
       );
       return { id: inserted[0].id };
     }),
@@ -2771,6 +3473,57 @@ export const financeRouter = createRouter({
         message:
           "Manuelle Einzahlungen sind nicht mehr möglich — verknüpfe das Sparziel mit einem Konto.",
       });
+    }),
+
+  /**
+   * Ziel abschließen und ins Archiv legen (bzw. mit `archived: false`
+   * zurückholen). Beim Archivieren werden **alle** Konto-Verknüpfungen
+   * gelöst — das Geld ist wieder frei für neue Ziele (wie beim Löschen,
+   * Sparziele sind haushaltsweit). Beiträge bleiben.
+   */
+  setGoalArchived: authedQuery
+    .input(
+      z.object({ id: z.number().int().positive(), archived: z.boolean() })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const goal = await db.query.savingsGoals.findFirst({
+        where: eq(savingsGoals.id, input.id),
+      });
+      if (!goal) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sparziel nicht gefunden." });
+      }
+      // „Zurückholen“ eines laufenden Ziels ist ein No-op — es darf seine
+      // Quellen nicht verlieren
+      if (!input.archived && goal.archivedAt === null) {
+        return { ok: true, archivedAt: null };
+      }
+      // Erneutes Abschließen behält das erste Datum (wie bei Projekten)
+      const archivedAt = input.archived
+        ? (goal.archivedAt ?? localIsoDate(new Date()))
+        : null;
+      db.transaction(tx => {
+        // In beide Richtungen alle Quellen lösen: beim Archivieren, damit
+        // das Geld frei wird; beim Zurückholen, damit eine über den Abgleich
+        // nachgereichte Quelle nicht unbemerkt wieder wirkt — das Ziel
+        // startet dann wie angekündigt ohne Verknüpfungen
+        tx.delete(goalSources).where(eq(goalSources.goalId, input.id)).run();
+        tx.update(savingsGoals)
+          .set({ archivedAt })
+          .where(eq(savingsGoals.id, input.id))
+          .run();
+      });
+      if ((goal.archivedAt !== null) !== input.archived) {
+        logAudit(
+          db,
+          ctx.user.id,
+          input.archived ? "goal.archived" : "goal.restored",
+          "goal",
+          input.id,
+          goal.name
+        );
+      }
+      return { ok: true, archivedAt };
     }),
 
   deleteGoal: authedQuery
@@ -3489,29 +4242,96 @@ export const financeRouter = createRouter({
       z
         .object({
           limit: z.number().int().min(1).max(500).default(100),
+          /** Veraltet: einzelner Bereich; neu `entities` */
           entity: z.string().max(50).optional(),
+          entities: z.array(z.string().max(50)).max(20).optional(),
+          userId: z.number().int().positive().optional(),
+          /** Nur Einträge anderer Personen (Dashboard „Zuletzt im Haushalt“) */
+          othersOnly: z.boolean().optional(),
+          /** Zeitfenster als Epoch-Millisekunden — der Client rechnet in
+           *  seiner Zeitzone („heute“, „letzte 7 Tage“) */
+          since: z.number().int().optional(),
+          until: z.number().int().optional(),
         })
         .optional()
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = getDb();
-      return db
-        .select({
-          id: auditLog.id,
-          userId: auditLog.userId,
-          action: auditLog.action,
-          entity: auditLog.entity,
-          entityId: auditLog.entityId,
-          detail: auditLog.detail,
-          createdAt: auditLog.createdAt,
-          userName: users.name,
-          userColor: users.color,
-        })
-        .from(auditLog)
-        .leftJoin(users, eq(auditLog.userId, users.id))
-        .where(input?.entity ? eq(auditLog.entity, input.entity) : undefined)
-        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-        .limit(input?.limit ?? 100);
+      const limit = input?.limit ?? 100;
+      const entities = input?.entities ?? (input?.entity ? [input.entity] : undefined);
+      const conditions = [
+        entities && entities.length > 0 ? inArray(auditLog.entity, entities) : undefined,
+        input?.userId !== undefined ? eq(auditLog.userId, input.userId) : undefined,
+        input?.othersOnly ? ne(auditLog.userId, ctx.user.id) : undefined,
+        input?.since !== undefined ? gte(auditLog.createdAt, new Date(input.since)) : undefined,
+        input?.until !== undefined ? lt(auditLog.createdAt, new Date(input.until)) : undefined,
+      ].filter(c => c !== undefined);
+      const [visibleAccs, allAccs, txRows, ruleRows] = await Promise.all([
+        listVisibleAccounts(db, ctx.user),
+        db.select({ id: accounts.id }).from(accounts),
+        db
+          .select({
+            id: transactions.id,
+            accountId: transactions.accountId,
+            toAccountId: transactions.toAccountId,
+          })
+          .from(transactions),
+        db
+          .select({
+            id: recurring.id,
+            accountId: recurring.accountId,
+            toAccountId: recurring.toAccountId,
+          })
+          .from(recurring),
+      ]);
+      const visibility: AuditVisibilityContext = {
+        user: ctx.user,
+        visibleAccountIds: new Set(visibleAccs.map(a => a.id)),
+        existingAccountIds: new Set(allAccs.map(a => a.id)),
+        transactions: new Map(txRows.map(t => [t.id, t])),
+        recurring: new Map(ruleRows.map(r => [r.id, r])),
+        visibleAccountNames: new Set(visibleAccs.map(a => a.name)),
+      };
+      // Sichtbarkeit wird nach dem Laden geprüft — deshalb in Blöcken lesen,
+      // bis `limit` sichtbare Einträge beisammen sind
+      const out: {
+        id: number;
+        userId: number | null;
+        action: string;
+        entity: string;
+        entityId: number | null;
+        detail: string;
+        createdAt: Date;
+        userName: string | null;
+        userColor: string | null;
+      }[] = [];
+      const CHUNK = 500;
+      for (let offset = 0; out.length < limit; offset += CHUNK) {
+        const rows = await db
+          .select({
+            id: auditLog.id,
+            userId: auditLog.userId,
+            action: auditLog.action,
+            entity: auditLog.entity,
+            entityId: auditLog.entityId,
+            detail: auditLog.detail,
+            createdAt: auditLog.createdAt,
+            userName: users.name,
+            userColor: users.color,
+          })
+          .from(auditLog)
+          .leftJoin(users, eq(auditLog.userId, users.id))
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+          .limit(CHUNK)
+          .offset(offset);
+        for (const r of rows) {
+          if (isAuditRowVisible(r, visibility)) out.push(r);
+          if (out.length >= limit) break;
+        }
+        if (rows.length < CHUNK) break;
+      }
+      return out;
     }),
 
   /* ------------------------------- Auswertung ------------------------------- */
@@ -3523,13 +4343,28 @@ export const financeRouter = createRouter({
    * Kategorie erscheinen als eigene Zeile (categoryId null).
    */
   yearComparison: authedQuery
-    .input(z.object({ year: z.number().int().min(2000).max(2100) }))
+    .input(
+      z.object({
+        year: z.number().int().min(2000).max(2100),
+        /**
+         * Vergleich „bis heute“: nur Buchungen bis zu diesem Tag (MM-TT) in
+         * beiden Jahren — sonst vergleicht man im September neun gegen
+         * zwölf Monate. Ohne Angabe: ganze Jahre.
+         */
+        upTo: z
+          .string()
+          .regex(/^\d{2}-\d{2}$/, "Tag als MM-TT")
+          .optional(),
+      })
+    )
     .query(async ({ ctx, input }) => {
       const db = getDb();
       const visible = await visibleAccountIds(db, ctx.user);
       const [allTxs, cats] = await Promise.all([
         db
           .select({
+            id: transactions.id,
+            stornoOfId: transactions.stornoOfId,
             type: transactions.type,
             accountId: transactions.accountId,
             toAccountId: transactions.toAccountId,
@@ -3545,12 +4380,13 @@ export const financeRouter = createRouter({
       const prevPrefix = `${input.year - 1}-`;
       // Schlüssel -1 = Ausgaben ohne Kategorie
       const sums = new Map<number, { current: number; previous: number }>();
-      for (const t of allTxs) {
+      for (const t of withoutReversals(allTxs)) {
         if (t.type !== "expense" || !touchesVisibleAccount(visible, t)) {
           continue;
         }
         const isCurrent = t.date.startsWith(yearPrefix);
         if (!isCurrent && !t.date.startsWith(prevPrefix)) continue;
+        if (input.upTo && t.date.slice(5) > input.upTo) continue;
         const rootId =
           t.categoryId === null
             ? -1
@@ -3587,6 +4423,11 @@ export const financeRouter = createRouter({
         });
       }
       rows.sort((a, b) => b.current - a.current);
-      return { year: input.year, prevYear: input.year - 1, rows };
+      return {
+        year: input.year,
+        prevYear: input.year - 1,
+        upTo: input.upTo ?? null,
+        rows,
+      };
     }),
 });

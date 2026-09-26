@@ -14,8 +14,20 @@ import { cn } from '@/lib/utils';
 type ViewMode = 'chart' | 'list';
 const VIEW_KEY = 'ff-moneyflow-view';
 
-/** Letzte Darstellungsart aus localStorage lesen (Default: Diagramm) */
-const readViewMode = (): ViewMode => (localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'chart');
+/**
+ * Letzte Darstellungsart aus localStorage lesen. Ohne gespeicherte Wahl:
+ * unter 640 px die Liste (das Diagramm müsste man dort zusammenkneifen),
+ * sonst das Diagramm.
+ */
+const readViewMode = (): ViewMode => {
+  try {
+    const stored = localStorage.getItem(VIEW_KEY);
+    if (stored === 'list' || stored === 'chart') return stored;
+  } catch {
+    // ohne Speicher: Standard nach Breite
+  }
+  return window.matchMedia('(max-width: 639px)').matches ? 'list' : 'chart';
+};
 
 /** Geldfluss-Übersicht: Konten als Knoten, Dauerbuchungen als gerichtete Ströme */
 export default function MoneyFlow() {
@@ -71,8 +83,14 @@ export default function MoneyFlow() {
 
       {!isLoading && accounts.length === 0 && (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Noch keine Konten — lege zuerst ein Konto an, um Geldflüsse zu sehen.
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-muted-foreground">
+              Noch keine Konten — der Geldfluss verbindet Konten über Dauerbuchungen. Lege zuerst
+              ein Konto an.
+            </p>
+            <Button asChild variant="outline">
+              <Link to="/konten">Zu den Konten</Link>
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -81,8 +99,9 @@ export default function MoneyFlow() {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-muted-foreground">
-              Noch keine wiederkehrenden Buchungen — lege eine Dauerbuchung an, um Geldflüsse zu
-              sehen.
+              Noch keine Dauerbuchungen — Lohn, Miete oder der Dauerauftrag aufs Sparkonto
+              werden hier als Ströme zwischen deinen Konten sichtbar, sobald sie als Dauerbuchung
+              erfasst sind.
             </p>
             <Button asChild variant="outline">
               <Link to="/wiederkehrend">Zu den Dauerbuchungen</Link>
@@ -103,6 +122,7 @@ export default function MoneyFlow() {
               gestrichelte Linien sind pausierte Dauerbuchungen. Tippe auf ein Konto oder fahre mit
               der Maus darüber, um seine Ströme hervorzuheben — die Beträge erscheinen dann auch als
               Liste unter dem Diagramm.
+              <span className="block pt-1 sm:hidden">Tipp: Handy quer halten — oder oben auf die Liste wechseln.</span>
             </CardDescription>
             {flow.dense && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-xs text-muted-foreground">

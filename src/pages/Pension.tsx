@@ -81,6 +81,7 @@ import PensionFundDialog, {
 } from "@/components/PensionFundDialog";
 import PensionFundStatement from "@/components/PensionFundStatement";
 import AhvYearsDialog from "@/components/AhvYearsDialog";
+import SetupChecklist from "@/components/SetupChecklist";
 import AhvStatement from "@/components/AhvStatement";
 import PensionPillar3Dialog, {
   type DialogPillar3,
@@ -106,7 +107,8 @@ import { useAuth } from "@/providers/auth";
 import { toast } from "sonner";
 import { CHART } from "@/lib/chartColors";
 import Note from "@/components/Note";
-import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import InfoTip from "@/components/InfoTip";
+import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, hatch } from "@/lib/chartTheme";
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
 
@@ -447,7 +449,7 @@ function OverviewSection({
                 <div className="text-xs text-muted-foreground">
                   Monatliches Einkommen im Alter
                 </div>
-                <div className="font-serif text-xl font-semibold text-positive">
+                <div className="font-serif text-xl font-semibold tabular-nums text-positive">
                   {formatCents(forecast.monthlyRetirementIncome)}
                 </div>
               </div>
@@ -529,7 +531,8 @@ function OverviewSection({
                   {forecast.replacementRate != null
                     ? `${forecast.replacementRate} %`
                     : "—"}
-                </span>
+                </span>{" "}
+                <InfoTip term="ersatzrate" />
               </div>
               <div>
                 <span className="text-muted-foreground">Aktuelles Netto: </span>
@@ -620,7 +623,17 @@ function OverviewSection({
               )}
             </div>
 
-            {chartData.length > 1 && (
+            {/* Ohne Kapital in Säule 2 oder 3a zeigte das Diagramm nur eine
+                Nulllinie — dann lieber der Hinweis, was fehlt */}
+            {chartData.length > 1 &&
+              !chartData.some(d => d["Säule 2"] > 0 || d["Säule 3a"] > 0) && (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                  Das Kapital-Diagramm erscheint, sobald eine Pensionskasse oder
+                  ein Säule-3a-Konto erfasst ist.
+                </p>
+              )}
+            {chartData.length > 1 &&
+              chartData.some(d => d["Säule 2"] > 0 || d["Säule 3a"] > 0) && (
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
@@ -646,10 +659,8 @@ function OverviewSection({
                     <YAxis
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(v: number) =>
-                        `${(v / 1000).toFixed(0)}k ${currencySymbol()}`
-                      }
-                      width={80}
+                      tickFormatter={axisMoney}
+                    width={AXIS_MONEY_WIDTH}
                     />
                     <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                     <Legend iconType="square" iconSize={10} />
@@ -1146,7 +1157,7 @@ function SalarySection({
           </div>
           <div className="text-right">
             <div className="text-xs text-muted-foreground">Aktuelles Netto</div>
-            <div className="font-serif text-lg font-semibold text-positive">
+            <div className="font-serif text-lg font-semibold tabular-nums text-positive">
               {currentNet != null ? formatCents(currentNet) : "—"}
             </div>
           </div>
@@ -1808,11 +1819,14 @@ function AhvCalculation() {
           <div className="text-xs text-muted-foreground">
             Berechnete Monatsrente
           </div>
-          <div className="font-serif text-2xl font-semibold">
+          <div className="font-serif text-2xl font-semibold tabular-nums">
             {formatCents(d.monthlyPension)}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="label">Skala {d.duration.scale}/44</Badge>
+            <span className="inline-flex items-center gap-1">
+              <Badge variant="label">Skala {d.duration.scale}/44</Badge>
+              <InfoTip term="rentenskala" />
+            </span>
             {gaps > 0 && (
               <Badge variant="stamp" tone="warn">
                 {gaps} {gaps === 1 ? "Lücke" : "Lücken"}
@@ -2102,7 +2116,7 @@ function FundsSection({
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="font-serif text-xl font-semibold">
+                  <span className="font-serif text-xl font-semibold tabular-nums">
                     {formatCents(f.currentCapital)}
                   </span>
                 </div>
@@ -2206,7 +2220,7 @@ function Pillar3Section({ pillars }: { pillars: Pillar3Row[] }) {
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
                 <div className="flex items-baseline justify-between">
-                  <span className="font-serif text-xl font-semibold">
+                  <span className="font-serif text-xl font-semibold tabular-nums">
                     {formatCents(balance)}
                   </span>
                 </div>
@@ -2325,6 +2339,71 @@ function HistoryCard() {
 
 /* ---------------------------------- Seite ---------------------------------- */
 
+/**
+ * Was der Vorsorge noch fehlt und was es freischaltet — statt Nullkarten.
+ * Jede offene Angabe hat ihren Dialog direkt am Punkt.
+ */
+function PensionChecklist({
+  hasSalary,
+  ahv,
+  ahvYears,
+  hasFunds,
+  hasPillar3,
+}: {
+  hasSalary: boolean;
+  ahv: AhvRow | null;
+  ahvYears: number;
+  hasFunds: boolean;
+  hasPillar3: boolean;
+}) {
+  const button = (label: string) => (
+    <Button size="sm" variant="outline" className="shrink-0">
+      <Plus className="mr-1.5 h-4 w-4" /> {label}
+    </Button>
+  );
+  return (
+    <SetupChecklist
+      title="Vorsorge vervollständigen"
+      description="Jede Angabe macht die Prognose genauer — fehlende Säulen rechnet sie mit null."
+      items={[
+        {
+          key: "salary",
+          done: hasSalary,
+          label: "Lohn erfassen",
+          unlocks: "Nettolohn, Abzüge und die Sparbeiträge der Pensionskasse",
+          action: <SalaryDialog trigger={button("Lohn")} />,
+        },
+        {
+          key: "ahv",
+          done: ahv !== null && ahvYears > 0,
+          label: "AHV-Angaben und Beitragsjahre",
+          unlocks: "AHV-Rente (1. Säule) und Lücken in den Beitragsjahren",
+          action:
+            ahv === null ? (
+              <AhvDialog ahv={null} trigger={button("AHV")} />
+            ) : (
+              <AhvYearsDialog trigger={button("Beitragsjahre")} />
+            ),
+        },
+        {
+          key: "fund",
+          done: hasFunds,
+          label: "Pensionskasse erfassen",
+          unlocks: "Altersguthaben und Rente der 2. Säule (Versicherungsausweis)",
+          action: <PensionFundDialog trigger={button("Pensionskasse")} />,
+        },
+        {
+          key: "pillar3",
+          done: hasPillar3,
+          label: "Säule 3a erfassen",
+          unlocks: "Kapital der 3. Säule im Diagramm und in der Prognose",
+          action: <PensionPillar3Dialog trigger={button("Säule 3a")} />,
+        },
+      ]}
+    />
+  );
+}
+
 export default function Pension() {
   const profileQuery = trpc.pension.getProfile.useQuery();
   const profile = profileQuery.data ?? null;
@@ -2348,6 +2427,17 @@ export default function Pension() {
   const pillar3Query = trpc.pension.listPillar3.useQuery(undefined, {
     enabled: hasProfile,
   });
+  const ahvYearsQuery = trpc.pension.listAhvYears.useQuery(undefined, {
+    enabled: hasProfile,
+  });
+  // Checkliste erst zeigen, wenn alles geladen ist — sonst blinken „offene“
+  // Punkte kurz auf
+  const checklistReady =
+    salariesQuery.isSuccess &&
+    ahvQuery.isSuccess &&
+    fundsQuery.isSuccess &&
+    pillar3Query.isSuccess &&
+    ahvYearsQuery.isSuccess;
 
   return (
     <div className="space-y-6">
@@ -2364,6 +2454,15 @@ export default function Pension() {
         <SetupCard />
       ) : (
         <>
+          {checklistReady && (
+            <PensionChecklist
+              hasSalary={(salariesQuery.data ?? []).length > 0}
+              ahv={ahvQuery.data ?? null}
+              ahvYears={(ahvYearsQuery.data ?? []).length}
+              hasFunds={(fundsQuery.data ?? []).length > 0}
+              hasPillar3={(pillar3Query.data ?? []).length > 0}
+            />
+          )}
           <OverviewSection
             forecast={forecastQuery.data}
             isLoading={forecastQuery.isLoading}

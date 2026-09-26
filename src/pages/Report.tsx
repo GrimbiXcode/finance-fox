@@ -53,7 +53,8 @@ export default function Report() {
   const hasData = useMemo<Record<ReportSection, boolean | undefined>>(
     () => ({
       accounts: accounts.data && accounts.data.length > 0,
-      goals: goals.data && goals.data.length > 0,
+      // Abgeschlossene Ziele stehen nicht im Bericht (lib/report/data.ts)
+      goals: goals.data && goals.data.some((g) => g.archivedAt === null),
       mortgages: mortgage.data && mortgage.data.count > 0,
       pension: pension.data !== undefined ? pension.data !== null : undefined,
       insurances: insurance.data && insurance.data.count > 0,

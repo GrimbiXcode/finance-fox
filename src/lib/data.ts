@@ -1,13 +1,18 @@
 import { trpc } from '@/providers/trpc';
 
-/** Gemeinsamer Hook: lädt alle Finanzdaten des Haushalts */
+/**
+ * Gemeinsamer Hook: Stammdaten des Haushalts (Konten, Kategorien, Budgets,
+ * Dauerbuchungen, …). Bewusst **ohne** die Buchungsliste — die wächst mit
+ * jedem Monat, und fast jede Seite braucht nur einen Ausschnitt oder ein
+ * Aggregat: `finance.searchTransactions` (Liste, gefiltert und seitenweise),
+ * `dashboard.summary` (Monatszahlen), `listAccounts` (Salden, `txCount`).
+ */
 export function useFinanceData() {
   const accounts = trpc.finance.listAccounts.useQuery();
   const accountTypes = trpc.finance.listAccountTypes.useQuery();
   const banks = trpc.finance.listBanks.useQuery();
   const categories = trpc.finance.listCategories.useQuery();
   const tags = trpc.finance.listTags.useQuery();
-  const transactions = trpc.finance.listTransactions.useQuery();
   const budgets = trpc.finance.listBudgets.useQuery();
   const recurring = trpc.finance.listRecurring.useQuery();
   const goals = trpc.finance.listGoals.useQuery();
@@ -16,7 +21,7 @@ export function useFinanceData() {
   const users = trpc.auth.listUsers.useQuery();
 
   const isLoading = accounts.isLoading || accountTypes.isLoading || banks.isLoading
-    || categories.isLoading || tags.isLoading || transactions.isLoading
+    || categories.isLoading || tags.isLoading
     || budgets.isLoading || recurring.isLoading || goals.isLoading
     || projects.isLoading || splitTemplates.isLoading || users.isLoading;
 
@@ -26,7 +31,6 @@ export function useFinanceData() {
     banks: banks.data ?? [],
     categories: categories.data ?? [],
     tags: tags.data ?? [],
-    transactions: transactions.data ?? [],
     budgets: budgets.data ?? [],
     recurring: recurring.data ?? [],
     goals: goals.data ?? [],
@@ -55,10 +59,20 @@ export function useInvalidateFinance() {
   const utils = trpc.useUtils();
   return () => {
     utils.finance.listAccounts.invalidate();
+    utils.finance.accountVisibility.invalidate();
     utils.finance.accountBalanceHistory.invalidate();
     utils.finance.listAccountTypes.invalidate();
     utils.finance.listBanks.invalidate();
     utils.finance.listTransactions.invalidate();
+    utils.finance.searchTransactions.invalidate();
+    utils.finance.categoryUsage.invalidate();
+    utils.finance.noteSuggestions.invalidate();
+    utils.finance.hasData.invalidate();
+    utils.dashboard.summary.invalidate();
+    utils.dashboard.attention.invalidate();
+    // Alle Auswertungen (Matrix, Trend, Budget-Verlauf, Fälligkeiten, Projekte)
+    utils.analysis.invalidate();
+    utils.finance.listAuditLog.invalidate();
     utils.finance.listTransactionChanges.invalidate();
     utils.finance.listBudgets.invalidate();
     utils.finance.listBudgetStatus.invalidate();
@@ -100,6 +114,8 @@ export function useInvalidateMortgage() {
     // Eine neue Liegenschaft verschiebt die Gebäude-Lücke
     utils.insurance.gapAnalysis.invalidate();
     utils.insurance.summary.invalidate();
+    // Zinsbindung/Restschuld erscheinen unter „Was ansteht“
+    utils.dashboard.attention.invalidate();
   };
 }
 
@@ -116,6 +132,8 @@ export function useInvalidateInsurance() {
     // Übernommene Prämien landen in den Dauerbuchungen und der Prognose
     utils.finance.listRecurring.invalidate();
     utils.forecast.balance.invalidate();
+    // Kündigungsfristen und Lücken erscheinen unter „Was ansteht“
+    utils.dashboard.attention.invalidate();
   };
 }
 

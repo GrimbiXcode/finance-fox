@@ -14,10 +14,10 @@ import {
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { ForecastTable } from '@/components/ForecastTable';
 import { trpc } from '@/providers/trpc';
-import { currencySymbol, formatCents, formatMonth, formatMonthYearShort, getUserLocale } from '@/lib/finance';
+import { formatCents, formatMonth, formatMonthYearShort, getUserLocale } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
-import { AXIS_PROPS, CURSOR_LINE, GRID_PROPS, activeDotFor, dotFor } from '@/lib/chartTheme';
+import { AXIS_MONEY_WIDTH, AXIS_PROPS, axisMoney, CURSOR_LINE, GRID_PROPS, activeDotFor, dotFor } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { pencil } from '@/lib/pencil';
 
@@ -183,8 +183,8 @@ export default function Forecasts() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 basis-72">
               <CardTitle className="flex items-center gap-2">
                 <LineChartIcon className="h-5 w-5 text-muted-foreground" />
                 Kontostand-Prognose
@@ -193,6 +193,16 @@ export default function Forecasts() {
                 Gesamtvermögen: 6 Monate zurück + Projektion (Dauerbuchungen + durchschnittliche variable Ausgaben der letzten 3 Monate)
                 {hasNetWorth && ' — „Vermögen" bezieht Liegenschaften und Hypotheken ein (Verkehrswert konstant fortgeschrieben)'}
               </CardDescription>
+              {/* Mindest-Zeitraum nennen (A3): der Ø stammt aus bis zu drei
+                  abgeschlossenen Monaten — vorher ist die Kurve nur so gut
+                  wie die Dauerbuchungen */}
+              {balance.data && balance.data.variableMonths < 3 && (
+                <p className="pt-1 text-xs text-muted-foreground">
+                  {balance.data.variableMonths === 0
+                    ? 'Noch kein abgeschlossener Monat mit Buchungen — die Projektion rechnet vorerst nur mit den Dauerbuchungen. Ab dem ersten vollen Monat fließen die variablen Ausgaben ein, belastbar wird es ab drei Monaten.'
+                    : `Der Durchschnitt der variablen Buchungen stammt erst aus ${balance.data.variableMonths === 1 ? 'einem Monat' : 'zwei Monaten'} — belastbar wird die Projektion ab drei abgeschlossenen Monaten.`}
+                </p>
+              )}
               {(balance.data?.mortgageMissingRecurring ?? 0) > 0 && (
                 <p className="pt-1 text-xs text-warning">
                   {balance.data!.mortgageMissingRecurring} Hypotheken-Posten ohne
@@ -202,9 +212,9 @@ export default function Forecasts() {
               )}
             </div>
             {endBalance !== undefined && (
-              <div className="text-right">
+              <div className="shrink-0 sm:text-right">
                 <div className="text-xs text-muted-foreground">Voraussichtlich in {months} Monaten</div>
-                <div className={cn('font-serif text-xl font-semibold', endBalance < 0 ? 'text-destructive' : 'text-positive')}>
+                <div className={cn('font-serif text-xl font-semibold tabular-nums', endBalance < 0 ? 'text-destructive' : 'text-positive')}>
                   {formatCents(endBalance)}
                 </div>
               </div>
@@ -218,8 +228,8 @@ export default function Forecasts() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8 }}>
                 <CartesianGrid {...GRID_PROPS} />
-                <XAxis dataKey="month" {...AXIS_PROPS} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(1)}k ${currencySymbol()}`} width={70} />
+                <XAxis dataKey="month" {...AXIS_PROPS} tick={{ fontSize: 11 }} minTickGap={16} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={axisMoney} width={AXIS_MONEY_WIDTH} />
                 <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                 <Legend iconType="plainline" iconSize={14} />
                 <ReferenceLine y={0} stroke="hsl(var(--rule-strong))" />

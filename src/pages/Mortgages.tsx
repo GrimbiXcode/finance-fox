@@ -49,22 +49,24 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../api/router";
 import { useFinanceData } from "@/lib/data";
 import {
-  currencySymbol,
   formatBp,
   formatCents,
   formatDate,
   getUserLocale,
-  totalBalance,
 } from "@/lib/finance";
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { trpc } from "@/providers/trpc";
 import { cn } from "@/lib/utils";
 import { CHART } from "@/lib/chartColors";
 import Note from "@/components/Note";
-import { CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, hatch } from "@/lib/chartTheme";
+import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, hatch } from "@/lib/chartTheme";
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
+import { warningText } from "@/lib/mortgageText";
+import SetupChecklist from "@/components/SetupChecklist";
 import { pencil } from "@/lib/pencil";
+import InfoTip from "@/components/InfoTip";
+import KpiCard from "@/components/KpiCard";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
 type Schedule = inferRouterOutputs<AppRouter>["mortgage"]["forecast"];
@@ -121,31 +123,6 @@ const TRANCHE_KIND_LABELS: Record<string, string> = {
   variable: "Variabel",
 };
 
-/**
- * Hinweise kommen als strukturierte Daten vom Server — Beträge, Prozente
- * und Datumsangaben werden erst hier locale-konform formatiert.
- */
-function warningText(w: Schedule["warnings"][number]): string {
-  switch (w.kind) {
-    case "no_market_value":
-      return "Ohne Verkehrswert lassen sich Belehnung und Tragbarkeit nicht berechnen.";
-    case "ltv_exceeded":
-      return `Die Belehnung liegt bei ${formatBp(w.ltvBp)} % und übersteigt die Grenze von ${formatBp(w.maxLtvBp)} %.`;
-    case "no_income":
-      return "Ohne Bruttojahreseinkommen lässt sich die Tragbarkeit nicht berechnen.";
-    case "affordability_exceeded":
-      return `Die Tragbarkeit liegt bei ${formatBp(w.ratioBp)} % des Bruttoeinkommens (Richtwert: höchstens 33 %).`;
-    case "amortization_uncovered":
-      return `Die Amortisationspflicht der 2. Hypothek von ${formatCents(w.required)} pro Jahr ist nicht gedeckt — erfasst sind ${formatCents(w.actual)}.`;
-    case "maturity_due":
-      return `Die Zinsbindung von „${w.tranche}“ läuft am ${formatDate(w.date)} ab.`;
-    case "maturity_passed":
-      return `Die Zinsbindung von „${w.tranche}“ ist am ${formatDate(w.date)} abgelaufen.`;
-    case "stale_balance":
-      return `Die Restschuld von „${w.tranche}“ ist per ${formatDate(w.date)} erfasst — bitte aktualisieren.`;
-  }
-}
-
 /* ------------------------------ Leerer Zustand ---------------------------- */
 
 function SetupCard() {
@@ -182,51 +159,90 @@ function Kpi({
   label,
   value,
   hint,
+  info,
   icon,
   tone,
 }: {
   label: string;
   value: string;
   hint?: string;
+  info?: React.ReactNode;
   icon: React.ReactNode;
   tone?: "warn";
 }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div
-          className={cn(
-            "font-serif text-2xl font-semibold",
-            tone === "warn" && "text-destructive"
-          )}
-        >
-          {value}
-        </div>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
+    <KpiCard
+      title={label}
+      info={info}
+      icon={icon}
+      value={value}
+      valueClassName={tone === "warn" ? "text-destructive" : undefined}
+    >
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </KpiCard>
   );
 }
 
 /* -------------------------------- Übersicht ------------------------------- */
 
+/**
+ * Aktion zu einem Hinweis: „bitte aktualisieren“ soll ein Klick sein.
+ * Veraltete Restschuld und ablaufende Zinsbindung öffnen die betroffene
+ * Tranche, fehlender Verkehrswert oder fehlendes Einkommen die Liegenschaft.
+ */
+function WarningAction({
+  warning,
+  property,
+  tranches,
+}: {
+  warning: Schedule["warnings"][number];
+  property: PropertyRow;
+  tranches: TrancheRow[];
+}) {
+  const link = (label: string) => (
+    <Button variant="link" size="sm" className="h-auto px-1 py-0 text-note-foreground underline">
+      {label}
+    </Button>
+  );
+  if (warning.kind === "no_market_value" || warning.kind === "no_income") {
+    return (
+      <MortgagePropertyDialog
+        property={property}
+        trigger={link(warning.kind === "no_income" ? "Einkommen erfassen" : "Verkehrswert erfassen")}
+      />
+    );
+  }
+  if (
+    warning.kind === "stale_balance" ||
+    warning.kind === "maturity_due" ||
+    warning.kind === "maturity_passed"
+  ) {
+    const tranche = tranches.find(t => t.name === warning.tranche);
+    if (!tranche) return null;
+    return (
+      <MortgageTrancheDialog
+        propertyId={property.id}
+        tranche={tranche}
+        trigger={link(warning.kind === "stale_balance" ? "Restschuld aktualisieren" : "Konditionen erfassen")}
+      />
+    );
+  }
+  return null;
+}
+
 function OverviewSection({
   property,
   schedule,
   isLoading,
+  tranches,
 }: {
   property: PropertyRow;
   schedule: Schedule | undefined;
   isLoading: boolean;
+  tranches: TrancheRow[];
 }) {
-  const { accounts, transactions } = useFinanceData();
-  const liquid = totalBalance(accounts, transactions);
+  const { accounts } = useFinanceData();
+  const liquid = accounts.reduce((sum, a) => sum + a.balance, 0);
 
   if (isLoading || !schedule) {
     return <p className="text-sm text-muted-foreground">Lade Berechnung…</p>;
@@ -254,7 +270,7 @@ function OverviewSection({
 
   return (
     <section className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Kpi
           label="Restschuld"
           value={formatCents(totals.debt)}
@@ -275,6 +291,7 @@ function OverviewSection({
         />
         <Kpi
           label="Belehnung"
+          info={<InfoTip term="belehnung" />}
           value={ltv.bp === null ? "—" : `${formatBp(ltv.bp)} %`}
           hint={
             ltv.bp === null
@@ -300,7 +317,7 @@ function OverviewSection({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
-            <div className="font-serif text-2xl font-semibold">{formatCents(netWorth)}</div>
+            <div className="font-serif text-2xl font-semibold tabular-nums">{formatCents(netWorth)}</div>
             <div className="flex justify-between gap-2">
               <span className="min-w-0 text-muted-foreground">Kontosalden</span>
               <span className="shrink-0 font-medium">{formatCents(liquid)}</span>
@@ -332,6 +349,7 @@ function OverviewSection({
             <CardTitle className="flex items-center gap-2 text-base">
               <Scale className="h-5 w-5 text-muted-foreground" />
               Tragbarkeit
+              <InfoTip term="tragbarkeit" />
             </CardTitle>
             <CardDescription>
               Kalkulatorischer Zins {formatBp(property.calcInterestRateBp)} %,
@@ -342,7 +360,7 @@ function OverviewSection({
           <CardContent className="space-y-1.5 text-sm">
             <div
               className={cn(
-                "font-serif text-2xl font-semibold",
+                "font-serif text-2xl font-semibold tabular-nums",
                 affordability.affordable === false && "text-destructive"
               )}
             >
@@ -367,8 +385,9 @@ function OverviewSection({
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="min-w-0 text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
                 Pflicht-Amortisation
+                <InfoTip term="pflichtAmortisation" />
               </span>
               <span className="shrink-0 font-medium">
                 {formatCents(affordability.requiredAmortization)}
@@ -397,7 +416,10 @@ function OverviewSection({
         <Note title="Hinweise" icon={AlertTriangle}>
           <ul className="list-inside list-disc space-y-1">
             {schedule.warnings.map((w, i) => (
-              <li key={`${w.kind}-${i}`}>{warningText(w)}</li>
+              <li key={`${w.kind}-${i}`}>
+                {warningText(w)}{" "}
+                <WarningAction warning={w} property={property} tranches={tranches} />
+              </li>
             ))}
           </ul>
         </Note>
@@ -437,14 +459,12 @@ function OverviewSection({
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(v: number) =>
-                      `${(v / 1000).toFixed(0)}k ${currencySymbol()}`
-                    }
-                    width={80}
+                    tickFormatter={axisMoney}
+                    width={AXIS_MONEY_WIDTH}
                   />
                   <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
                   <Legend iconType="square" iconSize={10} />
-                  {bands.map(b => (
+                  {bands.map((b, i) => (
                     <ReferenceArea
                       ifOverflow="hidden"
                       key={`${b.name}-${b.year}`}
@@ -453,9 +473,14 @@ function OverviewSection({
                       stroke={CHART.warning}
                       strokeOpacity={0.8}
                       fill="none"
+                      // Beschriftungen gestaffelt: Läuft mehr als eine Tranche
+                      // im selben oder nächsten Jahr ab, lagen sie aufeinander.
+                      // Linksbündig ab der Marke — mittig wurde ein Ablauf im
+                      // ersten Jahr am Rand abgeschnitten.
                       label={{
                         value: `Ablauf ${b.name}`,
-                        position: "insideTop",
+                        position: "insideTopLeft",
+                        offset: 6 + (i % 3) * 13,
                         fontSize: 10,
                         fill: CHART.muted,
                       }}
@@ -587,7 +612,7 @@ function TranchesSection({
                 </div>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
-                <div className="font-serif text-xl font-semibold">{formatCents(t.principal)}</div>
+                <div className="font-serif text-xl font-semibold tabular-nums">{formatCents(t.principal)}</div>
                 <div className="flex justify-between gap-2">
                   <span className="min-w-0 text-muted-foreground">Zinssatz</span>
                   <span className="shrink-0 font-medium">
@@ -741,7 +766,7 @@ function AmortizationSection({
                 </div>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
-                <div className="font-serif text-xl font-semibold">{formatCents(a.amount)}</div>
+                <div className="font-serif text-xl font-semibold tabular-nums">{formatCents(a.amount)}</div>
                 {a.kind === "direct" && tranche && (
                   <div className="flex justify-between gap-2">
                     <span className="min-w-0 text-muted-foreground">Tranche</span>
@@ -873,6 +898,85 @@ function HistoryCard() {
   );
 }
 
+/**
+ * Was der Liegenschaft noch fehlt und was es freischaltet — statt Nullwerten
+ * bei Belehnung und Tragbarkeit.
+ */
+function MortgageChecklist({
+  property,
+  tranches,
+  schedule,
+}: {
+  property: PropertyRow;
+  tranches: TrancheRow[];
+  schedule: Schedule | undefined;
+}) {
+  if (!schedule) return null;
+  const kinds = new Set(schedule.warnings.map(w => w.kind));
+  const stale = schedule.warnings.find(w => w.kind === "stale_balance");
+  const staleTranche =
+    stale && stale.kind === "stale_balance"
+      ? tranches.find(t => t.name === stale.tranche)
+      : undefined;
+  // Der Server setzt Verweise auf gelöschte Dauerbuchungen auf null; die
+  // Liste der sichtbaren Dauerbuchungen taugt nicht zur Prüfung (liegt die
+  // Regel auf einem fremden Privatkonto, bliebe der Punkt ewig offen)
+  const withoutRecurring = tranches.filter(
+    t => t.principal > 0 && t.interestRecurringId === null
+  );
+  const button = (label: string) => (
+    <Button size="sm" variant="outline" className="shrink-0">
+      {label}
+    </Button>
+  );
+  return (
+    <SetupChecklist
+      title="Liegenschaft vervollständigen"
+      items={[
+        {
+          key: "value",
+          done: !kinds.has("no_market_value"),
+          label: "Verkehrswert erfassen",
+          unlocks: "Belehnung und Nettovermögen inklusive Immobilie",
+          action: <MortgagePropertyDialog property={property} trigger={button("Liegenschaft")} />,
+        },
+        {
+          key: "income",
+          done: !kinds.has("no_income"),
+          label: "Bruttojahreseinkommen des Haushalts erfassen",
+          unlocks: "Tragbarkeit nach Bankenregel",
+          action: <MortgagePropertyDialog property={property} trigger={button("Liegenschaft")} />,
+        },
+        {
+          key: "tranches",
+          done: tranches.length > 0,
+          label: "Hypothekar-Tranchen erfassen",
+          unlocks: "Zinskosten, Restschuld und Zinsbindungs-Fristen",
+          action: <MortgageTrancheDialog propertyId={property.id} trigger={button("Tranche")} />,
+        },
+        {
+          key: "balance",
+          done: tranches.length > 0 && !stale,
+          label: staleTranche
+            ? `Restschuld von „${staleTranche.name}“ aktualisieren`
+            : "Restschulden aktuell",
+          unlocks: "Schuldenverlauf und Belehnung stimmen",
+          action: staleTranche && (
+            <MortgageTrancheDialog propertyId={property.id} tranche={staleTranche} trigger={button("Tranche")} />
+          ),
+        },
+        {
+          key: "recurring",
+          done: tranches.length > 0 && withoutRecurring.length === 0,
+          label: "Hypothekarzins als Dauerbuchung übernehmen",
+          unlocks:
+            "Zinsen erscheinen in Fixkosten, Fälligkeiten und Kontoprognose (Knopf mit den Pfeilen auf der Tranche)",
+        },
+      ]}
+    />
+  );
+}
+
 /* ---------------------------------- Seite --------------------------------- */
 
 export default function Mortgages() {
@@ -973,11 +1077,21 @@ export default function Mortgages() {
               </CardContent>
             </Card>
           ) : (
+            <>
+            {tranchesQuery.isSuccess && (
+              <MortgageChecklist
+                property={property}
+                tranches={tranchesQuery.data}
+                schedule={scheduleQuery.data}
+              />
+            )}
             <OverviewSection
               property={property}
               schedule={scheduleQuery.data}
               isLoading={scheduleQuery.isLoading}
+              tranches={tranchesQuery.data ?? []}
             />
+            </>
           )}
 
           <TranchesSection

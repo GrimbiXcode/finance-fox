@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isNull } from "drizzle-orm";
 import { FORECAST_GRANULARITIES } from "@contracts/types";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -13,6 +14,7 @@ import {
 } from "./lib/accountAccess";
 import { computeBudgetStatuses } from "./lib/budgets";
 import { progressFromBalances } from "./lib/goalProgress";
+import { withoutReversals } from "@contracts/flows";
 import { localISO } from "./lib/recurringSchedule";
 import {
   addMonths, aggregatePeriods, monthDelta, monthEndISO, monthKey,
@@ -49,7 +51,9 @@ async function excludedCategories(
  * in der Simulation).
  */
 function averageVariable(
-  txs: {
+  allTxs: {
+    id: number;
+    stornoOfId: number | null;
     type: "income" | "expense" | "transfer";
     date: string;
     amount: number;
@@ -57,7 +61,9 @@ function averageVariable(
   }[],
   recurringIds: Set<number>,
   currentKey: string
-): { income: number; expense: number } {
+): { income: number; expense: number; months: number } {
+  // Stornierte Buchungen samt Gegenbuchung zählen nicht (contracts/flows.ts)
+  const txs = withoutReversals(allTxs);
   let income = 0;
   let expense = 0;
   let countedMonths = 0;
@@ -83,6 +89,7 @@ function averageVariable(
   return {
     income: countedMonths > 0 ? Math.round(income / countedMonths) : 0,
     expense: countedMonths > 0 ? Math.round(expense / countedMonths) : 0,
+    months: countedMonths,
   };
 }
 
@@ -293,6 +300,9 @@ export const forecastRouter = createRouter({
         mortgageMissingRecurring: mortgage?.missingRecurringCount ?? 0,
         avgVariableIncome: avgVar.income,
         avgVariableExpense: avgVar.expense,
+        // Abgeschlossene Monate mit Buchungen, aus denen der Ø stammt (0–3) —
+        // das UI nennt damit den Mindest-Zeitraum (A3)
+        variableMonths: avgVar.months,
         // Wirksame Szenario-Parameter — das Frontend zeigt damit an,
         // ob ein Szenario aktiv ist
         scenario: {
@@ -332,7 +342,8 @@ export const forecastRouter = createRouter({
         db.select().from(accounts),
         db.select().from(transactions),
         db.select().from(recurring),
-        db.select().from(savingsGoals),
+        // Archivierte Ziele sind abgeschlossen — keine Prognose mehr
+        db.select().from(savingsGoals).where(isNull(savingsGoals.archivedAt)),
         db.select().from(goalSources),
         db.select().from(goalContributions),
         db.select().from(properties),
@@ -590,7 +601,8 @@ export const forecastRouter = createRouter({
     const visible = await visibleAccountIds(db, ctx.user);
     const [goals, allAccs, allTxs, allRecs, allSources, allContribs] =
       await Promise.all([
-        db.select().from(savingsGoals),
+        // Archivierte Ziele sind abgeschlossen — keine Prognose mehr
+        db.select().from(savingsGoals).where(isNull(savingsGoals.archivedAt)),
         db.select().from(accounts),
         db.select().from(transactions),
         db.select().from(recurring),

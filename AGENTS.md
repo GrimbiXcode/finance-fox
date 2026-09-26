@@ -64,6 +64,7 @@ npm install
 npm run db:push      # Schema via drizzle-kit in die DB-Datei schreiben (dev)
 npm run dev          # Vite-Dev-Server, http://localhost:3000 (Frontend + API mit HMR)
 npm run dev:agent    # wie dev, aber mit passwortlosem Login (siehe unten)
+npm run seed:demo    # Musterhaushalt in eine leere Dev-DB (Server muss laufen)
 npm run check        # Type-Check: tsc -b (alle vier tsconfig-Projekte)
 npm run lint         # ESLint
 npm run format       # Prettier --write .
@@ -109,8 +110,19 @@ Beim ersten Start legt `lib/devLogin.ts` idempotent an, was die App zum
 Laufen braucht: die beiden Identitäten `dev-admin@localhost` /
 `dev-member@localhost` (ohne Passwort-Hash — sie sollen sich nicht regulär
 anmelden können) und, **falls noch gar kein Konto existiert**, ein
-Gemeinschaftskonto. Bestehende Daten werden nie verändert. Es ist kein
-Fixture-Generator: Testdaten für den jeweiligen Fall legt man über die UI an.
+Gemeinschaftskonto. Bestehende Daten werden nie verändert.
+
+**Musterdaten:** `npm run seed:demo` (`scripts/seed-demo.mjs`) füllt eine
+leere Dev-Datenbank über den laufenden `dev:agent`-Server mit einem
+realistischen Haushalt — gemeinsame und private Konten beider Identitäten,
+Kategorien mit Unterkategorien, rund 14 Monate Buchungen mit Splits,
+Projekten und Tags, Dauerbuchungen, Budgets, Sparziele, Liegenschaft,
+Policen und ein Vorsorge-Profil. Es läuft ausschließlich über die
+tRPC-API und den Dev-Login (Rechte, Audit-Log und Verläufe entstehen wie bei
+echter Bedienung), ist deterministisch und bricht ab, sobald schon Buchungen
+existieren. Neustart: Dev-Server stoppen, `data/finance-fox.db` löschen,
+`npm run dev:agent`, `npm run seed:demo`. Ohne Dev-Login (Produktion) gibt
+es die Route nicht — dann bricht das Skript mit einem Hinweis ab.
 
 **Sicherheit.** Der Auth-Pfad bleibt unangetastet — es gibt keinen Bypass in
 `getSessionUser` oder `verifySessionToken`. Die Route stellt über

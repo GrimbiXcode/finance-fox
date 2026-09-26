@@ -1,3 +1,4 @@
+import type { DashboardLayout } from '@contracts/dashboard';
 import { createContext, useContext, type ReactNode } from 'react';
 import { trpc } from '@/providers/trpc';
 import { askWorker } from '@/lib/serviceWorker';
@@ -10,6 +11,10 @@ export interface SessionUser {
   color: string;
   totpEnabled: boolean;
   quickAccountId: number | null;
+  /** Eigene Dashboard-Anordnung (bereinigt, immer vollständig) */
+  dashboardLayout: DashboardLayout;
+  /** false = Standard-Anordnung */
+  dashboardCustomized: boolean;
 }
 
 interface AuthContextValue {

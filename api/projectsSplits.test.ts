@@ -145,6 +145,58 @@ describe("Projekte", () => {
     const list = await callerFor(admin).finance.listProjects();
     expect(list.map(p => p.name)).not.toContain("Renovierung");
   });
+
+  it("schließt Projekte ab und öffnet sie wieder, Buchungen bleiben möglich", async () => {
+    const created = await callerFor(admin).finance.createProject({
+      name: "Städtetrip",
+      color: "#f97316",
+    });
+    const closed = await callerFor(member).finance.setProjectClosed({
+      id: created.id,
+      closed: true,
+    });
+    expect(closed.closedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Erneutes Abschließen behält das erste Datum
+    const again = await callerFor(admin).finance.setProjectClosed({
+      id: created.id,
+      closed: true,
+    });
+    expect(again.closedAt).toBe(closed.closedAt);
+    const listed = (await callerFor(admin).finance.listProjects()).find(
+      p => p.id === created.id
+    );
+    expect(listed?.closedAt).toBe(closed.closedAt);
+
+    // Der Ausgleich eines abgeschlossenen Projekts muss noch buchbar sein
+    await expect(
+      callerFor(admin).finance.createTransaction({
+        type: "expense",
+        accountId,
+        amount: 1000,
+        date: "2026-09-01",
+        userId: admin.id,
+        projectId: created.id,
+      })
+    ).resolves.toMatchObject({ id: expect.any(Number) });
+
+    const reopened = await callerFor(admin).finance.setProjectClosed({
+      id: created.id,
+      closed: false,
+    });
+    expect(reopened.closedAt).toBeNull();
+
+    const log = await callerFor(admin).finance.listAuditLog({});
+    const actions = log
+      .filter(e => e.entityId === created.id && e.entity === "project")
+      .map(e => e.action);
+    // Genau ein „abgeschlossen“ trotz zweimaligem Abschließen
+    expect(actions.filter(a => a === "project.closed")).toHaveLength(1);
+    expect(actions).toContain("project.reopened");
+
+    await expect(
+      callerFor(admin).finance.setProjectClosed({ id: 999_999, closed: true })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
 });
 
 describe("Aufteilungsvorlagen", () => {

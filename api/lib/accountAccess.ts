@@ -1,6 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { accountOwners, accountPermissions, accounts } from "@db/schema";
+import {
+  accountOwners,
+  accountPermissions,
+  accounts,
+  transactions,
+} from "@db/schema";
 import type { Db } from "../queries/connection";
 import type { SessionUser } from "../context";
 
@@ -127,11 +132,62 @@ export async function requireAccountAccess(
       ])
     : [undefined, []];
   const level = account ? accessLevelFor(owners, user, permission) : "none";
-  if (!account || LEVEL_RANK[level] < LEVEL_RANK[minLevel]) {
+  // Unsichtbare Konten bleiben „nicht gefunden“ (kein Hinweis auf ihre
+  // Existenz). Wer das Konto sieht, aber nicht bearbeiten darf, erfährt den
+  // wahren Grund — „nicht gefunden“ für ein sichtbares Konto verwirrt nur.
+  if (!account || level === "none") {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Konto nicht gefunden.",
     });
   }
+  if (LEVEL_RANK[level] < LEVEL_RANK[minLevel]) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Für das Konto „${account.name}“ hast du nur Leserecht.`,
+    });
+  }
   return account;
+}
+
+type TransactionRow = typeof transactions.$inferSelect;
+
+/**
+ * Lädt eine Buchung für eine Aktion darauf und prüft das Recht.
+ * - Unsichtbar (weder Quell- noch Zielkonto sichtbar) heißt „Buchung nicht
+ *   gefunden.“ — dieselbe Antwort wie für eine ID, die es nicht gibt. Sonst
+ *   ließen sich fremde Privatbuchungen durch Durchprobieren zählen.
+ * - `view` genügt, wenn eines der beiden Konten sichtbar ist (wie in den
+ *   Listen: eine Umbuchung vom fremden Privatkonto aufs Gemeinschaftskonto
+ *   sieht der ganze Haushalt).
+ * - `edit` braucht das Bearbeitungsrecht aufs Buchungskonto; wer die
+ *   Buchung sieht, aber nicht ändern darf, bekommt FORBIDDEN.
+ */
+export async function requireTransactionAccess(
+  db: Db,
+  user: SessionUser,
+  transactionId: number,
+  minLevel: "view" | "edit"
+): Promise<TransactionRow> {
+  const row = await db.query.transactions.findFirst({
+    where: eq(transactions.id, transactionId),
+  });
+  const visible = row ? await visibleAccountIds(db, user) : null;
+  if (!row || !visible || !touchesVisibleAccount(visible, row)) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Buchung nicht gefunden.",
+    });
+  }
+  if (minLevel === "edit") {
+    if (!visible.has(row.accountId)) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "Diese Buchung gehört zu einem Konto, das du nicht bearbeiten darfst.",
+      });
+    }
+    await requireAccountAccess(db, user, row.accountId, "edit");
+  }
+  return row;
 }

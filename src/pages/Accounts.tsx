@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Banknote, ChevronDown, ChevronUp, CreditCard, LayoutGrid, Pencil, PiggyBank, Plus, Search, Table as TableIcon, Wallet } from 'lucide-react';
+import { useSearchParams } from 'react-router';
+import { Banknote, ChevronDown, ChevronUp, CreditCard, LayoutGrid, Pencil, PiggyBank, Plus, Scale, Search, Table as TableIcon, Wallet } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,13 +9,16 @@ import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AccountDialog from '@/components/AccountDialog';
+import { ReconcileDialog } from '@/components/ReconcileForm';
+import Note from '@/components/Note';
+import { useActions } from '@/providers/actions';
 import { trpc } from '@/providers/trpc';
 import { useFinanceData } from '@/lib/data';
 import { useTableSort } from '@/lib/sort';
-import { currencySymbol, formatCents, formatDate } from '@/lib/finance';
+import { formatCents, formatDate } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
-import { CURSOR_LINE, HATCH_OPACITY, hatch } from '@/lib/chartTheme';
+import { AXIS_MONEY_WIDTH, CURSOR_LINE, HATCH_OPACITY, axisMoney, hatch } from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { chartDefs } from '@/lib/chartDefs';
 
@@ -119,12 +123,13 @@ function BalanceHistory({ accountId }: { accountId: number }) {
               {chartDefs()}
               <XAxis
                 dataKey="date" tickLine={false} axisLine={false} fontSize={11}
+                minTickGap={28}
                 tickFormatter={(v: string) => formatDate(v)}
               />
               <YAxis
-                tickLine={false} axisLine={false} width={64} fontSize={11}
+                tickLine={false} axisLine={false} width={AXIS_MONEY_WIDTH} fontSize={11}
                 domain={['auto', 'auto']}
-                tickFormatter={(v: number) => `${v} ${currencySymbol()}`}
+                tickFormatter={axisMoney}
               />
               <Tooltip
                 content={<PaperTooltip labelFormatter={(label) => formatDate(String(label))} />}
@@ -151,12 +156,17 @@ function BalanceHistory({ accountId }: { accountId: number }) {
 }
 
 export default function Accounts() {
-  const { accounts, accountTypes, banks, transactions, users } = useFinanceData();
-  const [openId, setOpenId] = useState<number | null>(null);
+  const { accounts, accountTypes, banks, users } = useFinanceData();
+  const actions = useActions();
+  // `?verlauf=<id>` (Dashboard-Kontenliste) öffnet den Saldo-Verlauf
+  const [params] = useSearchParams();
+  const [openId, setOpenId] = useState<number | null>(() => Number(params.get('verlauf')) || null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [bankFilter, setBankFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [view, setView] = useState<ViewMode>(readViewMode);
+  // Mit `?verlauf=` die Kartenansicht: Nur sie zeigt Verlauf, Kassen-Zettel
+  // und „Kasse zählen“ — dorthin führen Dashboard und „Was ansteht“
+  const [view, setView] = useState<ViewMode>(() => (params.get('verlauf') ? 'cards' : readViewMode()));
   const typeName = new Map(accountTypes.map((t) => [t.key, t.name]));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
   const userName = new Map(users.map((u) => [u.id, u.name]));
@@ -183,8 +193,8 @@ export default function Accounts() {
     }
     return true;
   });
-  const txCountOf = (id: number) =>
-    transactions.filter((t) => t.accountId === id || t.toAccountId === id).length;
+  // Anzahl Buchungen zählt listAccounts serverseitig mit
+  const txCountOf = (id: number) => accounts.find((a) => a.id === id)?.txCount ?? 0;
 
   // Clientseitige Sortierung der Tabellenansicht (wirkt auf die gefilterte Liste)
   const { toggleSort, sorted, iconFor, isActive } = useTableSort<AccountSortKey, AccountRow>({
@@ -272,8 +282,15 @@ export default function Accounts() {
 
       {accounts.length === 0 && (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Noch keine Konten — lege dein erstes Konto an, um Buchungen zu erfassen.
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="max-w-prose text-muted-foreground">
+              Noch keine Konten. Jede Buchung gehört zu einem Konto — Lohnkonto, Sparkonto,
+              Bargeld. Gemeinsame Konten sieht der ganze Haushalt, private nur du und wem du sie
+              freigibst.
+            </p>
+            <AccountDialog
+              trigger={<Button variant="outline"><Plus className="mr-2 h-4 w-4" /> Erstes Konto anlegen</Button>}
+            />
           </CardContent>
         </Card>
       )}
@@ -323,7 +340,7 @@ export default function Accounts() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className={cn('font-serif text-2xl font-semibold', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
+                <div className={cn('font-serif text-2xl font-semibold tabular-nums', a.balance < 0 && 'text-destructive')}>{formatCents(a.balance)}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant="label">{txCount} Buchungen</Badge>
                   {a.owners.length > 0 && <Badge variant="stamp" tone="ink">Privat</Badge>}
@@ -338,6 +355,31 @@ export default function Accounts() {
                     {a.bankId !== null && <div>{bankName.get(a.bankId) ?? 'Unbekannte Bank'}</div>}
                     {a.iban && <div className="font-mono">{formatIban(a.iban)}</div>}
                   </div>
+                )}
+                {/* Kasse im Minus: fast immer eine vergessene Abhebung */}
+                {a.type === 'cash' && a.balance < 0 && (
+                  <Note className="mt-3" tilt={-0.4}>
+                    Kasse im Minus — vermutlich fehlt eine Abhebung.
+                    {a.access === 'edit' && (
+                      <Button
+                        variant="link" size="sm" className="h-auto px-1 py-0 text-note-foreground underline"
+                        onClick={() => actions.show('quick', { quickMode: 'withdrawal', cashAccountId: a.id })}
+                      >
+                        Abhebung nachtragen
+                      </Button>
+                    )}
+                  </Note>
+                )}
+                {a.access === 'edit' && (
+                  <ReconcileDialog
+                    accountId={a.id}
+                    accountName={a.name}
+                    trigger={
+                      <Button variant="ghost" size="sm" className="-ml-2 mt-2 h-7 px-2 text-xs text-muted-foreground">
+                        <Scale className="mr-1 h-3.5 w-3.5" /> {a.type === 'cash' ? 'Kasse zählen' : 'Saldo abgleichen'}
+                      </Button>
+                    }
+                  />
                 )}
               </CardContent>
               {openId === a.id && <BalanceHistory accountId={a.id} />}

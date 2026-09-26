@@ -191,7 +191,7 @@ describe("reconcileAccount", () => {
       callerFor(viewer).finance.reconcileAccount({
         accountId: id, actualBalance: 200,
       }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       callerFor(stranger).finance.reconcileAccount({
         accountId: id, actualBalance: 200,

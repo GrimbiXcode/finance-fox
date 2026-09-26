@@ -31,7 +31,8 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
   Hand umschreiben; die wenigen bewussten Papier-Anpassungen tragen einen
   Kommentar `// Papier:` und sind unter „Papier-Design“ aufgezählt).
 - `providers/` — `trpc.tsx` (tRPC + QueryClient, importiert den Typ
-  `AppRouter` aus `api/router.ts`), `auth.tsx`.
+  `AppRouter` aus `api/router.ts`), `auth.tsx`, `actions.tsx` (globale
+  Dialoge, Kürzel), `scope.tsx` („Meine Sicht“, siehe unten).
 - `lib/` — `finance.ts` (Berechnungen, Cent-Helfer, Locale), `data.ts`,
   `utils.ts` (cn), `moneyflow.ts`, `recurring.ts`, `insurance.ts`
   (`buildComparison` — Zeilen der Policen-Vergleichstabelle),
@@ -44,18 +45,35 @@ Detail-Doku zum Frontend. Übergeordnetes: `../AGENTS.md`.
 
 ## Navigation (Layout.tsx)
 
-Die Menüstruktur steht zentral in `navGroups` (thematisch gruppiert:
+Die Menüstruktur steht zentral in `navGroups` (`lib/navigation.ts`,
+thematisch gruppiert:
 Alltag = Dashboard/Transaktionen/Wiederkehrend/Aufteilung, Konten =
 Konten/Geldfluss, Planung = Budgets/Sparziele/Vorsorge/Hypotheken/
 Versicherungen, Analyse =
-Prognosen/Auswertung, Verwaltung = Personen/Einstellungen) und speist
+Prognosen/Auswertung, Verwaltung = Personen/Verlauf/Einstellungen) und speist
+drei Stellen: die Befehlspalette (Einträge mit `keywords` für Synonyme) und
 beide Navigationen: die Desktop-Seitenleiste (mit Gruppen-Labels, im
 eingeklappten Zustand nur Icons + Trennlinien) und die mobile Ansicht —
 dort zeigt die untere Leiste vier Schnellzugriffe (`mobilePrimary`:
 Dashboard, Transaktionen, Konten, Budgets) plus „Mehr", das ein
 Bottom-Sheet (`ui/sheet`) mit allen Bereichen in derselben Gruppierung
 öffnet. Neue Seiten: Route in `App.tsx` + Eintrag in `navGroups` — beide
-Navigationen bekommen sie dann automatisch.
+Navigationen und die Befehlspalette bekommen sie dann automatisch.
+
+**Globale Aktionen** (`providers/actions.tsx`, `ActionsProvider` in
+`App.tsx`): hält, welcher globale Dialog offen ist (`'transaction' |
+'quick' | 'palette' | 'shortcuts'`), und die Tastenkürzel — ⌘/Strg+K
+(Befehlspalette, auch in Eingabefeldern), `n` (neue Buchung), `s`
+(Schnellerfassung), `/` (Suche), `?` (Kürzel-Übersicht). Die Buchstaben
+wirken nur außerhalb von Eingabefeldern und wenn kein Dialog offen ist.
+Die Buchstaben greifen auch nicht auf Auswahllisten und Menüs
+(`role="combobox"|"listbox"|"menu"`), ⌘K nicht über einem anderen Dialog.
+`useActions().show('quick')` öffnet einen Dialog von überall; das Layout
+rendert Befehlspalette (`components/CommandPalette.tsx`), Kürzel-Hilfe
+(`ShortcutsDialog.tsx`) und den kontrollierten `TransactionDialog`
+(Props `open`/`onOpenChange`; ohne `trigger` rendert er dann keinen Knopf;
+`key={seq}` setzt das Formular bei jedem Öffnen neu auf). Nach dem
+Schließen führt `restoreFocus` den Fokus aufs Element davor zurück.
 
 ## Zentrale Helfer (lib/finance.ts)
 
@@ -76,7 +94,14 @@ Navigationen bekommen sie dann automatisch.
   (Dashboard); `listCategories` bleibt flach, der Baum wird im Frontend
   gebaut.
 - `memberBalances` berechnet die Aufteilungs-Salden — Einnahmen MIT Splits
-  zählen umgekehrt wie Ausgaben (damit sich Stornos exakt aufheben).
+  zählen umgekehrt wie Ausgaben (damit sich Stornos exakt aufheben). Die
+  Funktion liegt in `contracts/settlement.ts` (auch der Server rechnet damit)
+  und wird hier nur weitergereicht.
+- **Keine Buchungsliste in `useFinanceData`**: Seiten holen genau ihren
+  Ausschnitt — `finance.searchTransactions` (Liste, Infinite-Query),
+  `dashboard.summary`, `listAccounts` (`balance`, `txCount`),
+  `finance.categoryUsage`, `listTransactions({ sharedOnly: true })`.
+  Invalidierung zentral in `useInvalidateFinance`.
 
 ## Auswahlfelder
 
@@ -88,7 +113,11 @@ gewählten Option, Trigger im SelectTrigger-Styling; API `{value,
 onValueChange, options: {value, label}[], placeholder?, disabled?,
 className?}`). Kleine Enum-Selects (Buchungsart, Intervall, Status,
 Zeitraum/Modus, Rolle) bleiben native Selects — eine Suche bei 2–4 Optionen
-wäre UX-Rauschen. Alle SelectTrigger bekommen Truncation (`min-w-0
+wäre UX-Rauschen. Optional `pinned` (+ `pinnedLabel`, Default „Häufig“):
+eine Gruppe über der vollen Liste — der Buchungsdialog setzt dort die fünf
+meistgenutzten Kategorien der gewählten Art (`finance.categoryUsage`, B3);
+die Werte der Gruppe tragen intern ein Suffix, damit cmdk sie von der
+Hauptliste unterscheidet. Alle SelectTrigger bekommen Truncation (`min-w-0
 [&>span]:truncate`, in Dialog-Grids zusätzlich `w-full`) und ein
 `title`-Attribut mit dem Label der gewählten Option (SearchableSelect bringt
 beides eingebaut mit).
@@ -143,29 +172,184 @@ der Antwort.
 ## UI-State in localStorage
 
 Darstellungsart der Konten-Seite (Karten/Tabelle) unter dem Key
-`ff-accounts-view`, der Dauerbuchungen-Seite unter `ff-recurring-view`;
+`ff-accounts-view`, der Dauerbuchungen-Seite unter `ff-recurring-view`,
+des Geldflusses unter `ff-moneyflow-view` (ohne gespeicherte Wahl unter
+640 px die Liste);
 eingeklappte Seitenleiste unter `ff-sidebar-collapsed`; gewählte
-Berichts-Abschnitte unter `ff-report-sections`.
+Berichts-Abschnitte unter `ff-report-sections`; ausgeblendete „Erste
+Schritte“ unter `ff-getting-started-hidden`; Gruppierung der
+Transaktionsliste (Tag/Monat/keine) unter `ff-tx-group`; „Meine Sicht“
+bzw. „Haushalt“ unter `ff-scope` (pro Gerät, siehe „Meine Sicht“).
+
+## UI-State in der URL
+
+Filter, die man teilen oder verlinken will, stehen als Query-Parameter im
+Hash-Router (`useSearchParams`), nicht in `useState`:
+
+- **Transaktionen**: Zeitraum als `monat` (`YYYY-MM`), `jahr`, `von`/`bis`
+  oder `zeit=alle` — ohne Angabe gilt der **laufende Monat**
+  (`contracts/period.ts`); dazu `typ`, `konto`, `kategorie` (eine
+  Oberkategorie schließt ihre Unterkategorien ein, `-1` = ohne), `person`,
+  `tag`, `projekt` (`0` = ohne Projekt), `notiz` (genau eine Notiz,
+  normalisiert — Ziel der Aufschlüsselung nach Empfänger), `sicht=haushalt`
+  (hebt „Meine Sicht“ für diesen Link auf), `q` (Suche, verzögert
+  geschrieben), `sortierung` (`datum|betrag|kategorie|konto|person`) mit
+  `richtung` (`auf|ab`, nur wenn abweichend von der ersten Richtung der
+  Spalte) und `fokus` (Buchungs-ID: markieren, hinscrollen, Detail-Blatt
+  öffnen). Andere Seiten verlinken damit direkt auf eine gefilterte Liste
+  (Dashboard-Kennzahlen, Kategorien-Legende, Cashflow, letzte Buchungen,
+  Budget-Verlauf, Monatsmatrix, Jahresvergleich, Befehlspalette,
+  Projekt-Karte).
+- **Dashboard**: `monat` (fehlt = aktueller Monat).
+- **Auswertung**: `ansicht` (`kategorien|aufschluesselung|jahr`, fehlt =
+  Verlauf); in der Aufschlüsselung zusätzlich der Zeitraum wie bei den
+  Transaktionen, `nach` (`person|konto|tag|projekt|notiz`, fehlt = Kategorie),
+  `art=einnahmen`, `vergleich=vorjahr`. Ein Reiterwechsel verwirft sie.
+- **Konten**: `verlauf=<id>` öffnet den Saldo-Verlauf eines Kontos.
+- **Einstellungen**: `tab` (`haushalt|benachrichtigungen|daten`, fehlt =
+  Profil & Sicherheit).
+- **Wiederkehrend**: `neu=1` öffnet den Anlegen-Dialog, vorbefüllt aus
+  `typ`, `von`, `nach`, `kategorie`, `betrag` (Cent), `notiz`, `person`,
+  `start` (nächste Fälligkeit) und `quelle` (Ursprungsbuchung fürs
+  Aktivitäten-Log); die Parameter werden danach entfernt. So schlägt z. B. die Sparziel-Karte eine
+  Sparrate vor.
+
+## Beträge und Achsen
+
+- Kennzahlen tragen `tabular-nums`; zusammen mit `font-mono` setzt
+  `index.css` dort `overflow-wrap: normal` — Beträge brechen nie mitten im
+  Wert um, obwohl `body` sonst `overflow-wrap: anywhere` hat.
+- Geld-Achsen in recharts: `tickFormatter={axisMoney}` und
+  `width={AXIS_MONEY_WIDTH}` aus `lib/chartTheme.ts` („14k“, „1,2 Mio.“) —
+  nicht „14000 EUR“, das in der Achse umbricht.
+- Reine Planungsrechnungen (Monatsverschiebung, nötige Sparrate,
+  Budget-Tempo, Prozentveränderung) liegen in `contracts/planning.ts` und
+  sind in `api/planning.test.ts` getestet; Startkategorien in
+  `contracts/defaultCategories.ts` (Endpunkt `finance.addDefaultCategories`,
+  Auswahl `components/DefaultCategoriesPicker.tsx` im Wizard, in den
+  Einstellungen und in `components/GettingStarted.tsx`).
 
 ## Seiten-Besonderheiten
 
 - **Schnellerfassung**: `components/QuickAddDialog.tsx` (Button „Schnell" im
-  Layout-Header) bucht mit nur Betrag + Notiz; positiv = Ausgabe, negativ
-  (mit „-") = Einnahme. Das Buchungskonto ist pro Benutzer konfigurierbar
+  Layout-Header, Taste `s`) bucht mit nur Betrag + Notiz. Die Art wählt ein
+  Schalter „Ausgabe | Einnahme“ (plus „Abhebung“ = Umbuchung aufs
+  Bargeldkonto, sobald eins existiert); ein „-“ vor dem Betrag gilt weiter
+  als Einnahme. Chips der häufigsten Kategorien (`categoryUsage.frequent`),
+  Toast mit „Rückgängig“ (zehn Sekunden, löscht die Buchung über
+  `utils.client`, weil der Dialog dann schon zu ist). Vorwahl von außen:
+  `useActions().show('quick', { quickMode: 'withdrawal', cashAccountId })`
+  (Kontenseite: „Abhebung nachtragen“). Das Buchungskonto ist pro Benutzer konfigurierbar
   (`users.quickAccountId` via `auth.setQuickAccount`, erfordert `edit`-
   Recht; null/Default = erstes Konto mit `access === "edit"`) und wird im
   Dialog per SearchableSelect angezeigt/gewählt (Wahl wird direkt
   gespeichert). Weitere Defaults: zuletzt verwendete Kategorie der
   jeweiligen Art, heutiges Datum, aktueller User.
-- **Transaktionen**: Tag-Auswahl + Inline-Anlage im Details-Bereich des
-  TransactionDialog, Badges + Tag-Filter + Tag-Popover zum nachträglichen
-  Taggen in der Liste (Tag-Namen sind Teil des Such-Haystacks). Edit-Modus
-  im TransactionDialog (Prop `transaction`, Art-Wahl deaktiviert mit
+- **Transaktionen**: ruhige Zeilen — am Desktop in der Zeile nur Stift
+  (bei Hover/Fokus, nur bei `edit`, Remount-Key aus changeCount/tags) und
+  Beleg-Knopf (mit Zähler immer sichtbar); mobil entfällt die
+  Aktionen-Spalte ganz, damit der Betrag Platz hat. Ein Klick in die Zeile
+  oder auf die Beschreibung (ein echter `<button>`, die Zeile bleibt eine
+  Tabellenzeile) öffnet `components/TransactionDetailSheet.tsx` (mobil von
+  unten, sonst von rechts): alle Felder, Tags zum An-/Abwählen (nur mit
+  `edit`), Bearbeiten, Belege, Verlauf, „Wiederkehrend“ (öffnet den
+  vorbefüllten Dauerbuchungs-Dialog, erste Fälligkeit nach heute),
+  Stornieren und Löschen — die beiden letzten über AlertDialoge, die den
+  Saldo-Effekt erklären. Nach dem Schließen kehrt der Fokus auf die Zeile
+  zurück. Liegt eine `fokus`-Buchung nicht in den geladenen Seiten, holt
+  das Blatt sie einzeln (`searchTransactions({ id })`). Die Aktionen-Zelle
+  stoppt Klicks, weil Klicks aus Dialog-Portalen im React-Baum bis zur
+  Zeile blubbern. **Massenbearbeitung** (Desktop): Checkbox je Zeile mit
+  `edit`-Recht und „alle geladenen“ im Kopf; die Auswahl gilt nur für die
+  aktuelle Suche (abgeleitet über einen Schlüssel aus den Suchparametern).
+  `components/BulkActionBar.tsx` setzt Kategorie, Projekt, Person, Tags
+  oder löscht (`finance.bulkUpdateTransactions`/`bulkDeleteTransactions`).
+  Spaltenköpfe sortieren (`SortHead`, `aria-sort`); gruppiert wird nur bei
+  Sortierung nach Datum. Tag-Auswahl + Inline-Anlage im Details-Bereich des
+  TransactionDialog, Tag-Namen sind Teil der Suche. Edit-Modus im
+  TransactionDialog (Prop `transaction`, Art-Wahl deaktiviert mit
   title-Hinweis, Änderungskommentar-Feld, Hinweis bei Dauerbuchungs-
-  Instanzen, Belege nur im Create-Modus), Stift-Button nur bei `edit`
-  (Remount-Key aus changeCount/tags), „bearbeitet"-Badge bei changeCount > 0
-  öffnet den Änderungsverlauf-Dialog. Löschen UND Stornieren laufen über
-  AlertDialoge, die den konkreten Saldo-Effekt erklären.
+  Instanzen, Belege nur im Create-Modus). Enter im Betragsfeld springt zur
+  Beschreibung. **Duplizieren** (B6) im Detail-Blatt: `TransactionDialog`
+  mit `template` statt `transaction` — vorbefüllt, Datum heute, ohne Belege;
+  jedes Öffnen beginnt wieder bei der Vorlage. **Laufender Saldo** (C7): Ist
+  genau ein Konto gefiltert und nach Datum sortiert, zeigt die Liste
+  (Desktop) die Spalte „Saldo“ aus `balanceAfter`; weitere Filter lassen
+  sie stehen, aber ausgegraut (der Saldo zählt alle Buchungen des Kontos).
+- **Kennzahl-Karten**: `components/KpiCard.tsx` (Dashboard, Hypotheken,
+  Versicherungen) — mobil im 2×2-Raster (`grid-cols-2`) mit kleinerer
+  Schrift und ohne Symbol. `info` steht neben dem Titel (ein `InfoTip`).
+- **Fachbegriffe** (A8): `components/InfoTip.tsx` — Info-Symbol mit Popover
+  (kein Tooltip: den gibt es auf dem Handy nicht), Texte zentral in
+  `lib/glossary.ts` (Begriff, Satz, Formel, Beispiel; Beispielbeträge ohne
+  Währung und mit Leerzeichen als Tausendertrenner, weil sie nicht der
+  Browser-Region folgen). Gesetzt bei Sparrate (Dashboard), Sparquote
+  (Verlauf), Rollover (Budget-Dialog), Fixkosten, Belehnung, Tragbarkeit,
+  Pflicht-Amortisation, Ersatzrate, Rentenskala, offenes Ziel,
+  Hauptverfall und Kündigungsfrist. Ein neuer Begriff gehört in das
+  Glossar, nicht als Text an die Stelle.
+- **Leere Zustände** (A3): Zweck in einem Satz, Voraussetzung, ein
+  Primär-Knopf (Konten, Budgets, Dauerbuchungen, Sparziele, Geldfluss,
+  Aufteilung — dort ein Zettel, solange nur eine aktive Person im Haushalt
+  ist). Diagramme mit weniger als zwei Datenpunkten weichen dem Hinweis
+  (Verlauf der Auswertung: erst ab dem zweiten Monat mit Buchungen); die
+  Prognose nennt, aus wie vielen abgeschlossenen Monaten ihr Ø stammt
+  (`variableMonths`).
+- **Dashboard-Anordnung** (D7): Die Seite baut eine Tabelle
+  `cards: Record<DashboardCardId, { span, node } | null>` und rendert sie in
+  der Reihenfolge von `user.dashboardLayout` (`contracts/dashboard.ts`) —
+  in einem dichten Raster (`grid-flow-row-dense lg:grid-cols-5`, Breiten
+  `full`/`wide`/`narrow`), damit ausgeblendete Karten keine Löcher lassen.
+  `null` = Karte hat gerade nichts zu zeigen (z. B. nur im laufenden Monat).
+  `components/DashboardCustomizeDialog.tsx` („Anpassen“): Checkbox je Karte,
+  Pfeil-Knöpfe statt Ziehen (Tastatur und Handy), „Standard
+  wiederherstellen“; gespeichert am Server (`auth.setDashboardLayout`).
+  Neue Karte: Eintrag in `DASHBOARD_CARDS` plus Zeile in `cards`.
+- **Meine Sicht** (H6): `providers/scope.tsx` hält `mine | household`
+  (localStorage `ff-scope`), der Umschalter sitzt in der Kopfzeile (nur mit
+  mehr als einer aktiven Person). `useScope().userId` geht an
+  `dashboard.summary`, `analysis.monthlyTrend`/`categoryMatrix`/`breakdown`
+  (Aufschlüsselung „nach Person“ ausgenommen) und an die Transaktionsliste,
+  solange dort kein Personenfilter gesetzt ist (Chip „Meine Sicht“ mit ×).
+  „Meine“ heißt: ich habe bezahlt (`userId` der Buchung). Vermögen,
+  Salden, Budgets und der Jahresvergleich bleiben haushaltsweit — Links von
+  dort in die Buchungen tragen darum `sicht=haushalt` (Budget-Verlauf, „Ohne
+  Budget“, Jahresvergleich, Projekt-Karte; die Liste zeigt dann den Chip
+  „Ganzer Haushalt“), sonst ergäbe die Liste eine kleinere Summe als die
+  Zahl, von der man kam.
+- **Dashboard**: „Sichtbares Vermögen“ statt „Gesamtvermögen“, sobald
+  Privatkonten anderer fehlen (`finance.accountVisibility`, auch in der
+  Seitenleiste); Karten „Konten“ (Link `/konten?verlauf=<id>` öffnet den
+  Saldo-Verlauf) und „Sparziele“ (bis zu drei Ziele, nächster Stichtag
+  zuerst, Prognose oder nötige Rate) im laufenden Monat.
+- **Konten**: Karte mit „Saldo abgleichen“ bzw. „Kasse zählen“
+  (`components/ReconcileForm.tsx`, auch im AccountDialog), Bargeldkonto im
+  Minus zeigt einen Zettel mit „Abhebung nachtragen“.
+- **Zeitraum-Wahl**: `components/PeriodPicker.tsx` (Transaktionen und
+  Auswertung → Aufschlüsselung), Anzeigetext `periodLabel` in
+  `lib/period.ts`.
+- **Gemeinsame Formularteile**: `components/TypeSegment.tsx` (Buchungsart im
+  Buchungs- und Dauerbuchungs-Dialog), `components/DateField.tsx` (natives
+  Datumsfeld plus „Heute“/„Gestern“).
+- **Einrichtungs-Checklisten**: `components/SetupChecklist.tsx` in Vorsorge
+  (Lohn, AHV + Beitragsjahre, Pensionskasse, 3a — das Kapital-Diagramm
+  erscheint erst mit Kapital), Hypotheken (Verkehrswert, Einkommen,
+  Tranchen, aktuelle Restschuld, Zins als Dauerbuchung) und Versicherungen
+  (Deckungen, Belastungskonto, Prämie als Dauerbuchung); jede offene Angabe
+  mit ihrem Dialog. Verschwindet, wenn alles erledigt ist.
+- **Hinweise mit Aktion**: Hypotheken-Hinweise öffnen die betroffene
+  Tranche bzw. Liegenschaft; der Deckungs-Check gruppiert in „Jetzt
+  handeln“, „Prüfen“, „Datenqualität“ (`gapGroup`, `gapBundleText` in
+  `lib/insuranceText.ts`), bündelt gleichartige Hinweise aufklappbar und
+  bietet „Police erfassen“ (Sparte vorgewählt) bzw. „Bearbeiten“.
+- **Budgets**: „Verlauf & Details“ klappt `components/BudgetDetail.tsx` auf
+  (letzte sechs Perioden als Mini-Balken mit Limit-Strich, eingehalten/
+  Durchschnitt, Aufschlüsselung auf Unterkategorien, Links in die
+  Buchungen; Query erst beim Aufklappen). Karte „Ohne Budget“
+  (`analysis.budgetCoverage`) mit Direkt-Anlage; der Budget-Dialog schlägt
+  Ø 3 / Ø 6 Monate / höchsten Monat vor (`analysis.categoryStats`). Das
+  Budget-Grid hat `items-start`, damit ein aufgeklappter Verlauf die
+  Nachbarkarten nicht streckt.
 - **Konten**: Filter nach Bank/Kontotyp, Suche (Name/Bank/IBAN), Karten-/
   Tabellenansicht (sortierbar, Total in der Fußzeile), aufklappbarer Bereich
   „Saldo-Verlauf" pro Konto-Karte (Zeitraum-Wahl + recharts-AreaChart, Query
@@ -190,16 +374,59 @@ Berichts-Abschnitte unter `ff-report-sections`.
   verborgene Quellen", Prognose-Zeile, Quellen-Verwaltung per Dialog (zeigt
   nach der Konto-Wahl den freien Betrag „Verfügbar: X" via
   `finance.goalSourceAvailability`). Offene Ziele: „offenes Ziel"-Badge
-  statt Prozent/Prognose.
-- **Splitting** (`pages/Splitting.tsx`): filtert Salden,
+  statt Prozent/Prognose. Zielfarbe (G5): eine Quelle → Balken in der
+  Zielfarbe; mehrere → Segmentfarben mit einem Ring in der Zielfarbe.
+  Erreichte Ziele (G6) tragen einen Zettel „Geschafft!“ mit „Abschließen“
+  (AlertDialog erklärt, dass die Quellen gelöst werden;
+  `finance.setGoalArchived`); abgeschlossene Ziele stehen aufklappbar unter
+  „Archiv“ mit „Zurückholen“ und fehlen auf Dashboard und in der Prognose.
+- **Splitting** (`pages/Splitting.tsx`): bei gewähltem Projekt oben
+  `components/ProjectSummaryCard.tsx` (Gesamtkosten, Zeitraum, je Person
+  bezahlt/getragen, Kategorien). Filtert Salden,
   Ausgleichsvorschläge und die Liste geteilter Ausgaben pro Projekt (Chips:
   Alle / Haushalt / je Projekt); verbuchte Ausgleiche übernehmen das gewählte
   Projekt. Sektion „Projekte & Vorlagen": Projekt-Anlage mit Farbpalette,
   Löschen von Projekten und Aufteilungsvorlagen. Vorlagen-Select im
   Split-Bereich des TransactionDialog (gespeicherte Vorlagen + Schnellwahl
   60/40, 70/30), „Als Vorlage speichern" aus den aktuellen Anteilen.
-- **Jahresvergleich**: `pages/YearReview.tsx` unter `/auswertung` (Nav
-  „Auswertung").
+  **Verbuchte Ausgleiche** (H3) als eigene Karte (`isSettlementShape` aus
+  `contracts/settlement.ts`, ohne stornierte), „letzter Ausgleich am …“ in
+  den Salden; in „Geteilte Ausgaben“ erscheinen sie nicht noch einmal.
+  **Projekte abschließen** (H2): Knopf in der `ProjectSummaryCard`
+  (`finance.setProjectClosed`); abgeschlossene Projekte stehen in den Chips
+  hinten mit Häkchen, fehlen in Buchungsdialog und Massenbearbeitung (außer
+  die Buchung gehört schon dazu) und tragen im Transaktionsfilter
+  „(abgeschlossen)“. Die Projektkosten zählen Ausgleiche nicht mit; je
+  Person steht, was nach Ausgleichen noch offen ist.
+- **Auswertung** (`pages/YearReview.tsx` unter `/auswertung`): Tabs
+  Verlauf (`components/TrendCharts.tsx`: Einnahmen/Ausgaben als Balken,
+  darunter die Sparquote als eigene Linie — bewusst keine zweite y-Achse),
+  Kategorien × Monate (`components/CategoryMatrix.tsx`: Zellen mit
+  zeilenweise normierter Tönung in `--pencil-1`, sticky erste Spalte,
+  aufklappbare Unterkategorien, startet mobil bei den jüngsten Monaten)
+  Aufschlüsselung (`components/BreakdownView.tsx`: Dimension, Art, freier
+  Zeitraum, Vergleich „Zeitraum davor“ oder „Vorjahr“; Zeitraum und Filter
+  in der URL; Dimension „Empfänger / Notiz“ (F7) mit Umschalter „nach
+  Betrag / nach Anzahl“ (geordnet am Server, vor dem Kappen auf 50),
+  Zeilen verlinken per `notiz=` auf genau ihre Buchungen) und Jahresvergleich (Zeilen und Säulen verlinken auf die
+  Buchungen). Unter dem Verlauf die Fixkosten-Karte
+  (`components/FixedCostsCard.tsx`). Jeder Wert führt per Klick zur
+  gefilterten Transaktionsliste.
+- **Dauerbuchungen**: `components/UpcomingCard.tsx` zeigt die Termine der
+  nächsten 7/30/90 Tage (`analysis.upcoming`) samt Warnung, wenn ein Konto
+  dabei ins Minus fiele. Darunter (I4) „Noch nicht als Dauerbuchung“:
+  aktive Policen mit Prämie ohne verknüpfte Dauerbuchung und die Zahl
+  fehlender Hypotheken-Posten. Gibt es schon eine passende Dauerbuchung
+  (`premiumMatches`: gleicher Betrag und Intervall, noch frei), heißt der
+  Knopf „Verknüpfen“ statt „Übernehmen“; `InsuranceTransferDialog` bietet
+  die Kandidaten dann oben an (`insurance.linkPremiumToRecurring`), damit
+  keine Belastung doppelt entsteht. Karten zeigen die Kategorie (G3).
+- **Verlauf** (`pages/Activity.tsx` unter `/verlauf`, Nav „Verwaltung“):
+  das Aktivitäten-Log mit Filter Person, Zeitraum (`since` in Epoch-ms,
+  lokal gerechnet) und Bereich, nach Tagen gruppiert. Beschriftungen in
+  `lib/auditLabels.ts`. Das Dashboard zeigt die fünf neuesten Einträge
+  anderer Personen („Zuletzt im Haushalt“, `othersOnly`), nur in Haushalten
+  mit mehr als einer Person.
 - **Bericht** (`pages/Report.tsx` unter `/bericht`, Nav „Bericht" nach
   „Auswertung", Icon `FileDown`): stellt den Export zusammen — eine Checkbox
   je Eintrag aus `REPORT_SECTIONS` (`contracts/report.ts`, geteilt mit der
@@ -227,13 +454,20 @@ Berichts-Abschnitte unter `ff-report-sections`.
   Sparziel seinen Zielbetrag erreicht, ist grün mit Häkchen markiert, offene
   Ziele zeigen Badge „offenes Ziel" ohne Prozent. Das Szenario der Card
   darüber wird als Prop durchgereicht.
-- **Einstellungen** (`pages/Settings.tsx`): Sektionen u. a. Kontotypen &
-  Banken, Tags (Card), Kategorien-Baum mit Stift-Button pro Kategorie
-  (`CategoryEditDialog`: Name, Farbpalette, Oberkategorie-Select deaktiviert
-  bei eigenen Unterkategorien), Zwei-Faktor-Authentifizierung (QR-Code via
-  `qrcode`-Paket als Data-URL), Card „Aktivitäten" (Audit-Log: deutsches
-  Action-Mapping, Entity-Filter, „Mehr laden").
+- **Einstellungen** (`pages/Settings.tsx`): vier Tabs (`?tab=`) — Profil &
+  Sicherheit (Profil, Passwort, Zwei-Faktor-Authentifizierung mit QR-Code
+  via `qrcode`-Paket als Data-URL), Haushalt (Währung, Kategorien-Baum mit
+  Stift-Button pro Kategorie — `CategoryEditDialog`: Name, Farbpalette,
+  Oberkategorie-Select deaktiviert bei eigenen Unterkategorien —, Tags,
+  Kontotypen & Banken), Benachrichtigungen (Admin) und Daten & Offline
+  (Datensicherung, Datenverwaltung, OfflineCard). Das Aktivitäten-Log ist
+  eine eigene Seite (`/verlauf`).
 - **Login**: zweistufig bei aktiviertem TOTP (InputOTP).
+- **Personen** (`pages/Users.tsx`): der Einladungslink erscheint in
+  `components/InviteLinkShare.tsx` (H7) — Kopieren, „Teilen“ über
+  `navigator.share` (nur wo es das gibt) und ein lokal erzeugter QR-Code.
+  Die Kopfzeile nennt nur aktive Personen; deaktivierte bleiben in Listen
+  und Filtern für ihre alten Buchungen.
 - **Vorsorge** (`pages/Pension.tsx` unter `/vorsorge`, Nav „Vorsorge" nach
   „Sparziele"): privates 3-Säulen-Modul pro Benutzer. Ohne Profil nur eine
   Setup-Card („Vorsorge einrichten": Geburtsdatum, Rentenalter). Danach
@@ -280,7 +514,8 @@ Berichts-Abschnitte unter `ff-report-sections`.
   Karte öffnet `MortgageTransferDialog` („Als Dauerbuchung übernehmen") —
   er verschwindet, sobald der Rückverweis auf eine existierende
   Dauerbuchung zeigt. **Hinweise kommen als strukturierte Daten vom Server**
-  (`MortgageWarning`) und werden erst in `warningText()` zu deutschen Sätzen
+  (`MortgageWarning`) und werden erst in `warningText()` (`lib/mortgageText.ts`,
+  auch vom Dashboard genutzt) zu deutschen Sätzen
   — nur so lassen sich Beträge/Prozente/Daten locale-konform formatieren.
   Invalidierung zentral `useInvalidateMortgage()` in `lib/data.ts`.
 - **Versicherungen** (`pages/Insurances.tsx` unter `/versicherungen`, Nav
@@ -294,7 +529,8 @@ Berichts-Abschnitte unter `ff-report-sections`.
   Status, Person, Versicherer — clientseitig über einen Haystack inkl.
   Deckungs-Bezeichnungen), Policen-Grid, Verlauf.
   - **Lücken kommen als strukturierte Daten vom Server** (`InsuranceGap`,
-    Discriminated Union) und werden erst in `gapText()` zu deutschen Sätzen
+    Discriminated Union) und werden erst in `gapText()` (`lib/insuranceText.ts`)
+    zu deutschen Sätzen
     — gleiche Begründung wie bei `MortgageWarning`. Ausblendbare Hinweise
     tragen `dismissible: true`; ausgeblendete stehen aufklappbar unter
     „N ausgeblendet" — **mit Begründung, Autor und Datum** aus dem

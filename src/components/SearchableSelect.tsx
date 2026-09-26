@@ -26,6 +26,8 @@ export function SearchableSelect({
   placeholder = 'Auswählen…',
   disabled,
   className,
+  pinned,
+  pinnedLabel = 'Häufig',
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -33,6 +35,12 @@ export function SearchableSelect({
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /**
+   * Optionen, die zusätzlich oben in einer eigenen Gruppe stehen (z. B. die
+   * meistgenutzten Kategorien) — die vollständige Liste folgt darunter.
+   */
+  pinned?: SearchableSelectOption[];
+  pinnedLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
@@ -66,7 +74,27 @@ export function SearchableSelect({
           <CommandInput placeholder="Suchen…" />
           <CommandList>
             <CommandEmpty>Nichts gefunden.</CommandEmpty>
-            <CommandGroup>
+            {pinned && pinned.length > 0 && (
+              <CommandGroup heading={pinnedLabel}>
+                {pinned.map((option) => (
+                  <CommandItem
+                    // cmdk braucht eindeutige Werte — die Option steht unten noch einmal
+                    key={`pinned-${option.value}`}
+                    value={`${option.label} · ${pinnedLabel}`}
+                    onSelect={() => {
+                      onValueChange(option.value);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <Check
+                      className={cn('size-4 shrink-0', option.value === value ? 'opacity-100' : 'opacity-0')}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading={pinned && pinned.length > 0 ? 'Alle' : undefined}>
               {options.map((option) => (
                 <CommandItem
                   key={option.value}

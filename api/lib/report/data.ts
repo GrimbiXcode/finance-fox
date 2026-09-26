@@ -35,6 +35,7 @@ import type { ReportSection } from "@contracts/report";
 import { appRouter } from "../../router";
 import type { SessionUser, TrpcContext } from "../../context";
 import { TRANCHE_KIND_LABELS, USAGE_LABELS } from "../../mortgageRouter";
+import { withoutReversals } from "@contracts/flows";
 import { localISO } from "../recurringSchedule";
 
 /* --------------------------------- Eingabe -------------------------------- */
@@ -324,7 +325,8 @@ async function collectAccounts(
 async function collectGoals(
   caller: Caller
 ): Promise<NonNullable<ReportData["goals"]>> {
-  const goals = await caller.finance.listGoals();
+  // Archivierte (abgeschlossene) Ziele gehören nicht in den Bericht
+  const goals = (await caller.finance.listGoals()).filter(g => g.archivedAt === null);
   const rows = goals
     .map(g => ({
       name: g.name,
@@ -538,7 +540,8 @@ async function collectCashflow(caller: Caller): Promise<ReportCashflow> {
   /** Schlüssel -1 = Ausgaben ohne Kategorie (wie in yearComparison) */
   const NO_CATEGORY = -1;
 
-  for (const t of transactions) {
+  // Stornierte Buchungen samt Gegenbuchung zählen nicht (contracts/flows.ts)
+  for (const t of withoutReversals(transactions)) {
     if (t.type === "transfer") continue;
     const key = t.date.slice(0, 7);
     const bucket = buckets.get(key);

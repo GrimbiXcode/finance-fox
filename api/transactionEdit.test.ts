@@ -332,7 +332,7 @@ describe("updateTransaction: Splits und Umbuchungen", () => {
 });
 
 describe("updateTransaction: Rechte", () => {
-  it("erfordert edit auf dem aktuellen Konto (fremd/view-only → NOT_FOUND)", async () => {
+  it("erfordert edit auf dem aktuellen Konto (fremd → NOT_FOUND, view-only → FORBIDDEN)", async () => {
     const { id } = await callerFor(admin).finance.createTransaction({
       type: "expense",
       accountId: privateAccountId,
@@ -345,7 +345,7 @@ describe("updateTransaction: Rechte", () => {
       callerFor(member).finance.updateTransaction({ id, amount: 1000 })
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
-      message: "Konto nicht gefunden.",
+      message: "Buchung nicht gefunden.",
     });
     // Mit view-Freigabe: Lesen der Historie ok, Bearbeiten nicht
     await callerFor(admin).finance.setAccountPermission({
@@ -358,11 +358,12 @@ describe("updateTransaction: Rechte", () => {
       transactionId: id,
     });
     expect(history).toHaveLength(1);
+    // Sichtbar, aber nur lesend: der wahre Grund statt „nicht gefunden“
     await expect(
       callerFor(member).finance.updateTransaction({ id, amount: 1100 })
     ).rejects.toMatchObject({
-      code: "NOT_FOUND",
-      message: "Konto nicht gefunden.",
+      code: "FORBIDDEN",
+      message: "Für das Konto „Privat“ hast du nur Leserecht.",
     });
     await callerFor(admin).finance.setAccountPermission({
       accountId: privateAccountId,
@@ -506,7 +507,7 @@ describe("Änderungshistorie (listTransactionChanges)", () => {
       callerFor(member).finance.listTransactionChanges({ transactionId: id })
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
-      message: "Konto nicht gefunden.",
+      message: "Buchung nicht gefunden.",
     });
   });
 });

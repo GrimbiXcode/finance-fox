@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:agent": "DEV_LOGIN=1 vite",
+    "seed:demo": "node scripts/seed-demo.mjs",
     "build": "vite build && node scripts/build-sw.mjs && esbuild api/boot.ts --platform=node --bundle --format=esm --outdir=dist --banner:js=\"import { createRequire } from 'module';import { fileURLToPath as __fileURLToPath } from 'url';import { dirname as __pathDirname } from 'path';const require = createRequire(import.meta.url);const __filename = __fileURLToPath(import.meta.url);const __dirname = __pathDirname(__filename);\" --alias:better-sqlite3=./db/stubs/better-sqlite3-stub.cjs && cp node_modules/sql.js/dist/sql-wasm.wasm dist/",
     "lint": "eslint .",
     "preview": "vite preview",

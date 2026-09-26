@@ -1,0 +1,219 @@
+import { beforeAll, describe, expect, it } from "vitest";
+import { appRouter } from "./router";
+import { ensureSchema } from "./lib/migrate";
+import { getDb, initDb } from "./queries/connection";
+import { accountOwners, accounts, users } from "@db/schema";
+import { parseAmountTerm } from "./lib/transactionSearch";
+import type { SessionUser, TrpcContext } from "./context";
+
+const admin: SessionUser = {
+  id: 1,
+  email: "admin@example.com",
+  name: "Anna",
+  role: "admin",
+  color: "#10b981",
+};
+const member: SessionUser = {
+  id: 2,
+  email: "member@example.com",
+  name: "Ben",
+  role: "member",
+  color: "#6366f1",
+};
+
+const callerFor = (user: SessionUser) => {
+  const ctx: TrpcContext = {
+    req: new Request("http://localhost/api/trpc"),
+    resHeaders: new Headers(),
+    user,
+  };
+  return appRouter.createCaller(ctx);
+};
+const asAdmin = () => callerFor(admin);
+const asMember = () => callerFor(member);
+
+let shared = 0;
+let privateAdmin = 0;
+let food = 0;
+let bakery = 0;
+let salary = 0;
+
+beforeAll(async () => {
+  await initDb();
+  ensureSchema();
+  const db = getDb();
+  for (const u of [admin, member]) {
+    await db.insert(users).values({ ...u, active: true, createdAt: new Date() });
+  }
+  shared = (
+    await db
+      .insert(accounts)
+      .values({ name: "Haushalt", type: "checking", initialBalance: 100_000, createdAt: new Date() })
+      .returning({ id: accounts.id })
+  )[0].id;
+  privateAdmin = (
+    await db
+      .insert(accounts)
+      .values({ name: "Privat Anna", type: "checking", initialBalance: 0, createdAt: new Date() })
+      .returning({ id: accounts.id })
+  )[0].id;
+  await db.insert(accountOwners).values({ accountId: privateAdmin, userId: admin.id });
+
+  await asAdmin().finance.addDefaultCategories({ keys: ["lebensmittel", "lohn"] });
+  const cats = await asAdmin().finance.listCategories();
+  food = cats.find(c => c.name === "Lebensmittel")!.id;
+  bakery = cats.find(c => c.name === "Bäckerei")!.id;
+  salary = cats.find(c => c.name === "Lohn")!.id;
+  await asAdmin().finance.createTag({ name: "Steuern" });
+  const tagId = (await asAdmin().finance.listTags())[0].id;
+
+  const tx = asAdmin().finance.createTransaction;
+  await tx({ type: "income", accountId: shared, amount: 500_000, categoryId: salary, userId: admin.id, date: "2026-08-25", note: "Lohn Anna" });
+  await tx({ type: "expense", accountId: shared, amount: 4_550, categoryId: food, userId: member.id, date: "2026-08-03", note: "Coop Wocheneinkauf" });
+  await tx({ type: "expense", accountId: shared, amount: 1_250, categoryId: bakery, userId: admin.id, date: "2026-08-04", note: "Bäckerei Steiner", tagIds: [tagId] });
+  await tx({ type: "expense", accountId: shared, amount: 12_000, categoryId: food, userId: admin.id, date: "2026-09-02", note: "Migros", splits: [{ userId: admin.id, amount: 6_000 }, { userId: member.id, amount: 6_000 }] });
+  await tx({ type: "expense", accountId: privateAdmin, amount: 9_900, userId: admin.id, date: "2026-09-10", note: "Geheimes Geschenk" });
+  await tx({ type: "transfer", accountId: shared, toAccountId: privateAdmin, amount: 20_000, userId: admin.id, date: "2026-09-12", note: "Taschengeld" });
+});
+
+describe("parseAmountTerm", () => {
+  it("versteht beide Dezimaltrennzeichen und Tausender", () => {
+    expect(parseAmountTerm("12,50")).toEqual({ cents: 1250, exact: true });
+    expect(parseAmountTerm("12.5")).toEqual({ cents: 1250, exact: true });
+    expect(parseAmountTerm("1'234")).toEqual({ cents: 123_400, exact: false });
+    expect(parseAmountTerm("1.234")).toEqual({ cents: 123_400, exact: false });
+    expect(parseAmountTerm("45")).toEqual({ cents: 4_500, exact: false });
+    expect(parseAmountTerm("Coop")).toBeNull();
+  });
+});
+
+describe("finance.searchTransactions", () => {
+  it("filtert nach Zeitraum und summiert über alle Treffer", async () => {
+    const res = await asAdmin().finance.searchTransactions({ from: "2026-08-01", to: "2026-08-31", limit: 1 });
+    expect(res.total).toBe(3);
+    expect(res.items).toHaveLength(1);
+    expect(res.hasMore).toBe(true);
+    expect(res.income).toBe(500_000);
+    expect(res.expense).toBe(5_800);
+  });
+
+  it("liefert per id genau eine Buchung — nur, wenn sie sichtbar ist", async () => {
+    const all = await asAdmin().finance.searchTransactions({ limit: 500 });
+    const priv = all.items.find(t => t.accountId === privateAdmin)!;
+    const one = await asAdmin().finance.searchTransactions({ id: priv.id });
+    expect(one.items.map(t => t.id)).toEqual([priv.id]);
+    expect((await asMember().finance.searchTransactions({ id: priv.id })).total).toBe(0);
+  });
+
+  it("liefert bei Kontofilter den laufenden Saldo nach jeder Buchung", async () => {
+    const all = await asAdmin().finance.searchTransactions({ accountId: privateAdmin, sort: "date", dir: "asc", limit: 500 });
+    expect(all.items.length).toBeGreaterThan(0);
+    const accs = await asAdmin().finance.listAccounts();
+    const acc = accs.find(a => a.id === privateAdmin)!;
+    // Der letzte laufende Saldo ist der Kontostand
+    expect(all.items[all.items.length - 1].balanceAfter).toBe(acc.balance);
+    const noFilter = await asAdmin().finance.searchTransactions({ limit: 1 });
+    expect(noFilter.items[0].balanceAfter).toBeNull();
+  });
+
+  it("hält den laufenden Saldo bei Buchungen am selben Tag in beiden Richtungen stimmig", async () => {
+    await asAdmin().finance.createAccount({ name: "Gleichstand", type: "checking", initialBalance: 100_000, private: false });
+    const acc = (await asAdmin().finance.listAccounts()).find(a => a.name === "Gleichstand")!;
+    for (const amount of [1_000, 2_000]) {
+      await asAdmin().finance.createTransaction({ type: "expense", accountId: acc.id, amount, userId: 1, date: "2026-08-15", note: "gleicher Tag" });
+    }
+    for (const dir of ["asc", "desc"] as const) {
+      const res = await asAdmin().finance.searchTransactions({ accountId: acc.id, sort: "date", dir, limit: 50 });
+      const rows = dir === "asc" ? res.items : [...res.items].reverse();
+      // Zeile für Zeile: Saldo davor + Buchung = Saldo danach
+      let before = acc.initialBalance;
+      for (const t of rows) {
+        expect(t.balanceAfter).toBe(before - t.amount);
+        before = t.balanceAfter!;
+      }
+      expect(before).toBe(97_000);
+    }
+  });
+
+  it("filtert nach genau einer Notiz, Schreibweise egal", async () => {
+    await asAdmin().finance.createAccount({ name: "Notizen", type: "checking", initialBalance: 0, private: false });
+    const acc = (await asAdmin().finance.listAccounts()).find(a => a.name === "Notizen")!;
+    for (const note of ["  Café   Zähringer ", "café zähringer", "Café Zähringer Bar"]) {
+      await asAdmin().finance.createTransaction({ type: "expense", accountId: acc.id, amount: 500, userId: 1, date: "2026-08-20", note });
+    }
+    const res = await asAdmin().finance.searchTransactions({ accountId: acc.id, note: "Café Zähringer", limit: 50 });
+    expect(res.total).toBe(2);
+  });
+
+  it("schließt Unterkategorien beim Kategoriefilter ein", async () => {
+    const res = await asAdmin().finance.searchTransactions({ categoryId: food });
+    expect(res.items.map(t => t.note).sort()).toEqual(["Bäckerei Steiner", "Coop Wocheneinkauf", "Migros"]);
+  });
+
+  it("findet Beträge in beiden Schreibweisen, Notizen und Tag-Namen", async () => {
+    const byComma = await asAdmin().finance.searchTransactions({ search: "45,50" });
+    expect(byComma.items.map(t => t.note)).toEqual(["Coop Wocheneinkauf"]);
+    const byDot = await asAdmin().finance.searchTransactions({ search: "45.50" });
+    expect(byDot.total).toBe(1);
+    const byTag = await asAdmin().finance.searchTransactions({ search: "steuern" });
+    expect(byTag.items.map(t => t.note)).toEqual(["Bäckerei Steiner"]);
+  });
+
+  it("sortiert nach Betrag und blättert stabil", async () => {
+    const first = await asAdmin().finance.searchTransactions({ sort: "amount", dir: "desc", limit: 2 });
+    const second = await asAdmin().finance.searchTransactions({ sort: "amount", dir: "desc", limit: 2, cursor: 2 });
+    const amounts = [...first.items, ...second.items].map(t => t.amount);
+    expect(amounts).toEqual([...amounts].sort((a, b) => b - a));
+    expect(new Set([...first.items, ...second.items].map(t => t.id)).size).toBe(4);
+  });
+
+  it("filtert geteilte Buchungen und liefert Splits mit", async () => {
+    const res = await asAdmin().finance.searchTransactions({ shared: true });
+    expect(res.total).toBe(1);
+    expect(res.items[0].splits).toHaveLength(2);
+  });
+
+  it("respektiert private Konten: das Mitglied sieht die Privatbuchung nicht", async () => {
+    const admin = await asAdmin().finance.searchTransactions({ search: "Geheim" });
+    expect(admin.total).toBe(1);
+    const member = await asMember().finance.searchTransactions({ search: "Geheim" });
+    expect(member.total).toBe(0);
+    // Die Umbuchung vom Gemeinschaftskonto bleibt sichtbar (Quellkonto sichtbar)
+    const transfer = await asMember().finance.searchTransactions({ type: "transfer" });
+    expect(transfer.total).toBe(1);
+  });
+
+  it("markiert stornierte Buchungen", async () => {
+    const coop = (await asAdmin().finance.searchTransactions({ search: "Coop" })).items[0];
+    expect(coop.isReversed).toBe(false);
+    await asAdmin().finance.reverseTransaction({ id: coop.id });
+    const after = (await asAdmin().finance.searchTransactions({ search: "Coop" })).items;
+    expect(after.find(t => t.id === coop.id)?.isReversed).toBe(true);
+  });
+});
+
+describe("finance.listAccounts / categoryUsage / noteSuggestions", () => {
+  it("zählt Buchungen je Konto", async () => {
+    const accs = await asAdmin().finance.listAccounts();
+    expect(accs.find(a => a.id === privateAdmin)?.txCount).toBe(2);
+  });
+
+  it("liefert zuletzt genutzte und häufige Kategorien", async () => {
+    // „Häufig“ zählt die letzten 90 Tage ab heute — daher eine Buchung von heute
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    await asAdmin().finance.createTransaction({ type: "expense", accountId: shared, amount: 700, categoryId: bakery, userId: admin.id, date: today, note: "Brot" });
+    const usage = await asAdmin().finance.categoryUsage();
+    // Die Gegenbuchung des Stornos (Einnahme „Lebensmittel“) zählt nicht
+    expect(usage.income.last).toBe(salary);
+    expect(usage.expense.frequent).toContain(bakery);
+  });
+
+  it("schlägt frühere Notizen mit Kategorie und Konto vor", async () => {
+    const hits = await asAdmin().finance.noteSuggestions({ query: "bäck", type: "expense" });
+    expect(hits[0]).toMatchObject({ note: "Bäckerei Steiner", categoryId: bakery, accountId: shared, amount: 1_250 });
+    // Das Mitglied darf auf Annas Privatkonto nicht buchen → kein Vorschlag
+    const member = await asMember().finance.noteSuggestions({ query: "geheim", type: "expense" });
+    expect(member).toEqual([]);
+  });
+});

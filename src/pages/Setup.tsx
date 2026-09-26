@@ -10,6 +10,7 @@ import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 import BrandMark from '@/components/BrandMark';
 import { PENCIL_COLORS } from '@/lib/pencil';
+import DefaultCategoriesPicker from '@/components/DefaultCategoriesPicker';
 
 interface InvitedUser {
   id: number;
@@ -20,7 +21,13 @@ interface InvitedUser {
 
 const COLORS = PENCIL_COLORS;
 
-/** Ersteinrichtungs-Wizard: Admin anlegen → weitere Personen einladen → ggf. lokale Daten importieren */
+/**
+ * Ersteinrichtungs-Wizard: Admin anlegen → Startkategorien wählen → weitere
+ * Personen einladen → ggf. lokale Daten importieren.
+ */
+const STEPS = ['Administratorkonto', 'Kategorien', 'Personen einladen', 'Datenübernahme'];
+const INVITE_STEP = 2;
+const IMPORT_STEP = 3;
 export default function Setup() {
   const utils = trpc.useUtils();
   const [step, setStep] = useState(0);
@@ -105,16 +112,16 @@ export default function Setup() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-8">
-      <Card className="w-full max-w-lg">
+      <Card className={step === 1 ? "w-full max-w-2xl" : "w-full max-w-lg"}>
         <CardHeader className="items-center text-center">
           <BrandMark size="lg" className="mb-2" />
           <CardTitle>Einrichtung</CardTitle>
           <CardDescription>
-            Schritt {step + 1} von 3 — {['Administratorkonto', 'Personen einladen', 'Datenübernahme'][step]}
+            Schritt {step + 1} von {STEPS.length} — {STEPS[step]}
           </CardDescription>
           <div className="flex gap-1.5 pt-2">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className={`h-1.5 w-16 rounded-full ${i <= step ? 'bg-stamp' : 'bg-muted'}`} />
+            {STEPS.map((_, i) => (
+              <div key={i} className={`h-1.5 w-12 rounded-full ${i <= step ? 'bg-stamp' : 'bg-muted'}`} />
             ))}
           </div>
         </CardHeader>
@@ -153,6 +160,26 @@ export default function Setup() {
           )}
 
           {step === 1 && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Mit Kategorien ordnest du Buchungen ein — sie sind die Grundlage
+                für Budgets und Auswertungen. Übernimm die Vorschläge oder wähle
+                ab, was nicht passt; alles lässt sich später in den
+                Einstellungen umbenennen, ergänzen oder löschen.
+              </p>
+              <DefaultCategoriesPicker
+                submitLabel="Übernehmen & weiter"
+                onDone={() => setStep(INVITE_STEP)}
+                secondary={
+                  <Button type="button" variant="ghost" onClick={() => setStep(INVITE_STEP)}>
+                    Ohne Kategorien starten
+                  </Button>
+                }
+              />
+            </div>
+          )}
+
+          {step === INVITE_STEP && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Lade weitere Haushaltsmitglieder ein. Jede Person erhält einen Link,
@@ -195,15 +222,15 @@ export default function Setup() {
                 </div>
               ))}
               <div className="flex justify-between pt-2">
-                <Button variant="ghost" onClick={() => setStep(2)}>Überspringen</Button>
-                <Button onClick={() => setStep(2)}>
+                <Button variant="ghost" onClick={() => setStep(IMPORT_STEP)}>Überspringen</Button>
+                <Button onClick={() => setStep(IMPORT_STEP)}>
                   <Users className="mr-2 h-4 w-4" /> Weiter
                 </Button>
               </div>
             </div>
           )}
 
-          {step === 2 && (
+          {step === IMPORT_STEP && (
             <div className="space-y-4">
               {!localData && !importDone && (
                 <>

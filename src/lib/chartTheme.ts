@@ -62,3 +62,20 @@ export const hatch = (name: HatchName) => `url(#hatch-${name})`;
 export function moneyLabel(value: number | string) {
   return `${Number(value).toLocaleString(getUserLocale(), { minimumFractionDigits: 2 })} ${currencySymbol()}`;
 }
+
+/**
+ * Y-Achse für Geldbeträge: kompakt und einzeilig („14k“, „1,2 Mio.“) statt
+ * „14000 EUR“, das in der schmalen Achse auf zwei Zeilen umbrach. Die
+ * Währung steht im Tooltip; Werte sind bereits durch 100 geteilt.
+ */
+export function axisMoney(value: number) {
+  const abs = Math.abs(value);
+  const fmt = (n: number, digits: number) =>
+    n.toLocaleString(getUserLocale(), { maximumFractionDigits: digits });
+  if (abs >= 1_000_000) return `${fmt(value / 1_000_000, 1)} Mio.`;
+  if (abs >= 1_000) return `${fmt(value / 1_000, abs >= 10_000 ? 0 : 1)}k`;
+  return fmt(value, 0);
+}
+
+/** Breite der Geld-Achse passend zu `axisMoney` */
+export const AXIS_MONEY_WIDTH = 52;

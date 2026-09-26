@@ -86,6 +86,14 @@ import {
   normalizeIban,
 } from "./lib/accountTypes";
 import { auditAmount, logAudit } from "./lib/audit";
+import {
+  isAuditRowVisible,
+  type AuditVisibilityContext,
+} from "./lib/auditVisibility";
+import {
+  searchTransactions as searchTransactionRows,
+  transactionSearchInput,
+} from "./lib/transactionSearch";
 
 /** Einzahl/Mehrzahl für deutsche Fehlermeldungen */
 const kontoAnzahl = (n: number) => (n === 1 ? "1 Konto" : `${n} Konten`);
@@ -102,6 +110,94 @@ const txDetail = (t: {
   `${TYPE_LABELS[t.type]} ${auditAmount(t.amount)} am ${t.date}${t.note ? ` — ${t.note}` : ""}`;
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als YYYY-MM-DD");
+
+/** Lokales Datum als YYYY-MM-DD (Serverzeit, wie der Cron-Job) */
+const localIsoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+type TransactionRow = typeof transactions.$inferSelect;
+
+/**
+ * Buchungen um Aufteilung, Belege, Tags, Anzahl Änderungen und den
+ * Storno-Status ergänzen — geteilt von `listTransactions` und
+ * `searchTransactions` (dort nur für die geladene Seite).
+ * `candidates` sind alle **sichtbaren** Buchungen, damit „storniert“ auch
+ * dann stimmt, wenn die Gegenbuchung nicht in der Auswahl liegt — und auf dem
+ * Gerät (Replik enthält nur Sichtbares) dasselbe ergibt wie am Server.
+ */
+async function enrichTransactions(
+  db: ReturnType<typeof getDb>,
+  txs: TransactionRow[],
+  candidates: { stornoOfId: number | null }[]
+) {
+  if (txs.length === 0) return [];
+  const ids = txs.map(t => t.id);
+  const idSet = new Set(ids);
+  const [splits, attachments, tagRows, allTags, changeCounts] =
+    await Promise.all([
+      db.select().from(transactionSplits),
+      db
+        .select({
+          id: transactionAttachments.id,
+          transactionId: transactionAttachments.transactionId,
+          originalName: transactionAttachments.originalName,
+          mimeType: transactionAttachments.mimeType,
+          sizeBytes: transactionAttachments.sizeBytes,
+        })
+        .from(transactionAttachments),
+      db.select().from(transactionTags),
+      db.select().from(tags),
+      db
+        .select({
+          transactionId: transactionChanges.transactionId,
+          count: count(),
+        })
+        .from(transactionChanges)
+        .groupBy(transactionChanges.transactionId),
+    ]);
+  const group = <T extends { transactionId: number }, R>(
+    rows: T[],
+    map: (row: T) => R | undefined
+  ) => {
+    const out = new Map<number, R[]>();
+    for (const r of rows) {
+      if (!idSet.has(r.transactionId)) continue;
+      const value = map(r);
+      if (value === undefined) continue;
+      const list = out.get(r.transactionId) ?? [];
+      list.push(value);
+      out.set(r.transactionId, list);
+    }
+    return out;
+  };
+  const byTx = group(splits, s => ({ userId: s.userId, amount: s.amount }));
+  const attsByTx = group(attachments, a => ({
+    id: a.id,
+    originalName: a.originalName,
+    mimeType: a.mimeType,
+    sizeBytes: a.sizeBytes,
+  }));
+  const tagById = new Map(allTags.map(t => [t.id, t]));
+  const tagsByTx = group(tagRows, r => {
+    const tag = tagById.get(r.tagId);
+    return tag ? { id: tag.id, name: tag.name, color: tag.color } : undefined;
+  });
+  const changeCountByTx = new Map(
+    changeCounts.map(c => [c.transactionId, c.count])
+  );
+  const reversed = new Set(
+    candidates.map(t => t.stornoOfId).filter((id): id is number => id !== null)
+  );
+  return txs.map(t => ({
+    ...t,
+    splits: byTx.get(t.id) ?? [],
+    attachments: attsByTx.get(t.id) ?? [],
+    tags: tagsByTx.get(t.id) ?? [],
+    changeCount: changeCountByTx.get(t.id) ?? 0,
+    /** Es existiert eine Gegenbuchung (stornoOfId = id) */
+    isReversed: reversed.has(t.id),
+  }));
+}
 
 /** Ein Feld-Diff-Eintrag der Änderungshistorie (transaction_changes.changes) */
 type ChangeEntry = {
@@ -173,7 +269,10 @@ export const financeRouter = createRouter({
     ]);
     return accs.map(a => {
       let balance = a.initialBalance;
+      // Anzahl Buchungen, die das Konto berühren (Kontenseite)
+      let txCount = 0;
       for (const t of txs) {
+        if (t.accountId === a.id || t.toAccountId === a.id) txCount += 1;
         if (t.type === "transfer") {
           if (t.accountId === a.id) balance -= t.amount;
           if (t.toAccountId === a.id) balance += t.amount;
@@ -181,7 +280,7 @@ export const financeRouter = createRouter({
           balance += t.type === "income" ? t.amount : -t.amount;
         }
       }
-      return { ...a, balance };
+      return { ...a, balance, txCount };
     });
   }),
 
@@ -1476,86 +1575,207 @@ export const financeRouter = createRouter({
 
   /* ------------------------------- Transaktionen ------------------------------ */
 
-  listTransactions: authedQuery.query(async ({ ctx }) => {
+  /**
+   * Alle sichtbaren Buchungen, neueste zuerst. `sharedOnly` liefert nur
+   * Buchungen mit Aufteilung (Seite „Aufteilung“) — die Transaktionsliste
+   * selbst nutzt `searchTransactions` mit Filtern und Seitenbildung.
+   */
+  listTransactions: authedQuery
+    .input(z.object({ sharedOnly: z.boolean().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const visible = await visibleAccountIds(db, ctx.user);
+      const allTxs = await db
+        .select()
+        .from(transactions)
+        .orderBy(desc(transactions.date), desc(transactions.id));
+      // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
+      const visibleTxs = allTxs.filter(t => touchesVisibleAccount(visible, t));
+      let txs = visibleTxs;
+      if (input?.sharedOnly) {
+        const shared = new Set(
+          (
+            await db
+              .select({ id: transactionSplits.transactionId })
+              .from(transactionSplits)
+          ).map(r => r.id)
+        );
+        txs = txs.filter(t => shared.has(t.id));
+      }
+      return enrichTransactions(db, txs, visibleTxs);
+    }),
+
+  /**
+   * Buchungen suchen, filtern, sortieren und seitenweise laden
+   * (Transaktionsliste, Drilldowns von Dashboard/Budgets/Auswertung). Die
+   * Summen gelten für alle Treffer, nicht nur für die geladene Seite.
+   * Logik: `lib/transactionSearch.ts`.
+   */
+  searchTransactions: authedQuery
+    .input(transactionSearchInput)
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const [visibleAccs, allTxs, cats, userRows, tagRows, allTags, splitRows] =
+        await Promise.all([
+          listVisibleAccounts(db, ctx.user),
+          db.select().from(transactions),
+          db
+            .select({
+              id: categories.id,
+              name: categories.name,
+              parentId: categories.parentId,
+            })
+            .from(categories),
+          db.select({ id: users.id, name: users.name }).from(users),
+          db.select().from(transactionTags),
+          db.select({ id: tags.id, name: tags.name }).from(tags),
+          db
+            .select({ id: transactionSplits.transactionId })
+            .from(transactionSplits),
+        ]);
+      const visible = new Set(visibleAccs.map(a => a.id));
+      const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
+      const tagName = new Map(allTags.map(t => [t.id, t.name]));
+      const tagsByTx = new Map<number, { id: number; name: string }[]>();
+      for (const r of tagRows) {
+        const name = tagName.get(r.tagId);
+        if (name === undefined) continue;
+        const list = tagsByTx.get(r.transactionId) ?? [];
+        list.push({ id: r.tagId, name });
+        tagsByTx.set(r.transactionId, list);
+      }
+      const result = searchTransactionRows(txs, input, {
+        categories: cats,
+        accountNames: new Map(visibleAccs.map(a => [a.id, a.name])),
+        userNames: new Map(userRows.map(u => [u.id, u.name])),
+        tagsByTx,
+        sharedTxIds: new Set(splitRows.map(r => r.id)),
+      });
+      return {
+        ...result,
+        items: await enrichTransactions(db, result.items, txs),
+      };
+    }),
+
+  /**
+   * Nutzung der Kategorien für Vorschläge: zuletzt verwendete Kategorie je
+   * Art (Schnellerfassung) und die meistgenutzten der letzten 90 Tage
+   * („Häufig“ im Kategorie-Select).
+   */
+  categoryUsage: authedQuery.query(async ({ ctx }) => {
     const db = getDb();
     const visible = await visibleAccountIds(db, ctx.user);
-    const [allTxs, splits, attachments, tagRows, allTags, changeCounts] =
-      await Promise.all([
-        db
-          .select()
-          .from(transactions)
-          .orderBy(desc(transactions.date), desc(transactions.id)),
-        db.select().from(transactionSplits),
-        db
-          .select({
-            id: transactionAttachments.id,
-            transactionId: transactionAttachments.transactionId,
-            originalName: transactionAttachments.originalName,
-            mimeType: transactionAttachments.mimeType,
-            sizeBytes: transactionAttachments.sizeBytes,
-          })
-          .from(transactionAttachments),
-        db.select().from(transactionTags),
-        db.select().from(tags),
-        // Anzahl Änderungshistorie-Einträge pro Buchung („Bearbeitet"-Indikator)
-        db
-          .select({
-            transactionId: transactionChanges.transactionId,
-            count: count(),
-          })
-          .from(transactionChanges)
-          .groupBy(transactionChanges.transactionId),
-      ]);
-    // Sichtbar, wenn Quell- ODER Zielkonto sichtbar ist
-    const txs = allTxs.filter(t => touchesVisibleAccount(visible, t));
-    const byTx = new Map<number, { userId: number; amount: number }[]>();
-    for (const s of splits) {
-      const list = byTx.get(s.transactionId) ?? [];
-      list.push({ userId: s.userId, amount: s.amount });
-      byTx.set(s.transactionId, list);
-    }
-    const attsByTx = new Map<
-      number,
-      {
-        id: number;
-        originalName: string;
-        mimeType: string;
-        sizeBytes: number;
-      }[]
-    >();
-    for (const a of attachments) {
-      const list = attsByTx.get(a.transactionId) ?? [];
-      list.push({
-        id: a.id,
-        originalName: a.originalName,
-        mimeType: a.mimeType,
-        sizeBytes: a.sizeBytes,
-      });
-      attsByTx.set(a.transactionId, list);
-    }
-    const tagById = new Map(allTags.map(t => [t.id, t]));
-    const tagsByTx = new Map<
-      number,
-      { id: number; name: string; color: string }[]
-    >();
-    for (const r of tagRows) {
-      const tag = tagById.get(r.tagId);
-      if (!tag) continue;
-      const list = tagsByTx.get(r.transactionId) ?? [];
-      list.push({ id: tag.id, name: tag.name, color: tag.color });
-      tagsByTx.set(r.transactionId, list);
-    }
-    const changeCountByTx = new Map(
-      changeCounts.map(c => [c.transactionId, c.count])
+    const rows = (
+      await db
+        .select({
+          type: transactions.type,
+          accountId: transactions.accountId,
+          toAccountId: transactions.toAccountId,
+          categoryId: transactions.categoryId,
+          date: transactions.date,
+          stornoOfId: transactions.stornoOfId,
+        })
+        .from(transactions)
+        .orderBy(desc(transactions.date), desc(transactions.id))
+    ).filter(
+      // Gegenbuchungen eines Stornos sind keine Nutzung der Kategorie
+      t =>
+        t.categoryId !== null &&
+        t.stornoOfId === null &&
+        touchesVisibleAccount(visible, t)
     );
-    return txs.map(t => ({
-      ...t,
-      splits: byTx.get(t.id) ?? [],
-      attachments: attsByTx.get(t.id) ?? [],
-      tags: tagsByTx.get(t.id) ?? [],
-      changeCount: changeCountByTx.get(t.id) ?? 0,
-    }));
+    const since = new Date();
+    since.setDate(since.getDate() - 90);
+    const sinceIso = localIsoDate(since);
+    const usage = (type: "income" | "expense") => {
+      const ofType = rows.filter(r => r.type === type);
+      const counts = new Map<number, number>();
+      for (const r of ofType) {
+        if (r.date < sinceIso) break; // Liste ist neueste zuerst
+        counts.set(r.categoryId!, (counts.get(r.categoryId!) ?? 0) + 1);
+      }
+      return {
+        last: ofType[0]?.categoryId ?? null,
+        frequent: [...counts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([id]) => id),
+      };
+    };
+    return { income: usage("income"), expense: usage("expense") };
   }),
+
+  /**
+   * Vorschläge beim Tippen der Notiz: frühere Buchungen mit passender Notiz,
+   * häufigste zuerst, mit der zuletzt verwendeten Kategorie, Konto, Projekt
+   * und Betrag. Nur Konten mit Bearbeitungsrecht werden vorgeschlagen.
+   */
+  noteSuggestions: authedQuery
+    .input(
+      z.object({
+        query: z.string().trim().min(2).max(100),
+        type: z.enum(["income", "expense", "transfer"]),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const accs = await listVisibleAccounts(db, ctx.user);
+      const editable = new Set(
+        accs.filter(a => a.access === "edit").map(a => a.id)
+      );
+      const needle = input.query.toLowerCase();
+      const rows = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.type, input.type))
+        .orderBy(desc(transactions.date), desc(transactions.id));
+      const byNote = new Map<
+        string,
+        {
+          note: string;
+          count: number;
+          categoryId: number | null;
+          accountId: number;
+          toAccountId: number | null;
+          projectId: number | null;
+          amount: number;
+          date: string;
+        }
+      >();
+      for (const t of rows) {
+        const note = t.note.trim();
+        if (t.stornoOfId !== null) continue; // Stornos nicht vorschlagen
+        if (!note || !note.toLowerCase().includes(needle)) continue;
+        if (!editable.has(t.accountId)) continue;
+        const key = note.toLowerCase();
+        const entry = byNote.get(key);
+        if (entry) {
+          entry.count += 1;
+          continue;
+        }
+        // Erste Fundstelle = neueste Buchung mit dieser Notiz
+        byNote.set(key, {
+          note,
+          count: 1,
+          categoryId: t.categoryId,
+          accountId: t.accountId,
+          toAccountId: t.toAccountId,
+          projectId: t.projectId,
+          amount: t.amount,
+          date: t.date,
+        });
+      }
+      // Anfangstreffer vor Treffern mitten im Wort, dann nach Häufigkeit
+      return [...byNote.values()]
+        .sort(
+          (a, b) =>
+            Number(b.note.toLowerCase().startsWith(needle)) -
+              Number(a.note.toLowerCase().startsWith(needle)) ||
+            b.count - a.count ||
+            b.date.localeCompare(a.date)
+        )
+        .slice(0, 6);
+    }),
 
   createTransaction: authedQuery
     .input(
@@ -3568,29 +3788,78 @@ export const financeRouter = createRouter({
       z
         .object({
           limit: z.number().int().min(1).max(500).default(100),
+          /** Veraltet: einzelner Bereich; neu `entities` */
           entity: z.string().max(50).optional(),
+          entities: z.array(z.string().max(50)).max(20).optional(),
+          userId: z.number().int().positive().optional(),
         })
         .optional()
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = getDb();
-      return db
-        .select({
-          id: auditLog.id,
-          userId: auditLog.userId,
-          action: auditLog.action,
-          entity: auditLog.entity,
-          entityId: auditLog.entityId,
-          detail: auditLog.detail,
-          createdAt: auditLog.createdAt,
-          userName: users.name,
-          userColor: users.color,
-        })
-        .from(auditLog)
-        .leftJoin(users, eq(auditLog.userId, users.id))
-        .where(input?.entity ? eq(auditLog.entity, input.entity) : undefined)
-        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-        .limit(input?.limit ?? 100);
+      const limit = input?.limit ?? 100;
+      const entities = input?.entities ?? (input?.entity ? [input.entity] : undefined);
+      const conditions = [
+        entities && entities.length > 0 ? inArray(auditLog.entity, entities) : undefined,
+        input?.userId !== undefined ? eq(auditLog.userId, input.userId) : undefined,
+      ].filter(c => c !== undefined);
+      const [visibleAccs, allAccs, txRows] = await Promise.all([
+        listVisibleAccounts(db, ctx.user),
+        db.select({ id: accounts.id }).from(accounts),
+        db
+          .select({
+            id: transactions.id,
+            accountId: transactions.accountId,
+            toAccountId: transactions.toAccountId,
+          })
+          .from(transactions),
+      ]);
+      const visibility: AuditVisibilityContext = {
+        user: ctx.user,
+        visibleAccountIds: new Set(visibleAccs.map(a => a.id)),
+        existingAccountIds: new Set(allAccs.map(a => a.id)),
+        transactions: new Map(txRows.map(t => [t.id, t])),
+      };
+      // Sichtbarkeit wird nach dem Laden geprüft — deshalb in Blöcken lesen,
+      // bis `limit` sichtbare Einträge beisammen sind
+      const out: {
+        id: number;
+        userId: number | null;
+        action: string;
+        entity: string;
+        entityId: number | null;
+        detail: string;
+        createdAt: Date;
+        userName: string | null;
+        userColor: string | null;
+      }[] = [];
+      const CHUNK = 500;
+      for (let offset = 0; out.length < limit; offset += CHUNK) {
+        const rows = await db
+          .select({
+            id: auditLog.id,
+            userId: auditLog.userId,
+            action: auditLog.action,
+            entity: auditLog.entity,
+            entityId: auditLog.entityId,
+            detail: auditLog.detail,
+            createdAt: auditLog.createdAt,
+            userName: users.name,
+            userColor: users.color,
+          })
+          .from(auditLog)
+          .leftJoin(users, eq(auditLog.userId, users.id))
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+          .limit(CHUNK)
+          .offset(offset);
+        for (const r of rows) {
+          if (isAuditRowVisible(r, visibility)) out.push(r);
+          if (out.length >= limit) break;
+        }
+        if (rows.length < CHUNK) break;
+      }
+      return out;
     }),
 
   /* ------------------------------- Auswertung ------------------------------- */
@@ -3602,7 +3871,20 @@ export const financeRouter = createRouter({
    * Kategorie erscheinen als eigene Zeile (categoryId null).
    */
   yearComparison: authedQuery
-    .input(z.object({ year: z.number().int().min(2000).max(2100) }))
+    .input(
+      z.object({
+        year: z.number().int().min(2000).max(2100),
+        /**
+         * Vergleich „bis heute“: nur Buchungen bis zu diesem Tag (MM-TT) in
+         * beiden Jahren — sonst vergleicht man im September neun gegen
+         * zwölf Monate. Ohne Angabe: ganze Jahre.
+         */
+        upTo: z
+          .string()
+          .regex(/^\d{2}-\d{2}$/, "Tag als MM-TT")
+          .optional(),
+      })
+    )
     .query(async ({ ctx, input }) => {
       const db = getDb();
       const visible = await visibleAccountIds(db, ctx.user);
@@ -3630,6 +3912,7 @@ export const financeRouter = createRouter({
         }
         const isCurrent = t.date.startsWith(yearPrefix);
         if (!isCurrent && !t.date.startsWith(prevPrefix)) continue;
+        if (input.upTo && t.date.slice(5) > input.upTo) continue;
         const rootId =
           t.categoryId === null
             ? -1
@@ -3666,6 +3949,11 @@ export const financeRouter = createRouter({
         });
       }
       rows.sort((a, b) => b.current - a.current);
-      return { year: input.year, prevYear: input.year - 1, rows };
+      return {
+        year: input.year,
+        prevYear: input.year - 1,
+        upTo: input.upTo ?? null,
+        rows,
+      };
     }),
 });

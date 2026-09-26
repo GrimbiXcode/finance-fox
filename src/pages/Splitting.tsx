@@ -18,7 +18,10 @@ const PROJECT_COLORS = PENCIL_COLORS;
 type ProjectFilter = 'all' | 'household' | number;
 
 export default function Splitting() {
-  const { accounts, transactions, users, projects, splitTemplates } = useFinanceData();
+  const { accounts, users, projects, splitTemplates } = useFinanceData();
+  // Nur Buchungen mit Aufteilung — mehr braucht die Seite nicht
+  const sharedQuery = trpc.finance.listTransactions.useQuery({ sharedOnly: true });
+  const transactions = useMemo(() => sharedQuery.data ?? [], [sharedQuery.data]);
   const invalidate = useInvalidateFinance();
   const userIds = users.map((u) => u.id);
   const [projectFilter, setProjectFilter] = useState<ProjectFilter>('all');

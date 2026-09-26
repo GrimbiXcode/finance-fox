@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
-import { amountPlaceholder, parseEuro, todayISO } from '@/lib/finance';
+import { amountPlaceholder, formatAmountInput, parseEuro, todayISO } from '@/lib/finance';
+import NoteSuggestInput from '@/components/NoteSuggestInput';
 import { trpc } from '@/providers/trpc';
 import { toast } from 'sonner';
 
@@ -38,11 +39,15 @@ export default function QuickAddDialog() {
 
 function QuickAddForm({ close }: { close: () => void }) {
   const { user } = useAuth();
-  const { accounts, transactions, banks } = useFinanceData();
+  const { accounts, banks } = useFinanceData();
+  const usage = trpc.finance.categoryUsage.useQuery();
   const invalidate = useInvalidateFinance();
   const utils = trpc.useUtils();
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  // Kategorie aus einem gewählten Vorschlag (sonst: zuletzt verwendete)
+  const [picked, setPicked] = useState<{ categoryId: number | null; type: 'income' | 'expense' } | null>(null);
+  const isIncome = amount.trim().startsWith('-');
 
   const editableAccounts = useMemo(
     () => accounts.filter((a) => a.access === 'edit'),
@@ -69,7 +74,6 @@ function QuickAddForm({ close }: { close: () => void }) {
 
   const submit = () => {
     // parseEuro liefert den Absolutbetrag — das Vorzeichen kommt aus der Eingabe
-    const isIncome = amount.trim().startsWith('-');
     const cents = parseEuro(amount);
     if (cents <= 0) {
       toast.error('Bitte einen gültigen Betrag eingeben.');
@@ -80,13 +84,16 @@ function QuickAddForm({ close }: { close: () => void }) {
       return;
     }
     const type = isIncome ? 'income' : 'expense';
-    // Zuletzt verwendete Kategorie der jeweiligen Art (Liste ist neueste zuerst)
-    const lastOfType = transactions.find((t) => t.type === type && t.categoryId !== null);
+    // Zuletzt verwendete Kategorie der jeweiligen Art (ohne Stornos)
+    // Kategorie des gewählten Vorschlags nur, wenn die Art noch passt (das
+    // Vorzeichen kann nach der Auswahl geändert worden sein)
+    const pickedCategory = picked && picked.type === type ? picked.categoryId : null;
+    const lastCategoryId = pickedCategory ?? usage.data?.[type].last ?? null;
     createTx.mutate({
       type,
       accountId: account.id,
       amount: cents,
-      categoryId: lastOfType?.categoryId ?? undefined,
+      categoryId: lastCategoryId ?? undefined,
       userId: user.id,
       date: todayISO(),
       note: note.trim(),
@@ -94,7 +101,13 @@ function QuickAddForm({ close }: { close: () => void }) {
   };
 
   return (
-    <DialogContent className="sm:max-w-md">
+    <DialogContent
+      className="sm:max-w-md"
+      onEscapeKeyDown={(e) => {
+        // Bei offener Vorschlagsliste schließt Escape nur die Liste
+        if ((e.target as HTMLElement | null)?.getAttribute?.('aria-expanded') === 'true') e.preventDefault();
+      }}
+    >
       <DialogHeader>
         <DialogTitle>Schnellerfassung</DialogTitle>
         <DialogDescription>
@@ -119,12 +132,22 @@ function QuickAddForm({ close }: { close: () => void }) {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
-          <Input
-            placeholder="Notiz (optional)"
-            aria-label="Notiz"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
+          <div className="min-w-0 flex-1">
+            <NoteSuggestInput
+              placeholder="Notiz (optional)"
+              type={isIncome ? 'income' : 'expense'}
+              value={note}
+              onChange={(v) => {
+                setNote(v);
+                setPicked(null);
+              }}
+              onPick={(s) => {
+                setNote(s.note);
+                setPicked({ categoryId: s.categoryId, type: isIncome ? 'income' : 'expense' });
+                if (parseEuro(amount) <= 0) setAmount(formatAmountInput(s.amount));
+              }}
+            />
+          </div>
           <Button type="submit" disabled={createTx.isPending}>
             Buchen
           </Button>

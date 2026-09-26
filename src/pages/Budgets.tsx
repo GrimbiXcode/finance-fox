@@ -3,7 +3,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
+import BudgetMeter from '@/components/BudgetMeter';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -186,7 +186,6 @@ function BudgetCard({
   const cat = categories.find((c) => c.id === b.categoryId);
   const used = status.spent;
   const limit = status.effectiveLimit;
-  const pct = Math.min(100, status.percent);
   const elapsed = periodElapsed(b.period, today);
   const pace = budgetPace(used, limit, elapsed);
   const plan = Math.round(limit * elapsed);
@@ -260,21 +259,7 @@ function BudgetCard({
             {pace === 'over' ? `+${formatCents(used - limit)} überschritten` : `${status.percent} %`}
           </span>
         </div>
-        {/* Balken mit Zeitmarke: der Strich zeigt, wie viel vom Zeitraum schon vorbei ist */}
-        <div className="relative">
-          <Progress
-            value={pct}
-            className={cn(
-              '[&>div]:transition-all',
-              pace === 'over' ? '[&>div]:bg-destructive' : pace === 'fast' ? '[&>div]:bg-warning' : '',
-            )}
-          />
-          <div
-            className="pointer-events-none absolute -top-1 h-4 w-0.5 rounded-full bg-foreground/70"
-            style={{ left: `calc(${Math.round(elapsed * 100)}% - 1px)` }}
-            title={`Heute: ${Math.round(elapsed * 100)} % des ${b.period === 'monthly' ? 'Monats' : 'Jahres'} vorbei`}
-          />
-        </div>
+        <BudgetMeter percent={status.percent} elapsed={elapsed} pace={pace} period={b.period} />
         <p className="text-xs text-muted-foreground">
           {pace === 'over' && 'Budget überschritten'}
           {pace === 'fast' && (

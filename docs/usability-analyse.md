@@ -28,6 +28,22 @@ Welle 1 ist umgesetzt (Stand: Branch `claude/app-usability-analysis-d06w62`):
 | G1             | Summenzeile der Dauerbuchungen (Einnahmen, Ausgaben, Umbuchungen, Saldo pro Monat)                                   |
 | G4             | Nötige Monatsrate je Sparziel mit Stichtag, „Sparrate einrichten“ öffnet die vorbefüllte Dauerbuchung                |
 
+Welle 2 ist umgesetzt:
+
+| Story    | Umsetzung                                                                                                              |
+| -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| K1       | Buchungen serverseitig gefiltert, sortiert, seitenweise (`finance.searchTransactions`); keine Vollliste mehr pro Seite |
+| C1       | Zeitraum mit Presets, Vor/Zurück um die eigene Länge, freie Spanne; Standard laufender Monat                           |
+| C2, C3   | Gruppierung nach Tag/Monat mit Zwischensummen; „Weitere laden“ statt Schnitt bei 200                                   |
+| C5       | Betragssuche in beiden Schreibweisen (vorgezogen, gehört zur Serversuche)                                              |
+| C8       | Mobil: Suche plus Knopf „Filter“ (Bottom-Sheet), aktive Filter als Chips                                               |
+| D2       | „Was ansteht“ auf dem Dashboard (`dashboard.attention`)                                                                |
+| D3       | Budgets-Karte auf dem Dashboard mit Zeitmarke                                                                          |
+| D4       | Drilldown aus Kennzahlen, Ring, Legende, Cashflow und letzten Buchungen                                                |
+| B1       | Vorschläge aus früheren Buchungen im Buchungsdialog und in der Schnellerfassung                                        |
+| F1       | Jahresvergleich im laufenden Jahr „bis heute“                                                                          |
+| (Befund) | Aktivitäten-Log filtert nach Sichtbarkeit (siehe E-9)                                                                  |
+
 ## 1. Kurzfassung
 
 Finance Fox hat funktional mehr an Bord als die meisten Haushalts-Apps: sechs
@@ -1391,3 +1407,111 @@ Musterdaten und beiden Identitäten:
 | Mobil: erste Buchung ohne Scrollen sichtbar?                       | Ja, Filter hinter einem Knopf                     | C8, D8     |
 | Kennzahl mit sieben Stellen in 390 px?                             | Einzeilig, ggf. kleinere Schrift                  | J1         |
 | Partner-Sicht: gleiche Zahl unter gleichem Label?                  | Label erklärt sichtbare vs. private Konten        | H1         |
+
+## 8. Entscheidungen bei der Umsetzung
+
+Jede Entscheidung mit den geprüften Alternativen und der Begründung. Die
+Nummern (E-n) werden in Code-Kommentaren nicht zitiert; die Kommentare dort
+erklären dasselbe knapp am Ort.
+
+### Welle 2
+
+**E-1 · Buchungsliste nicht mehr global laden (K1).** Bisher lud
+`useFinanceData()` auf jeder Seite — über das Layout sogar auf allen — die
+komplette Buchungsliste; gefiltert, summiert und gekappt (200 Zeilen) wurde
+im Browser.
+
+- _Alternative A:_ Liste weiter laden, im Browser seitenweise anzeigen. Behebt
+  den 200er-Schnitt, nicht aber die wachsende Datenmenge pro Seitenwechsel.
+- _Alternative B:_ Nur für die Transaktionsliste einen Such-Endpunkt. Bringt
+  nichts, solange Layout und Dashboard die volle Liste weiter anfordern.
+- _Gewählt:_ `useFinanceData()` enthält keine Buchungen mehr. Jede Seite holt
+  genau ihren Ausschnitt oder ihr Aggregat: `finance.searchTransactions`
+  (Liste), `dashboard.summary` (Monatszahlen), `listAccounts` (Salden und
+  neu `txCount`), `finance.categoryUsage` (Schnellerfassung),
+  `listTransactions({ sharedOnly })` (Aufteilung). Zusätzlicher Gewinn: Die
+  Rechnungen liegen jetzt serverseitig und sind mit Vitest getestet — für das
+  Frontend gibt es keine Tests. Offline ändert sich nichts, der Service
+  Worker führt denselben Router aus.
+- _Preis:_ Gruppensummen in der Liste zählen nur geladene Zeilen; an einer
+  Seitengrenze kann ein Tag geteilt sein, bis „Weitere laden“ ihn ergänzt.
+
+**E-2 · Seitenbildung per Versatz statt Keyset.** Sortiert wird nach Datum,
+Betrag, Kategorie, Konto oder Person; ein Keyset-Cursor müsste für jede
+Sortierung eigene Schlüssel führen. Die Datenbank liegt ohnehin im Speicher
+(sql.js), ein Versatz kostet nichts. Stabil wird die Reihenfolge durch den
+Gleichstand-Brecher Datum, dann ID.
+
+**E-3 · Standard-Zeitraum der Transaktionen ist der laufende Monat.** So
+stimmen Kopfzeile und Summen mit dem Dashboard überein. Findet eine Suche im
+Monat nichts, bietet die leere Liste „In allen Zeiträumen suchen“ an. Der
+laufende Monat braucht keinen URL-Parameter; alle anderen Zeiträume stehen
+in der Adresse (`monat`, `jahr`, `von`/`bis`, `zeit=alle`).
+
+**E-4 · „Was ansteht“ serverseitig gesammelt, Sätze im Frontend.**
+`dashboard.attention` ruft die Modul-Router per `createCaller` auf — dasselbe
+Prinzip wie der Bericht: eine Quelle der Wahrheit für Hinweise, keine zweite
+Rechnung. Die Sätze baut `src/lib/attention.ts`, die Modultexte dafür liegen
+jetzt geteilt in `src/lib/mortgageText.ts` und `src/lib/insuranceText.ts`.
+Bewusst **nicht** aufgenommen: Einrichtungs-Hinweise der Hypothek (fehlender
+Verkehrswert oder fehlendes Einkommen), Vorsorge-Warnungen (reine
+Einrichtungs-Hinweise, sie würden täglich nerven; dafür ist I1 da) und
+Versicherungs-Hinweise mit Schwere „info“. Ausgleichszahlungen unter 1.00
+werden nicht gemeldet, die Vorschau der Dauerbuchungen reicht 7 Tage.
+
+**E-5 · Notiz aus den Details in den Hauptbereich.** Die Notiz ist der Anker
+für die Vorschläge aus der Historie (B1) und das am häufigsten genutzte
+beschreibende Feld. Im eingeklappten Detailbereich hätte niemand die
+Vorschläge gesehen.
+
+**E-6 · Stornos zählen nicht als Nutzung.** Beim Testen fiel auf, dass die
+Gegenbuchung eines Stornos die „zuletzt verwendete Kategorie“ der
+Schnellerfassung verfälscht. `categoryUsage` und `noteSuggestions`
+ignorieren deshalb Buchungen mit `stornoOfId`.
+
+**E-7 · Jahresvergleich im laufenden Jahr „bis heute“.** Ganze Jahre bleiben
+per Umschalter erreichbar; für vergangene Jahre gibt es nur den Vergleich
+ganzer Jahre. Künftige Jahre sind gesperrt.
+
+**E-8 · Toleranz beim Budget-Tempo.** „Zu schnell“ gilt erst ab 5
+Prozentpunkten über dem Zeitplan — sonst meldet schon der Wocheneinkauf am
+Monatsanfang Alarm.
+
+**E-9 · Aktivitäten-Log nach Sichtbarkeit filtern (Befund beim Umsetzen).**
+Bis Version 1.31 lieferte `listAuditLog` allen Mitgliedern alle Einträge —
+inklusive fremder Bruttolöhne aus der privaten Vorsorge und der Notizen von
+Buchungen auf fremden Privatkonten. Weil H4 das Log prominent macht, filtert
+der Server jetzt je Eintrag (`api/lib/auditVisibility.ts`). Einträge zu
+gelöschten Buchungen und Konten lassen sich keinem Konto mehr zuordnen; sie
+sehen nur Urheber und Admins. Das blendet für andere Mitglieder auch den
+Erfassungs-Eintrag einer inzwischen gelöschten Buchung auf dem
+Gemeinschaftskonto aus — lieber zu wenig zeigen als zu viel. Die
+Ehepartner-Verknüpfung der Vorsorge bleibt sichtbar, weil sie die Rente des
+Partners betrifft und keine Zahlen enthält.
+
+**Review von Welle 2 — gefunden und behoben:**
+
+- Escape in der Vorschlagsliste schloss den ganzen Buchungsdialog (Radix
+  fängt Escape vor dem Eingabefeld ab). Jetzt schließt Escape nur die Liste.
+- Beim **Bearbeiten** übernahm ein Vorschlag auch Konto, Kategorie und
+  Projekt — ein Enter im Notizfeld konnte eine Buchung still verschieben.
+  Jetzt übernimmt der Vorschlag beim Bearbeiten nur die Notiz; Zielkonten
+  werden nur vorgeschlagen, wenn sie sichtbar sind.
+- Die verzögerte Suche fraß ein gerade getipptes Leerzeichen und konnte mit
+  veralteten Parametern gleichzeitige Filteränderungen zurücksetzen.
+- „Was ansteht“ meldete bei einem Fehler „Alles im grünen Bereich“. Jetzt
+  zeigt die Karte den Fehler, und am Server ist jedes Modul einzeln
+  abgesichert (`section_failed`).
+- Schnellerfassung: Die Kategorie eines Ausgaben-Vorschlags blieb stehen,
+  wenn danach das Vorzeichen auf Einnahme wechselte.
+- Sparziele mit Quellen auf fremden Privatkonten lösten eine falsche
+  „nötige Rate“ aus; Dauerbuchungen hinter ihrem Enddatum erschienen als
+  fällig.
+- Das Dashboard verschwand beim Monatswechsel kurz ganz (vorherige Daten
+  bleiben jetzt stehen); der „laufende Monat“ richtet sich nach dem Gerät,
+  nicht nach der Server-Uhr (UTC).
+- „Erste Schritte“ fragte den haushaltsweiten Zustand ab und verriet damit
+  Buchungen auf fremden Privatkonten; `isReversed` rechnet jetzt nur mit
+  sichtbaren Buchungen (online wie offline gleich).
+- Kleinere Punkte: Fehlerzustand der Transaktionsliste, ungültige
+  URL-Werte, Dubletten beim Nachladen, ein zeitabhängiger Test.

@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { trpc } from '@/providers/trpc';
-import { formatCents } from '@/lib/finance';
+import { formatCents, getUserLocale, todayISO } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
 import { AXIS_MONEY_WIDTH, CURSOR_BAR, GRID_PROPS, axisMoney } from '@/lib/chartTheme';
@@ -33,8 +33,16 @@ function DiffCell({ current, previous }: { current: number; previous: number }) 
 
 /** Jahresvergleich der Ausgaben pro Oberkategorie (Jahr vs. Vorjahr) */
 export default function YearReview() {
-  const [year, setYear] = useState(() => new Date().getFullYear());
-  const query = trpc.finance.yearComparison.useQuery({ year });
+  const today = todayISO();
+  const currentYear = Number(today.slice(0, 4));
+  const [year, setYear] = useState(currentYear);
+  // Im laufenden Jahr standardmäßig „bis heute“ — sonst vergleicht man im
+  // September neun gegen zwölf Monate und jede Kategorie wirkt teurer
+  const [fullYear, setFullYear] = useState(false);
+  const ytd = year === currentYear && !fullYear;
+  const upTo = ytd ? today.slice(5) : undefined;
+  const query = trpc.finance.yearComparison.useQuery({ year, upTo });
+  const upToLabel = new Date(`${today}T12:00:00`).toLocaleDateString(getUserLocale(), { day: 'numeric', month: 'long' });
   const rows = query.data?.rows ?? [];
 
   const totals = rows.reduce(
@@ -56,9 +64,29 @@ export default function YearReview() {
         <div>
           <h1 className="text-2xl font-semibold">Auswertung</h1>
           <p className="text-sm text-muted-foreground">
-            Ausgaben {year} im Vergleich zu {year - 1} — pro Oberkategorie
+            {ytd
+              ? `Ausgaben vom 1. Januar bis ${upToLabel} ${year} im Vergleich zum selben Zeitraum ${year - 1} — pro Oberkategorie`
+              : `Ausgaben ${year} im Vergleich zu ${year - 1} — pro Oberkategorie`}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {year === currentYear && (
+            <div className="flex rounded-lg border bg-muted/40 p-1 text-sm">
+              {([['ytd', 'Bis heute'], ['full', 'Ganzes Jahr']] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={cn(
+                    'rounded-md px-3 py-1 text-muted-foreground transition-colors hover:text-foreground',
+                    (value === 'full') === fullYear && 'bg-background text-foreground shadow-sm',
+                  )}
+                  onClick={() => setFullYear(value === 'full')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         <div className="flex items-center gap-1">
           <Button
             variant="outline" size="icon" title="Vorheriges Jahr"
@@ -69,10 +97,11 @@ export default function YearReview() {
           <span className="w-16 text-center text-lg font-semibold tabular-nums">{year}</span>
           <Button
             variant="outline" size="icon" title="Nächstes Jahr"
-            disabled={year >= 2100} onClick={() => setYear((y) => y + 1)}
+            disabled={year >= currentYear} onClick={() => setYear((y) => y + 1)}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
+        </div>
         </div>
       </div>
 

@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { useFinanceData } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
+import { trpc } from '@/providers/trpc';
 
 const HIDDEN_KEY = 'ff-getting-started-hidden';
 
@@ -42,7 +43,10 @@ const actionClass = 'font-medium underline decoration-dotted underline-offset-4 
  */
 export default function GettingStarted() {
   const { user } = useAuth();
-  const { accounts, categories, transactions, users, recurring, budgets, isLoading } = useFinanceData();
+  const { accounts, categories, users, recurring, budgets, isLoading } = useFinanceData();
+  // Sichtbare Buchungen (nicht haushaltsweit `hasData` — das verriete, dass
+  // ein anderes Mitglied privat bucht)
+  const anyTx = trpc.finance.searchTransactions.useQuery({ limit: 1 });
   const [hidden, setHidden] = useState(readHidden);
   const [catsOpen, setCatsOpen] = useState(false);
 
@@ -50,7 +54,7 @@ export default function GettingStarted() {
   const steps = {
     account: accounts.length > 0,
     categories: categories.length > 0,
-    transaction: transactions.length > 0,
+    transaction: (anyTx.data?.total ?? 0) > 0,
     person: users.length > 1,
     recurring: recurring.length > 0,
     budget: budgets.length > 0,
@@ -58,7 +62,7 @@ export default function GettingStarted() {
   const relevant = Object.entries(steps).filter(([key]) => key !== 'person' || isAdmin);
   const doneCount = relevant.filter(([, done]) => done).length;
 
-  if (isLoading || hidden || doneCount === relevant.length) return null;
+  if (isLoading || anyTx.isLoading || hidden || doneCount === relevant.length) return null;
 
   const hide = () => {
     setHidden(true);

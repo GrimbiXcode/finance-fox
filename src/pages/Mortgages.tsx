@@ -53,7 +53,6 @@ import {
   formatCents,
   formatDate,
   getUserLocale,
-  totalBalance,
 } from "@/lib/finance";
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { trpc } from "@/providers/trpc";
@@ -63,6 +62,7 @@ import Note from "@/components/Note";
 import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, hatch } from "@/lib/chartTheme";
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
+import { warningText } from "@/lib/mortgageText";
 import { pencil } from "@/lib/pencil";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
@@ -119,31 +119,6 @@ const TRANCHE_KIND_LABELS: Record<string, string> = {
   saron: "SARON",
   variable: "Variabel",
 };
-
-/**
- * Hinweise kommen als strukturierte Daten vom Server — Beträge, Prozente
- * und Datumsangaben werden erst hier locale-konform formatiert.
- */
-function warningText(w: Schedule["warnings"][number]): string {
-  switch (w.kind) {
-    case "no_market_value":
-      return "Ohne Verkehrswert lassen sich Belehnung und Tragbarkeit nicht berechnen.";
-    case "ltv_exceeded":
-      return `Die Belehnung liegt bei ${formatBp(w.ltvBp)} % und übersteigt die Grenze von ${formatBp(w.maxLtvBp)} %.`;
-    case "no_income":
-      return "Ohne Bruttojahreseinkommen lässt sich die Tragbarkeit nicht berechnen.";
-    case "affordability_exceeded":
-      return `Die Tragbarkeit liegt bei ${formatBp(w.ratioBp)} % des Bruttoeinkommens (Richtwert: höchstens 33 %).`;
-    case "amortization_uncovered":
-      return `Die Amortisationspflicht der 2. Hypothek von ${formatCents(w.required)} pro Jahr ist nicht gedeckt — erfasst sind ${formatCents(w.actual)}.`;
-    case "maturity_due":
-      return `Die Zinsbindung von „${w.tranche}“ läuft am ${formatDate(w.date)} ab.`;
-    case "maturity_passed":
-      return `Die Zinsbindung von „${w.tranche}“ ist am ${formatDate(w.date)} abgelaufen.`;
-    case "stale_balance":
-      return `Die Restschuld von „${w.tranche}“ ist per ${formatDate(w.date)} erfasst — bitte aktualisieren.`;
-  }
-}
 
 /* ------------------------------ Leerer Zustand ---------------------------- */
 
@@ -224,8 +199,8 @@ function OverviewSection({
   schedule: Schedule | undefined;
   isLoading: boolean;
 }) {
-  const { accounts, transactions } = useFinanceData();
-  const liquid = totalBalance(accounts, transactions);
+  const { accounts } = useFinanceData();
+  const liquid = accounts.reduce((sum, a) => sum + a.balance, 0);
 
   if (isLoading || !schedule) {
     return <p className="text-sm text-muted-foreground">Lade Berechnung…</p>;

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/providers/auth';
 import { useFinanceData } from '@/lib/data';
-import { formatCents, setAppCurrency, totalBalance } from '@/lib/finance';
+import { formatCents, setAppCurrency } from '@/lib/finance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -78,9 +78,10 @@ const SIDEBAR_KEY = 'ff-sidebar-collapsed';
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const { accounts, transactions, users } = useFinanceData();
+  const { accounts, users } = useFinanceData();
   const { resolvedTheme, setTheme } = useTheme();
-  const total = totalBalance(accounts, transactions);
+  // Salden rechnet listAccounts serverseitig — dieselbe Zahl wie auf der Kontenseite
+  const total = accounts.reduce((sum, a) => sum + a.balance, 0);
   // Eingeklappte Seitenleiste (nur Icons) pro Gerät merken
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
   const [moreOpen, setMoreOpen] = useState(false);

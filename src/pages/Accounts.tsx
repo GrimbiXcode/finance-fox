@@ -152,7 +152,7 @@ function BalanceHistory({ accountId }: { accountId: number }) {
 }
 
 export default function Accounts() {
-  const { accounts, accountTypes, banks, transactions, users } = useFinanceData();
+  const { accounts, accountTypes, banks, users } = useFinanceData();
   const [openId, setOpenId] = useState<number | null>(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [bankFilter, setBankFilter] = useState('all');
@@ -184,8 +184,8 @@ export default function Accounts() {
     }
     return true;
   });
-  const txCountOf = (id: number) =>
-    transactions.filter((t) => t.accountId === id || t.toAccountId === id).length;
+  // Anzahl Buchungen zählt listAccounts serverseitig mit
+  const txCountOf = (id: number) => accounts.find((a) => a.id === id)?.txCount ?? 0;
 
   // Clientseitige Sortierung der Tabellenansicht (wirkt auf die gefilterte Liste)
   const { toggleSort, sorted, iconFor, isActive } = useTableSort<AccountSortKey, AccountRow>({

@@ -18,8 +18,8 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   und den Abschnitt „Die App selbst durchklicken" in der Root-AGENTS.md.
   Die Route stellt ein reguläres Session-Cookie aus; am Auth-Pfad
   (`getSessionUser`, `verifySessionToken`) ändert sie **nichts**.
-- `router.ts` — `appRouter: { ping, auth, finance, forecast, insurance,
-  mortgage, pension }`. Der
+- `router.ts` — `appRouter: { ping, analysis, auth, dashboard, finance,
+  forecast, insurance, mortgage, pension, sync }`. Der
   Frontend-Client importiert den Typ `AppRouter` direkt von hier
   (`src/providers/trpc.tsx`) — Typänderungen wirken sofort auf den Client.
 - `middleware.ts` — tRPC-Setup: `publicQuery` / `authedQuery` / `adminQuery`.
@@ -37,6 +37,10 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   Banken), Transaktionen (inkl. CSV-Export/-Import), Kategorien, Tags,
   Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele.
 - `forecastRouter.ts` — Prognosen.
+- `dashboardRouter.ts` — Aggregate fürs Dashboard (siehe „Dashboard &
+  Auswertungen“).
+- `analysisRouter.ts` — Auswertungen (Monatsmatrix, Verlauf, Budget-Detail,
+  Fälligkeiten, Projekt-Zusammenfassung; siehe „Dashboard & Auswertungen“).
 - `pensionRouter.ts` — Vorsorge-Modul (Schweizer 3-Säulen-Prinzip, siehe
   Abschnitt „Vorsorge").
 - `mortgageRouter.ts` — Hypotheken-Modul (siehe Abschnitt „Hypotheken").
@@ -438,6 +442,23 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
 
 ## Transaktionen
 
+- **Laden**: Das Frontend lädt die Buchungsliste **nicht** mehr pauschal
+  (`useFinanceData` enthält keine Buchungen). `finance.searchTransactions`
+  filtert (Zeitraum `from`/`to`, Art, Konto als Quelle oder Ziel, Kategorie
+  inkl. Unterkategorien bzw. `-1` = ohne, Person, Tag, Projekt `0` =
+  Haushalt, nur geteilte), sucht (Notiz, Kategorie- und Tag-Namen, Betrag in
+  beiden Schreibweisen — `parseAmountTerm`), sortiert (Datum, Betrag,
+  Kategorie, Konto, Person; Gleichstand Datum, dann ID) und blättert per
+  `cursor` (Versatz, passend zu tRPC-Infinite-Queries). `total`, `income`
+  und `expense` gelten für **alle** Treffer. Reine Logik in
+  `lib/transactionSearch.ts`, angereichert (Splits, Belege, Tags,
+  `changeCount`, `isReversed`) über `enrichTransactions` nur für die Seite.
+  `listTransactions` bleibt für Bericht und `sharedOnly` (Aufteilung).
+  `finance.categoryUsage` (zuletzt/häufig genutzte Kategorien je Art) und
+  `finance.noteSuggestions` (frühere Notizen mit Kategorie, Konto, Projekt,
+  Betrag; nur Konten mit `edit`) ignorieren Storno-Buchungen.
+  `listAccounts` liefert zusätzlich `txCount`. Tests:
+  `api/transactionSearch.test.ts`.
 - **CSV-Import/-Export**: Format in `lib/csv.ts` (für de-Locales Semikolon +
   Dezimalkomma, sonst Komma + Dezimalpunkt, RFC-4180-Quoting; der Import
   erkennt das Trennzeichen automatisch). Kategorien werden rein per Name
@@ -708,9 +729,13 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   der Eintrag im selben Transaktionskontext landet). Instrumentiert sind die
   fachlichen Mutationen in `financeRouter.ts` und `authRouter.ts` (Login
   Erfolg/Fehlschlag, Logout, TOTP, Benutzer-Verwaltung, Profil, Passwort).
-  Lesen für alle Mitglieder über `finance.listAuditLog` (neueste zuerst,
-  Limit max 500, optionaler entity-Filter, userName/userColor gejoint).
-  Tests: `api/auditLog.test.ts`.
+  Lesen über `finance.listAuditLog` (neueste zuerst, Limit max 500, Filter
+  `entities` und `userId`, userName/userColor gejoint). **Sichtbarkeit**
+  prüft `lib/auditVisibility.ts` je Eintrag: Vorsorge nur eigene (außer
+  Ehepartner-Verknüpfung), Buchungen und Konten nur mit sichtbarem Konto,
+  gelöschte nur Urheber und Admins; der Rest ist haushaltsweit. Bis 1.31 sah
+  jedes Mitglied alles, inklusive fremder Lohnbeträge. Tests:
+  `api/auditLog.test.ts`, `api/auditVisibility.test.ts`.
 
 ## Beleg-Anhänge
 
@@ -807,3 +832,32 @@ die Frontend-Seite steht in `src/AGENTS.md`.
     ausgeschriebenen Spaltensatz (nicht mehr, nicht weniger) und die
     Gegenprobe, dass die Rechnung mit den projizierten Zeilen dasselbe
     Ergebnis liefert.
+
+## Dashboard & Auswertungen
+
+- **`dashboard.summary({ month, today? })`**: Monatssummen mit Vormonat und
+  Vorjahresmonat, Vermögen (laufender Monat: alle Buchungen; sonst Stand am
+  Monatsende), 6-Monats-Cashflow, Ausgaben je Oberkategorie (`-1` = ohne),
+  letzte Buchungen, Aufteilungs-Salden (`contracts/settlement.ts`, geteilt
+  mit der Seite „Aufteilung“). `today` kommt vom Gerät, weil der Server oft
+  in UTC läuft.
+- **`dashboard.attention()`**: strukturierte Hinweise (`AttentionItem`) —
+  Budgets überschritten/zu schnell (`contracts/planning.ts`), Bargeld im
+  Minus, Dauerbuchungen der nächsten 7 Tage (nur solche, die der Cron noch
+  verbucht), offene Ausgleichszahlungen ab 1.00, Sparziele mit Stichtag, die
+  nicht reichen (ohne Ziele mit verborgenen Quellen), Hypotheken-Hinweise
+  (ohne Einrichtungs-Hinweise), dringende Versicherungs-Hinweise. Module
+  werden per `createCaller` gefragt (Muster: Bericht); scheitert eines,
+  erscheint `section_failed` statt einer leeren, beruhigenden Liste. Sätze
+  baut das Frontend (`src/lib/attention.ts`). Tests: `api/dashboard.test.ts`.
+- **`analysis.*`**: `categoryMatrix` (Kategorie × Monat, Oberkategorien
+  enthalten Unterkategorien, Summenzeile ohne Doppelzählung),
+  `monthlyTrend` (Einnahmen, Ausgaben, Sparquote), `budgetDetail`
+  (Perioden-Verlauf, Treffer-Quote ab der ersten Buchung,
+  Unterkategorien), `budgetCoverage` (unbudgetierte Ausgaben),
+  `categoryStats` (Ø 3/6 Monate, Maximum — Budgetvorschlag), `upcoming`
+  (Termine der Dauerbuchungen, Konten, die ins Minus fielen),
+  `projectSummary` (bezahlt/getragen je Person). Alles über sichtbare
+  Konten. Tests: `api/analysis.test.ts`.
+- **`finance.yearComparison({ year, upTo? })`**: mit `upTo` (`MM-TT`) nur
+  bis zu diesem Tag in beiden Jahren („bis heute“).

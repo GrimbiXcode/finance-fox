@@ -1,27 +1,35 @@
-import type { ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router';
-import { ChevronLeft, ChevronRight, TrendingDown, TrendingUp, Wallet, Scale } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { percentChange, shiftMonth } from '@contracts/planning';
+import { useState, type ReactNode } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
+import { keepPreviousData } from '@tanstack/react-query';
+import {
+  AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Info,
+  Scale, TrendingDown, TrendingUp, Wallet,
+} from 'lucide-react';
 import {
   Area, AreaChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { budgetPace, percentChange, periodElapsed, shiftMonth } from '@contracts/planning';
 import { useFinanceData } from '@/lib/data';
 import {
-  currentMonthKey, expensesByRootCategory, formatCents, formatDate, formatMonth,
-  formatMonthShort, memberBalances, monthTotals, totalBalance,
+  currentMonthKey, formatCents, formatDate, formatMonth, formatMonthShort, todayISO,
 } from '@/lib/finance';
+import { attentionEntry } from '@/lib/attention';
 import TransactionDialog from '@/components/TransactionDialog';
 import GettingStarted from '@/components/GettingStarted';
+import BudgetMeter from '@/components/BudgetMeter';
+import { useOffline } from '@/providers/offline';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 import { CHART } from '@/lib/chartColors';
-import { AXIS_MONEY_WIDTH, AXIS_PROPS, axisMoney, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, SHEET, activeDotFor, dotFor, hatch, moneyLabel } from '@/lib/chartTheme';
+import {
+  AXIS_MONEY_WIDTH, AXIS_PROPS, axisMoney, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, SHEET,
+  activeDotFor, dotFor, hatch, moneyLabel,
+} from '@/lib/chartTheme';
 import { PaperTooltip } from '@/components/ChartParts';
 import { chartDefs } from '@/lib/chartDefs';
 import { pencil, pencilSlot } from '@/lib/pencil';
-
 
 /**
  * Veränderung gegenüber Vormonat und Vorjahresmonat als kleine Zeile unter
@@ -45,9 +53,9 @@ function Change({
     const pct = percentChange(current, value);
     // Ohne Vergleichswert oder ohne Veränderung gibt es nichts zu sagen
     if (diff === 0 || (!asAmount && pct === null)) return null;
-    const good = diff === 0 ? null : (diff > 0) === higherIsGood;
+    const good = (diff > 0) === higherIsGood;
     return (
-      <span className={cn('whitespace-nowrap tabular-nums', good === true && 'text-positive', good === false && 'text-negative')}>
+      <span className={cn('whitespace-nowrap tabular-nums', good ? 'text-positive' : 'text-negative')}>
         {diff > 0 ? '+' : ''}
         {asAmount ? formatCents(diff) : `${pct} %`} {label}
       </span>
@@ -64,8 +72,185 @@ function Change({
   );
 }
 
+/** Kennzahl-Karte; `to` macht den Betrag zum Link auf die Buchungen dahinter */
+function Kpi({
+  title, icon, value, tone, to, children,
+}: {
+  title: string;
+  icon: ReactNode;
+  value: number;
+  tone?: 'positive' | 'negative' | 'auto';
+  to?: string;
+  children?: ReactNode;
+}) {
+  const color = tone === 'positive' ? 'text-positive'
+    : tone === 'negative' ? 'text-negative'
+      : tone === 'auto' ? (value < 0 ? 'text-negative' : 'text-positive')
+        : value < 0 ? 'text-destructive' : '';
+  const number = (
+    <div className={cn('font-serif text-2xl font-semibold tabular-nums', color)}>{formatCents(value)}</div>
+  );
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="font-sans text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        {to ? (
+          <Link to={to} className="block rounded-md hover:underline hover:decoration-dotted hover:underline-offset-4">
+            {number}
+          </Link>
+        ) : number}
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+const SEVERITY_ICON = {
+  bad: <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-negative" />,
+  warn: <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />,
+  info: <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />,
+};
+
+/**
+ * „Was ansteht“: alles, was Aufmerksamkeit braucht, an einem Ort — Budgets,
+ * Bargeld, Dauerbuchungen, Ausgleich, Sparziele, Hypotheken,
+ * Versicherungen (Server, `dashboard.attention`) plus Abgleich-Konflikte
+ * dieses Geräts. Jede Zeile führt zur Stelle, an der man handelt.
+ */
+function AttentionCard({ names }: { names: Map<number, string> }) {
+  const attention = trpc.dashboard.attention.useQuery();
+  const { status } = useOffline();
+  const [showAll, setShowAll] = useState(false);
+
+  const entries = (attention.data ?? []).map((item) => ({
+    severity: item.severity,
+    ...attentionEntry(item, names),
+  }));
+  if ((status?.conflicts ?? 0) > 0) {
+    entries.unshift({
+      severity: 'warn',
+      text: `${status!.conflicts} ${status!.conflicts === 1 ? 'Datensatz wurde' : 'Datensätze wurden'} unterwegs und zuhause verschieden geändert — bitte entscheiden.`,
+      to: '/abgleich',
+    });
+  }
+  const LIMIT = 6;
+  const visible = showAll ? entries : entries.slice(0, LIMIT);
+
+  return (
+    <Card className="lg:col-span-3">
+      <CardHeader>
+        <CardTitle>Was ansteht</CardTitle>
+        <CardDescription>Was heute Aufmerksamkeit braucht — jede Zeile führt zur passenden Stelle</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {attention.isLoading ? (
+          <p className="text-sm text-muted-foreground">Wird geprüft…</p>
+        ) : attention.isError ? (
+          // Nie „alles im grünen Bereich“ melden, wenn gar nicht geprüft wurde
+          <p className="flex items-center gap-2 text-sm text-negative">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            Die Hinweise konnten nicht geladen werden: {attention.error.message}
+          </p>
+        ) : entries.length === 0 ? (
+          <div className="flex items-center gap-2 rounded-lg border border-positive/30 bg-positive/5 px-4 py-3 text-sm text-positive">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            Alles im grünen Bereich — nichts, was gerade Aufmerksamkeit braucht.
+          </div>
+        ) : (
+          <ul className="space-y-1">
+            {visible.map((e, i) => (
+              <li key={`${e.to}-${i}`}>
+                <Link
+                  to={e.to}
+                  className="group flex items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60"
+                >
+                  {SEVERITY_ICON[e.severity]}
+                  <span className="min-w-0 flex-1">{e.text}</span>
+                  <span className="flex shrink-0 items-center gap-1 text-xs text-stamp opacity-70 group-hover:opacity-100">
+                    {e.action}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
+                </Link>
+              </li>
+            ))}
+            {entries.length > LIMIT && (
+              <li>
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  onClick={() => setShowAll((v) => !v)}
+                >
+                  {showAll ? 'Weniger anzeigen' : `+ ${entries.length - LIMIT} weitere`}
+                </button>
+              </li>
+            )}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Die kritischsten Budgets als schmale Balken mit Zeitmarke */
+function BudgetsCard() {
+  const { categories } = useFinanceData();
+  const statuses = trpc.finance.listBudgetStatus.useQuery().data ?? [];
+  const today = todayISO();
+  const top = [...statuses].sort((a, b) => b.percent - a.percent).slice(0, 5);
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <div className="min-w-0">
+          <CardTitle>Budgets</CardTitle>
+          <CardDescription>Stand heute — der Strich zeigt den Zeitplan</CardDescription>
+        </div>
+        <Link to="/budgets" className="shrink-0 text-sm text-stamp hover:underline">Alle</Link>
+      </CardHeader>
+      <CardContent>
+        {top.length === 0 ? (
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>Noch keine Budgets — ein Limit pro Kategorie zeigt, ob du im Plan liegst.</p>
+            <Button asChild variant="outline" size="sm"><Link to="/budgets">Erstes Budget anlegen</Link></Button>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {top.map((s) => {
+              const cat = categories.find((c) => c.id === s.budget.categoryId);
+              const period = s.budget.period === 'yearly' ? 'yearly' : 'monthly';
+              const elapsed = periodElapsed(period, today);
+              const pace = budgetPace(s.spent, s.effectiveLimit, elapsed);
+              return (
+                <li key={s.budget.id} className="space-y-1">
+                  <div className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />
+                      <span className="truncate">{cat?.name ?? '?'}</span>
+                      {period === 'yearly' && <span className="text-xs text-muted-foreground">Jahr</span>}
+                    </span>
+                    <span className={cn(
+                      'shrink-0 whitespace-nowrap font-mono text-xs tabular-nums',
+                      pace === 'over' ? 'text-negative' : pace === 'fast' ? 'text-warning' : 'text-muted-foreground',
+                    )}>
+                      {formatCents(s.spent)} / {formatCents(s.effectiveLimit)}
+                    </span>
+                  </div>
+                  <BudgetMeter percent={s.percent} elapsed={elapsed} pace={pace} period={period} />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
-  const { accounts, categories, transactions, users, isLoading } = useFinanceData();
+  const { categories, users } = useFinanceData();
+  const navigate = useNavigate();
   // Liegenschaften/Hypotheken für die Zusatzzeile im Gesamtvermögen
   const mortgage = trpc.mortgage.summary.useQuery().data;
   // Gewählter Monat steht in der URL (`#/?monat=2026-08`) — Standard: aktueller
@@ -77,47 +262,37 @@ export default function Dashboard() {
   const setMonth = (key: string) =>
     setParams(key === thisMonth ? {} : { monat: key }, { replace: true });
   const prevMonth = shiftMonth(month, -1);
-  const prevYearMonth = shiftMonth(month, -12);
 
-  const totals = monthTotals(transactions, month);
-  const totalsPrev = monthTotals(transactions, prevMonth);
-  const totalsYear = monthTotals(transactions, prevYearMonth);
-  // Vermögen am Monatsende (für vergangene Monate) bzw. heute
-  const balanceAt = (key: string) =>
-    totalBalance(accounts, transactions.filter((t) => t.date.slice(0, 7) <= key));
-  const total = isCurrent ? totalBalance(accounts, transactions) : balanceAt(month);
+  // Vorherigen Monat stehen lassen, bis der neue geladen ist — sonst blinkt
+  // beim Blättern die ganze Seite
+  const summaryQuery = trpc.dashboard.summary.useQuery(
+    { month, today: todayISO() },
+    { placeholderData: keepPreviousData },
+  );
+  const summary = summaryQuery.data;
+  const names = new Map(users.map((u) => [u.id, u.name]));
 
-  // Sechs Monate bis zum gewählten Monat (günstig genug ohne useMemo)
-  const cashflow = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).map((key) => {
-    const t = monthTotals(transactions, key);
-    return { month: formatMonthShort(key), Einnahmen: t.income / 100, Ausgaben: t.expense / 100 };
-  });
-
-  // Ausgaben auf Oberkategorien aggregiert (Unterkategorien zählen zur Oberkategorie)
-  const categoryData = [...expensesByRootCategory(transactions, month, categories).entries()]
-    .map(([catId, amount]) => {
-      const cat = categories.find((c) => c.id === catId);
-      return { id: catId, name: cat?.name ?? 'Ohne Kategorie', value: amount / 100, color: cat?.color ?? CHART.muted };
-    })
-    .sort((a, b) => b.value - a.value);
-  const categoryTotal = categoryData.reduce((s, c) => s + c.value, 0);
-
-  const balances = memberBalances(transactions, users.map((u) => u.id));
-  // Aktueller Monat: die neuesten Buchungen überhaupt; vergangener Monat:
-  // die letzten Buchungen dieses Monats
-  const recent = (isCurrent ? transactions : transactions.filter((t) => t.date.startsWith(month))).slice(0, 8);
-  const savings = totals.income - totals.expense;
-  const savingsPrev = totalsPrev.income - totalsPrev.expense;
-  const savingsYear = totalsYear.income - totalsYear.expense;
   const txLink = (extra: Record<string, string> = {}) =>
     `/transaktionen?${new URLSearchParams({ monat: month, ...extra })}`;
-  const kpiLink = (to: string, children: ReactNode) => (
-    <Link to={to} className="block rounded-md hover:underline hover:decoration-dotted hover:underline-offset-4">
-      {children}
-    </Link>
-  );
 
-  if (isLoading) return <p className="text-muted-foreground">Daten werden geladen…</p>;
+  if (!summary) {
+    return summaryQuery.error
+      ? <p className="text-destructive">{summaryQuery.error.message}</p>
+      : <p className="text-muted-foreground">Daten werden geladen…</p>;
+  }
+
+  const totals = summary.totals.current;
+  const savings = totals.income - totals.expense;
+  const savingsOf = (t: { income: number; expense: number }) => t.income - t.expense;
+  const cashflow = summary.cashflow.map((c) => ({
+    key: c.month,
+    month: formatMonthShort(c.month),
+    Einnahmen: c.income / 100,
+    Ausgaben: c.expense / 100,
+  }));
+  const categoryData = summary.categories.map((c) => ({ ...c, value: c.amount / 100 }));
+  const categoryTotal = categoryData.reduce((s, c) => s + c.value, 0);
+  const balances = new Map(summary.memberBalances.map((b) => [b.userId, b.amount]));
 
   return (
     <div className="space-y-6">
@@ -150,83 +325,80 @@ export default function Dashboard() {
       <GettingStarted />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Gesamtvermögen</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={cn('font-serif text-2xl font-semibold tabular-nums', total < 0 && 'text-destructive')}>{formatCents(total)}</div>
-            <p className="text-xs text-muted-foreground">
-              {isCurrent ? `${accounts.length} Konten` : `Stand Ende ${formatMonth(month)}`}
+        <Kpi
+          title="Gesamtvermögen"
+          icon={<Wallet className="h-4 w-4 text-muted-foreground" />}
+          value={summary.balance.current}
+          to="/konten"
+        >
+          <p className="text-xs text-muted-foreground">
+            {isCurrent
+              ? `${summary.accountCount} ${summary.accountCount === 1 ? 'Konto' : 'Konten'}`
+              : `Stand Ende ${formatMonth(month)}`}
+          </p>
+          <Change
+            current={summary.balance.current} previous={summary.balance.previous}
+            previousYear={summary.balance.previousYear} higherIsGood month={month}
+          />
+          {isCurrent && mortgage && mortgage.count > 0 && (
+            <p className="text-xs text-muted-foreground" title="Kontosalden plus Verkehrswert der Liegenschaften minus Restschuld">
+              inkl. Immobilie: {formatCents(summary.balance.current + mortgage.equity)}
             </p>
-            <Change
-              current={total} previous={balanceAt(prevMonth)} previousYear={balanceAt(prevYearMonth)}
-              higherIsGood month={month}
-            />
-            {isCurrent && mortgage && mortgage.count > 0 && (
-              <p className="text-xs text-muted-foreground" title="Kontosalden plus Verkehrswert der Liegenschaften minus Restschuld">
-                inkl. Immobilie: {formatCents(total + mortgage.equity)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Einnahmen (Monat)</CardTitle>
-            <TrendingUp className="h-4 w-4 text-positive" />
-          </CardHeader>
-          <CardContent>
-            {kpiLink(txLink({ typ: 'income' }), (
-              <div className="font-serif text-2xl font-semibold tabular-nums text-positive">{formatCents(totals.income)}</div>
-            ))}
-            <Change
-              current={totals.income} previous={totalsPrev.income} previousYear={totalsYear.income}
-              higherIsGood month={month}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Ausgaben (Monat)</CardTitle>
-            <TrendingDown className="h-4 w-4 text-negative" />
-          </CardHeader>
-          <CardContent>
-            {kpiLink(txLink({ typ: 'expense' }), (
-              <div className="font-serif text-2xl font-semibold tabular-nums text-negative">{formatCents(totals.expense)}</div>
-            ))}
-            <Change
-              current={totals.expense} previous={totalsPrev.expense} previousYear={totalsYear.expense}
-              higherIsGood={false} month={month}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="font-sans text-sm font-medium text-muted-foreground">Sparrate (Monat)</CardTitle>
-            <Scale className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={cn('font-serif text-2xl font-semibold tabular-nums', savings >= 0 ? 'text-positive' : 'text-negative')}>
-              {formatCents(savings)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {totals.income > 0 ? `${Math.round((savings / totals.income) * 100)} % der Einnahmen` : 'Keine Einnahmen'}
-            </p>
-            <Change
-              current={savings} previous={savingsPrev} previousYear={savingsYear}
-              higherIsGood month={month} asAmount
-            />
-          </CardContent>
-        </Card>
+          )}
+        </Kpi>
+        <Kpi
+          title="Einnahmen (Monat)"
+          icon={<TrendingUp className="h-4 w-4 text-positive" />}
+          value={totals.income}
+          tone="positive"
+          to={txLink({ typ: 'income' })}
+        >
+          <Change
+            current={totals.income} previous={summary.totals.previous.income}
+            previousYear={summary.totals.previousYear.income} higherIsGood month={month}
+          />
+        </Kpi>
+        <Kpi
+          title="Ausgaben (Monat)"
+          icon={<TrendingDown className="h-4 w-4 text-negative" />}
+          value={totals.expense}
+          tone="negative"
+          to={txLink({ typ: 'expense' })}
+        >
+          <Change
+            current={totals.expense} previous={summary.totals.previous.expense}
+            previousYear={summary.totals.previousYear.expense} higherIsGood={false} month={month}
+          />
+        </Kpi>
+        <Kpi
+          title="Sparrate (Monat)"
+          icon={<Scale className="h-4 w-4 text-muted-foreground" />}
+          value={savings}
+          tone="auto"
+        >
+          <p className="text-xs text-muted-foreground">
+            {totals.income > 0 ? `${Math.round((savings / totals.income) * 100)} % der Einnahmen` : 'Keine Einnahmen'}
+          </p>
+          <Change
+            current={savings} previous={savingsOf(summary.totals.previous)}
+            previousYear={savingsOf(summary.totals.previousYear)} higherIsGood month={month} asAmount
+          />
+        </Kpi>
       </div>
+
+      {isCurrent && (
+        <div className="grid gap-4 lg:grid-cols-5">
+          <AttentionCard names={names} />
+          <BudgetsCard />
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Cashflow</CardTitle>
             <CardDescription>
-              Einnahmen vs. Ausgaben der letzten 6 Monate{isCurrent ? '' : ` bis ${formatMonth(month)}`}
+              Einnahmen vs. Ausgaben der letzten 6 Monate{isCurrent ? '' : ` bis ${formatMonth(month)}`} — ein Klick zeigt die Buchungen des Monats
             </CardDescription>
           </CardHeader>
           <CardContent className="h-72">
@@ -239,26 +411,35 @@ export default function Dashboard() {
                 />
               </div>
             ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={cashflow} margin={{ left: 0, right: 8, top: 8 }}>
-                {chartDefs()}
-                <CartesianGrid {...GRID_PROPS} />
-                <XAxis dataKey="month" {...AXIS_PROPS} />
-                <YAxis {...AXIS_PROPS} tickFormatter={axisMoney} width={AXIS_MONEY_WIDTH} />
-                <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
-                <Legend iconType="square" iconSize={10} />
-                <Area
-                  type="monotone" dataKey="Einnahmen" stroke={CHART.positive} strokeWidth={2}
-                  fill={hatch('positive')} fillOpacity={HATCH_OPACITY}
-                  dot={dotFor(CHART.positive)} activeDot={activeDotFor(CHART.positive)}
-                />
-                <Area
-                  type="monotone" dataKey="Ausgaben" stroke={CHART.negative} strokeWidth={2}
-                  fill={hatch('negative')} fillOpacity={HATCH_OPACITY}
-                  dot={dotFor(CHART.negative)} activeDot={activeDotFor(CHART.negative)}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={cashflow}
+                  margin={{ left: 0, right: 8, top: 8 }}
+                  className="cursor-pointer"
+                  onClick={(state) => {
+                    const index = state?.activeTooltipIndex;
+                    const key = typeof index === 'number' ? cashflow[index]?.key : undefined;
+                    if (key) navigate(`/transaktionen?monat=${key}`);
+                  }}
+                >
+                  {chartDefs()}
+                  <CartesianGrid {...GRID_PROPS} />
+                  <XAxis dataKey="month" {...AXIS_PROPS} />
+                  <YAxis {...AXIS_PROPS} tickFormatter={axisMoney} width={AXIS_MONEY_WIDTH} />
+                  <Tooltip content={<PaperTooltip />} cursor={CURSOR_LINE} />
+                  <Legend iconType="square" iconSize={10} />
+                  <Area
+                    type="monotone" dataKey="Einnahmen" stroke={CHART.positive} strokeWidth={2}
+                    fill={hatch('positive')} fillOpacity={HATCH_OPACITY}
+                    dot={dotFor(CHART.positive)} activeDot={activeDotFor(CHART.positive)}
+                  />
+                  <Area
+                    type="monotone" dataKey="Ausgaben" stroke={CHART.negative} strokeWidth={2}
+                    fill={hatch('negative')} fillOpacity={HATCH_OPACITY}
+                    dot={dotFor(CHART.negative)} activeDot={activeDotFor(CHART.negative)}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
@@ -270,14 +451,24 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             {categoryData.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{isCurrent ? 'Noch keine Ausgaben in diesem Monat.' : `Keine Ausgaben im ${formatMonth(month)}.`}</p>
+              <p className="text-sm text-muted-foreground">
+                {isCurrent ? 'Noch keine Ausgaben in diesem Monat.' : `Keine Ausgaben im ${formatMonth(month)}.`}
+              </p>
             ) : (
               <div className="flex flex-col items-center gap-3">
                 {/* Ring mit Papierfugen, Summe in Serife in der Mitte */}
                 <div className="relative h-52 w-52 shrink-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={90} stroke={SHEET} strokeWidth={2}>
+                      <Pie
+                        data={categoryData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={90}
+                        stroke={SHEET} strokeWidth={2} className="cursor-pointer"
+                        onClick={(entry: { categoryId?: number }) => {
+                          if (entry?.categoryId !== undefined) {
+                            navigate(txLink({ typ: 'expense', kategorie: String(entry.categoryId) }));
+                          }
+                        }}
+                      >
                         {categoryData.map((entry, idx) => (
                           <Cell key={entry.name} fill={entry.color ? pencil(entry.color) : pencilSlot(idx + 1)} />
                         ))}
@@ -286,7 +477,7 @@ export default function Dashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="font-serif text-[15px] font-semibold">{moneyLabel(categoryTotal)}</span>
+                    <span className="font-serif text-[15px] font-semibold tabular-nums">{moneyLabel(categoryTotal)}</span>
                     <span className="text-[11px] text-muted-foreground">{formatMonth(month)}</span>
                   </div>
                 </div>
@@ -296,7 +487,7 @@ export default function Dashboard() {
                     <li key={entry.name} className="border-b last:border-0">
                       {/* Klick führt zu den Buchungen der Kategorie in diesem Monat */}
                       <Link
-                        to={txLink(entry.id > 0 ? { typ: 'expense', kategorie: String(entry.id) } : { typ: 'expense' })}
+                        to={txLink({ typ: 'expense', kategorie: String(entry.categoryId) })}
                         className="flex items-center gap-2 py-1.5 hover:bg-muted/50"
                         title={`Buchungen „${entry.name}“ im ${formatMonth(month)} anzeigen`}
                       >
@@ -333,22 +524,25 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {recent.length === 0 && (
+              {summary.recent.length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">
                   Noch keine Buchungen — lege mit „Neue Buchung“ los.
                 </p>
               )}
-              {recent.map((t) => {
+              {summary.recent.map((t) => {
                 const cat = categories.find((c) => c.id === t.categoryId);
-                const user = users.find((u) => u.id === t.userId);
                 return (
-                  <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                  <Link
+                    key={t.id}
+                    to={`/transaktionen?${new URLSearchParams({ monat: t.date.slice(0, 7), fokus: String(t.id) })}`}
+                    className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 hover:bg-muted/40"
+                  >
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{t.note || cat?.name || 'Umbuchung'}</div>
                         <div className="text-xs text-muted-foreground">
-                          {formatDate(t.date)} · {user?.name}{t.splits.length > 0 ? ' · geteilt' : ''}
+                          {formatDate(t.date)} · {names.get(t.userId)}{t.shared ? ' · geteilt' : ''}
                         </div>
                       </div>
                     </div>
@@ -358,7 +552,7 @@ export default function Dashboard() {
                     )}>
                       {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -388,9 +582,9 @@ export default function Dashboard() {
                   </div>
                 );
               })}
-              <p className="pt-2 text-xs text-muted-foreground">
-                Details und Ausgleichsvorschläge unter „Aufteilung“.
-              </p>
+              <Link to="/aufteilung" className="block pt-2 text-xs text-stamp hover:underline">
+                Details und Ausgleichsvorschläge unter „Aufteilung“
+              </Link>
             </div>
           </CardContent>
         </Card>

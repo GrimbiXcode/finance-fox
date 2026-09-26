@@ -12,6 +12,7 @@ import {
 import { SearchableSelect } from '@/components/SearchableSelect';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import NoteSuggestInput, { type NoteSuggestion } from '@/components/NoteSuggestInput';
 import { accountLabel, useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { useAuth } from '@/providers/auth';
 import {
@@ -248,6 +249,31 @@ export default function TransactionDialog({
     }
   };
 
+  /**
+   * Vorschlag aus der Historie übernehmen (siehe NoteSuggestInput). Beim
+   * Bearbeiten nur die Notiz — sonst verschöbe ein Enter im Notizfeld die
+   * Buchung still auf ein anderes Konto oder in eine andere Kategorie.
+   */
+  const applySuggestion = (s: NoteSuggestion) => {
+    setNote(s.note);
+    if (isEdit) return;
+    if (s.categoryId !== null && categories.some((c) => c.id === s.categoryId && c.type === type)) {
+      setCategoryId(String(s.categoryId));
+    }
+    if (accounts.some((a) => a.id === s.accountId && a.access === 'edit')) {
+      setAccountId(String(s.accountId));
+    }
+    // Zielkonto nur, wenn es für mich sichtbar ist (Umbuchungen des Partners
+    // auf dessen Privatkonto)
+    if (type === 'transfer' && s.toAccountId !== null && accounts.some((a) => a.id === s.toAccountId)) {
+      setToAccountId(String(s.toAccountId));
+    }
+    if (s.projectId !== null && projects.some((p) => p.id === s.projectId)) {
+      setProjectId(String(s.projectId));
+    }
+    if (parseEuro(amount) <= 0) setAmount(shareFormatter.format(s.amount / 100));
+  };
+
   /** Dialog öffnen/schließen — der Zähler gilt nur für einen Durchgang */
   const changeOpen = (next: boolean) => {
     setOpen(next);
@@ -405,6 +431,11 @@ export default function TransactionDialog({
       </DialogTrigger>
       <DialogContent
         className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        onEscapeKeyDown={(e) => {
+          // Radix hört Escape schon in der Capture-Phase — bei offener
+          // Vorschlagsliste schließt Escape nur die Liste, nicht den Dialog
+          if ((e.target as HTMLElement | null)?.getAttribute?.('aria-expanded') === 'true') e.preventDefault();
+        }}
         onKeyDown={(e) => {
           // ⌘/Strg+Enter speichert, mit Umschalt „Speichern & weitere“
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !saving) {
@@ -454,6 +485,20 @@ export default function TransactionDialog({
               <Label htmlFor="date">Datum</Label>
               <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="note">Beschreibung</Label>
+            {/* Vorschläge aus früheren Buchungen belegen Kategorie, Konto,
+                Projekt und — bei leerem Feld — den Betrag vor */}
+            <NoteSuggestInput
+              id="note"
+              type={type}
+              placeholder="z. B. Wocheneinkauf Coop"
+              value={note}
+              onChange={setNote}
+              onPick={applySuggestion}
+            />
           </div>
 
           {isTransfer ? (
@@ -644,7 +689,7 @@ export default function TransactionDialog({
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', detailsOpen && 'rotate-90')} />
-                Details (Person, Notiz, Projekt, Tags)
+                Details (Person, Projekt, Tags{isEdit ? ', Kommentar' : ''})
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
@@ -661,10 +706,6 @@ export default function TransactionDialog({
                     onValueChange={setUserId}
                     options={users.map((u) => ({ value: String(u.id), label: u.name }))}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="note">Notiz</Label>
-                  <Input id="note" placeholder="z. B. Wocheneinkauf" value={note} onChange={(e) => setNote(e.target.value)} />
                 </div>
                 {projects.length > 0 && (
                   <div className="space-y-2">

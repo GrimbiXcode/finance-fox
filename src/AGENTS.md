@@ -76,7 +76,14 @@ Navigationen bekommen sie dann automatisch.
   (Dashboard); `listCategories` bleibt flach, der Baum wird im Frontend
   gebaut.
 - `memberBalances` berechnet die Aufteilungs-Salden — Einnahmen MIT Splits
-  zählen umgekehrt wie Ausgaben (damit sich Stornos exakt aufheben).
+  zählen umgekehrt wie Ausgaben (damit sich Stornos exakt aufheben). Die
+  Funktion liegt in `contracts/settlement.ts` (auch der Server rechnet damit)
+  und wird hier nur weitergereicht.
+- **Keine Buchungsliste in `useFinanceData`**: Seiten holen genau ihren
+  Ausschnitt — `finance.searchTransactions` (Liste, Infinite-Query),
+  `dashboard.summary`, `listAccounts` (`balance`, `txCount`),
+  `finance.categoryUsage`, `listTransactions({ sharedOnly: true })`.
+  Invalidierung zentral in `useInvalidateFinance`.
 
 ## Auswahlfelder
 
@@ -140,17 +147,22 @@ Darstellungsart der Konten-Seite (Karten/Tabelle) unter dem Key
 `ff-accounts-view`, der Dauerbuchungen-Seite unter `ff-recurring-view`;
 eingeklappte Seitenleiste unter `ff-sidebar-collapsed`; gewählte
 Berichts-Abschnitte unter `ff-report-sections`; ausgeblendete „Erste
-Schritte“ unter `ff-getting-started-hidden`.
+Schritte“ unter `ff-getting-started-hidden`; Gruppierung der
+Transaktionsliste (Tag/Monat/keine) unter `ff-tx-group`.
 
 ## UI-State in der URL
 
 Filter, die man teilen oder verlinken will, stehen als Query-Parameter im
 Hash-Router (`useSearchParams`), nicht in `useState`:
 
-- **Transaktionen**: `monat` (`YYYY-MM`), `typ`, `konto`, `kategorie`
-  (eine Oberkategorie schließt ihre Unterkategorien ein), `person`, `tag`,
-  `q` (Suche). Andere Seiten verlinken damit direkt auf eine gefilterte
-  Liste (Dashboard-Kennzahlen und Kategorien-Legende → Monat + Kategorie).
+- **Transaktionen**: Zeitraum als `monat` (`YYYY-MM`), `jahr`, `von`/`bis`
+  oder `zeit=alle` — ohne Angabe gilt der **laufende Monat**
+  (`contracts/period.ts`); dazu `typ`, `konto`, `kategorie` (eine
+  Oberkategorie schließt ihre Unterkategorien ein, `-1` = ohne), `person`,
+  `tag`, `q` (Suche, verzögert geschrieben) und `fokus` (Buchungs-ID:
+  markieren und hinscrollen). Andere Seiten verlinken damit direkt auf eine
+  gefilterte Liste (Dashboard-Kennzahlen, Kategorien-Legende, Cashflow,
+  letzte Buchungen).
 - **Dashboard**: `monat` (fehlt = aktueller Monat).
 - **Wiederkehrend**: `neu=1` öffnet den Anlegen-Dialog, vorbefüllt aus
   `typ`, `von`, `nach`, `kategorie`, `betrag` (Cent), `notiz`; die Parameter
@@ -305,7 +317,8 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   Karte öffnet `MortgageTransferDialog` („Als Dauerbuchung übernehmen") —
   er verschwindet, sobald der Rückverweis auf eine existierende
   Dauerbuchung zeigt. **Hinweise kommen als strukturierte Daten vom Server**
-  (`MortgageWarning`) und werden erst in `warningText()` zu deutschen Sätzen
+  (`MortgageWarning`) und werden erst in `warningText()` (`lib/mortgageText.ts`,
+  auch vom Dashboard genutzt) zu deutschen Sätzen
   — nur so lassen sich Beträge/Prozente/Daten locale-konform formatieren.
   Invalidierung zentral `useInvalidateMortgage()` in `lib/data.ts`.
 - **Versicherungen** (`pages/Insurances.tsx` unter `/versicherungen`, Nav
@@ -319,7 +332,8 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   Status, Person, Versicherer — clientseitig über einen Haystack inkl.
   Deckungs-Bezeichnungen), Policen-Grid, Verlauf.
   - **Lücken kommen als strukturierte Daten vom Server** (`InsuranceGap`,
-    Discriminated Union) und werden erst in `gapText()` zu deutschen Sätzen
+    Discriminated Union) und werden erst in `gapText()` (`lib/insuranceText.ts`)
+    zu deutschen Sätzen
     — gleiche Begründung wie bei `MortgageWarning`. Ausblendbare Hinweise
     tragen `dismissible: true`; ausgeblendete stehen aufklappbar unter
     „N ausgeblendet" — **mit Begründung, Autor und Datum** aus dem

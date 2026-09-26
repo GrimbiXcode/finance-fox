@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, CheckCircle2, HandCoins, Plus, Trash2 } from 'lucide-react';
+import { Link } from 'react-router';
+import { ArrowRight, Check, CheckCircle2, HandCoins, Plus, Trash2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,8 +10,12 @@ import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { trpc } from '@/providers/trpc';
 import { computeSettlements, formatCents, formatDate, memberBalances, todayISO } from '@/lib/finance';
 import { cn } from '@/lib/utils';
+import { isSettlementShape } from '@contracts/settlement';
 import { PENCIL_COLORS, pencil } from '@/lib/pencil';
 import ProjectSummaryCard from '@/components/ProjectSummaryCard';
+import Note from '@/components/Note';
+import { useActions } from '@/providers/actions';
+import { useAuth } from '@/providers/auth';
 
 // Kleine Farbpalette für neue Projekte (wie die Kategorien-Palette im Dialog)
 const PROJECT_COLORS = PENCIL_COLORS;
@@ -20,6 +25,10 @@ type ProjectFilter = 'all' | 'household' | number;
 
 export default function Splitting() {
   const { accounts, users, projects, splitTemplates } = useFinanceData();
+  const { user } = useAuth();
+  const { show } = useActions();
+  // Deaktivierte Personen zählen für alte Salden, aber nicht als Mitbewohner
+  const activeCount = users.filter((u) => u.active).length;
   // Nur Buchungen mit Aufteilung — mehr braucht die Seite nicht
   const sharedQuery = trpc.finance.listTransactions.useQuery({ sharedOnly: true });
   const transactions = useMemo(() => sharedQuery.data ?? [], [sharedQuery.data]);
@@ -94,7 +103,17 @@ export default function Splitting() {
     });
   };
 
-  const sharedExpenses = filteredTransactions.filter((t) => t.type === 'expense' && t.splits.length > 0);
+  // Ausgleiche stehen in ihrer eigenen Karte, nicht noch einmal als Ausgabe
+  const sharedExpenses = filteredTransactions.filter(
+    (t) => t.type === 'expense' && t.splits.length > 0 && !isSettlementShape(t),
+  );
+  // Verbuchte Ausgleiche erkennt man an ihrer Form (siehe bookSettlement):
+  // eine Ausgabe, die vollständig eine andere Person trägt. Stornierte zählen
+  // nicht (Gegenbuchung hebt sie auf).
+  const settlementsDone = filteredTransactions
+    .filter((t) => t.stornoOfId === null && !t.isReversed && isSettlementShape(t))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const lastSettlement = settlementsDone[0];
   const userById = (id: number) => users.find((u) => u.id === id);
   const projectById = (id: number | null) => projects.find((p) => p.id === id);
 
@@ -117,6 +136,23 @@ export default function Splitting() {
         </p>
       </div>
 
+      {/* Allein gibt es nichts aufzuteilen (A3): erklären statt leerer Salden */}
+      {activeCount < 2 && (
+        <Note title="Aufteilen braucht eine zweite Person" icon={UserPlus}>
+          <p>
+            Hier siehst du, wer im Haushalt wie viel vorgestreckt hat und wer wem etwas schuldet.
+            Dafür muss eine weitere Person im Haushalt sein.
+          </p>
+          {user?.role === 'admin' ? (
+            <Button asChild size="sm" variant="outline" className="mt-2">
+              <Link to="/personen">Person einladen</Link>
+            </Button>
+          ) : (
+            <p className="mt-1">Eine Person mit Admin-Rechten kann sie unter „Personen“ einladen.</p>
+          )}
+        </Note>
+      )}
+
       {projects.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {(['all', 'household'] as const).map((value) => (
@@ -134,20 +170,25 @@ export default function Splitting() {
               {value === 'all' ? 'Alle' : 'Haushalt'}
             </button>
           ))}
-          {projects.map((p) => (
+          {/* Laufende Projekte zuerst; abgeschlossene bleiben wählbar (Salden,
+              Rückblick), stehen aber hinten und tragen ein Häkchen */}
+          {[...projects].sort((a, b) => Number(!!a.closedAt) - Number(!!b.closedAt)).map((p) => (
             <button
               key={p.id}
               type="button"
               onClick={() => setProjectFilter(p.id)}
+              title={p.closedAt ? `Abgeschlossen am ${formatDate(p.closedAt)}` : undefined}
               className={cn(
                 'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                 projectFilter === p.id
                   ? 'border-stamp bg-stamp/10 text-stamp'
                   : 'text-muted-foreground hover:text-foreground',
+                p.closedAt && projectFilter !== p.id && 'border-dashed',
               )}
             >
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pencil(p.color) }} />
               {p.name}
+              {p.closedAt && <Check className="h-3 w-3" aria-label="abgeschlossen" />}
             </button>
           ))}
         </div>
@@ -160,7 +201,10 @@ export default function Splitting() {
         <Card>
           <CardHeader>
             <CardTitle>Aktuelle Salden</CardTitle>
-            <CardDescription>Positiv = bekommt Geld · Negativ = schuldet Geld</CardDescription>
+            <CardDescription>
+              Positiv = bekommt Geld · Negativ = schuldet Geld
+              {lastSettlement && ` · letzter Ausgleich am ${formatDate(lastSettlement.date)}`}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {users.map((u) => {
@@ -236,6 +280,34 @@ export default function Splitting() {
         </Card>
       </div>
 
+      {/* Ausgleichshistorie (H3): wann wurde zuletzt ausgeglichen? */}
+      {settlementsDone.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Verbuchte Ausgleiche</CardTitle>
+            <CardDescription>Rückzahlungen zwischen euch — neueste zuerst</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y text-sm">
+              {settlementsDone.slice(0, 5).map((t) => (
+                <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span className="min-w-0">
+                    <span className="font-medium">{userById(t.userId)?.name ?? '?'}</span>
+                    {' → '}
+                    <span className="font-medium">{userById(t.splits[0].userId)?.name ?? '?'}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{formatDate(t.date)}</span>
+                  </span>
+                  <span className="shrink-0 font-mono tabular-nums">{formatCents(t.amount)}</span>
+                </li>
+              ))}
+            </ul>
+            {settlementsDone.length > 5 && (
+              <p className="pt-2 text-xs text-muted-foreground">+ {settlementsDone.length - 5} ältere</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Geteilte Ausgaben</CardTitle>
@@ -243,9 +315,17 @@ export default function Splitting() {
         </CardHeader>
         <CardContent className="space-y-2">
           {sharedExpenses.length === 0 && (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Noch keine geteilten Ausgaben. Beim Erfassen einer Ausgabe „Kosten aufteilen“ aktivieren.
-            </p>
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <p className="text-sm text-muted-foreground">
+                Noch keine geteilten Ausgaben. Beim Erfassen einer Ausgabe unter „Kosten aufteilen“
+                angeben, wer welchen Anteil trägt.
+              </p>
+              {activeCount > 1 && (
+                <Button variant="outline" size="sm" onClick={() => show('transaction')}>
+                  <Plus className="mr-2 h-4 w-4" /> Ausgabe erfassen
+                </Button>
+              )}
+            </div>
           )}
           {sharedExpenses.slice(0, 50).map((t) => {
             const payer = userById(t.userId);
@@ -300,7 +380,12 @@ export default function Splitting() {
               <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border px-4 py-2">
                 <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: pencil(p.color) }} />
-                  {p.name}
+                  <span className="truncate">{p.name}</span>
+                  {p.closedAt && (
+                    <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                      abgeschlossen am {formatDate(p.closedAt)}
+                    </span>
+                  )}
                 </span>
                 <Button
                   variant="ghost"

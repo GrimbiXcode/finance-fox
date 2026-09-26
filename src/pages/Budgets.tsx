@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import BudgetMeter from '@/components/BudgetMeter';
 import BudgetDetail from '@/components/BudgetDetail';
+import InfoTip from '@/components/InfoTip';
 import { Link } from 'react-router';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -195,6 +196,7 @@ function BudgetDialog({
               <Label htmlFor={`rollover-${budget?.id ?? 'neu'}`} className="cursor-pointer font-normal">
                 Nicht verbrauchtes Budget in den Folgemonat übertragen (Rollover)
               </Label>
+              <InfoTip term="rollover" />
             </div>
           )}
         </div>

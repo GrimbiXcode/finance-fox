@@ -12,7 +12,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { accountLabel, useInvalidateInsurance } from "@/lib/data";
-import { formatCents } from "@/lib/finance";
+import { formatCents, todayISO } from "@/lib/finance";
+import { premiumMatches } from "@/lib/insurance";
 import { RECURRING_INTERVAL_LABELS } from "@contracts/types";
 import { trpc } from "@/providers/trpc";
 import { toast } from "sonner";
@@ -20,6 +21,8 @@ import { toast } from "sonner";
 /**
  * „Als Dauerbuchung übernehmen" — die Prämie einer Police. Kopie, kein
  * Live-Sync: ändert sich die Prämie, muss die Dauerbuchung angepasst werden.
+ * Gibt es schon eine passende Dauerbuchung (`premiumMatches`), steht oben
+ * „Verknüpfen“ — dann entsteht keine zweite Belastung.
  */
 export default function InsuranceTransferDialog({
   policy,
@@ -52,6 +55,8 @@ function TransferForm({
 }) {
   const invalidate = useInvalidateInsurance();
   const accountsQuery = trpc.finance.listAccounts.useQuery();
+  const recurringQuery = trpc.finance.listRecurring.useQuery();
+  const policiesQuery = trpc.insurance.listPolicies.useQuery();
   const banksQuery = trpc.finance.listBanks.useQuery();
   const categoriesQuery = trpc.finance.listCategories.useQuery();
 
@@ -70,6 +75,31 @@ function TransferForm({
       : "";
   const [accountId, setAccountId] = useState(preselect);
   const [categoryId, setCategoryId] = useState("none");
+
+  // Schon anderen Policen zugeordnete Dauerbuchungen kommen nicht in Frage
+  const linkedIds = new Set(
+    (policiesQuery.data ?? [])
+      .map(p => p.premiumRecurringId)
+      .filter((id): id is number => id !== null)
+  );
+  const matches = premiumMatches(
+    policy,
+    recurringQuery.data ?? [],
+    linkedIds,
+    todayISO()
+  );
+  const accountName = new Map(
+    (accountsQuery.data ?? []).map(a => [a.id, a.name])
+  );
+
+  const link = trpc.insurance.linkPremiumToRecurring.useMutation({
+    onSuccess: () => {
+      toast.success("Mit der Dauerbuchung verknüpft.");
+      invalidate();
+      close();
+    },
+    onError: err => toast.error(err.message),
+  });
 
   const transfer = trpc.insurance.transferPremiumToRecurring.useMutation({
     onSuccess: () => {
@@ -104,7 +134,50 @@ function TransferForm({
           .
         </DialogDescription>
       </DialogHeader>
+      {matches.length > 0 && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">
+            {matches.length === 1
+              ? "Passende Dauerbuchung gefunden"
+              : "Passende Dauerbuchungen gefunden"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Gleicher Betrag, gleiches Intervall — wohl dieselbe Prämie.
+            Verknüpfen legt nichts neu an.
+          </p>
+          <ul className="space-y-1.5">
+            {matches.map(r => (
+              <li
+                key={r.id}
+                className="flex items-center justify-between gap-2 text-sm"
+              >
+                <span className="min-w-0 truncate">
+                  {r.note || "Ohne Beschreibung"}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {accountName.get(r.accountId) ?? "Konto"}
+                    {!r.active && " · pausiert"}
+                  </span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={link.isPending}
+                  onClick={() =>
+                    link.mutate({ policyId: policy.id, recurringId: r.id })
+                  }
+                >
+                  Verknüpfen
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="grid gap-4 py-2">
+        {matches.length > 0 && (
+          <p className="text-sm font-medium">Oder neu anlegen:</p>
+        )}
         <div className="space-y-2">
           <Label>Belastungskonto</Label>
           <SearchableSelect

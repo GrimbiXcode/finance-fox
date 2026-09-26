@@ -230,3 +230,34 @@ export function buildComparison(
 
   return { policies, facts, coverages: coverageRows };
 }
+
+/**
+ * Bestehende Dauerbuchungen, die schon die Prämie einer Police sein dürften:
+ * Ausgabe mit gleichem Betrag und Intervall, nicht abgelaufen und keiner
+ * anderen Police zugeordnet. Gibt es eine, ist „Verknüpfen“ richtig —
+ * „Übernehmen“ legte dieselbe Belastung ein zweites Mal an.
+ */
+export function premiumMatches<
+  R extends {
+    id: number;
+    type: string;
+    amount: number;
+    interval: string;
+    endDate: string | null;
+  },
+>(
+  policy: { premium: number; premiumInterval: string },
+  recurring: R[],
+  linkedIds: ReadonlySet<number>,
+  today: string
+): R[] {
+  if (policy.premium <= 0) return [];
+  return recurring.filter(
+    r =>
+      r.type === "expense" &&
+      r.amount === policy.premium &&
+      r.interval === policy.premiumInterval &&
+      (r.endDate === null || r.endDate >= today) &&
+      !linkedIds.has(r.id)
+  );
+}

@@ -138,6 +138,10 @@ export const projects = sqliteTable("projects", {
   name: text("name").notNull().unique(),
   color: text("color").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  // Abgeschlossen am (YYYY-MM-DD); null = laufend. Abgeschlossene Projekte
+  // bietet die Oberfläche für neue Buchungen nicht mehr an; filter- und
+  // auswertbar bleiben sie, und der Ausgleich darf sie weiter tragen.
+  closedAt: text("closed_at"),
 });
 
 export const transactions = sqliteTable(

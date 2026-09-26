@@ -65,6 +65,7 @@ import { chartDefs } from "@/lib/chartDefs";
 import { warningText } from "@/lib/mortgageText";
 import SetupChecklist from "@/components/SetupChecklist";
 import { pencil } from "@/lib/pencil";
+import InfoTip from "@/components/InfoTip";
 import KpiCard from "@/components/KpiCard";
 
 /** Berechnungsergebnis, wie es mortgage.forecast liefert */
@@ -158,18 +159,21 @@ function Kpi({
   label,
   value,
   hint,
+  info,
   icon,
   tone,
 }: {
   label: string;
   value: string;
   hint?: string;
+  info?: React.ReactNode;
   icon: React.ReactNode;
   tone?: "warn";
 }) {
   return (
     <KpiCard
       title={label}
+      info={info}
       icon={icon}
       value={value}
       valueClassName={tone === "warn" ? "text-destructive" : undefined}
@@ -287,6 +291,7 @@ function OverviewSection({
         />
         <Kpi
           label="Belehnung"
+          info={<InfoTip term="belehnung" />}
           value={ltv.bp === null ? "—" : `${formatBp(ltv.bp)} %`}
           hint={
             ltv.bp === null
@@ -344,6 +349,7 @@ function OverviewSection({
             <CardTitle className="flex items-center gap-2 text-base">
               <Scale className="h-5 w-5 text-muted-foreground" />
               Tragbarkeit
+              <InfoTip term="tragbarkeit" />
             </CardTitle>
             <CardDescription>
               Kalkulatorischer Zins {formatBp(property.calcInterestRateBp)} %,
@@ -379,8 +385,9 @@ function OverviewSection({
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="min-w-0 text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
                 Pflicht-Amortisation
+                <InfoTip term="pflichtAmortisation" />
               </span>
               <span className="shrink-0 font-medium">
                 {formatCents(affordability.requiredAmortization)}

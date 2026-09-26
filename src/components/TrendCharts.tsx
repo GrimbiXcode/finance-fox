@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/select';
 import { formatCents, formatMonth, formatMonthYearShort } from '@/lib/finance';
 import { CHART } from '@/lib/chartColors';
+import InfoTip from '@/components/InfoTip';
 import {
   AXIS_MONEY_WIDTH, AXIS_PROPS, CURSOR_BAR, CURSOR_LINE, GRID_PROPS, axisMoney, dotFor, activeDotFor,
 } from '@/lib/chartTheme';
@@ -35,6 +36,9 @@ export default function TrendCharts() {
     Ausgaben: r.expense / 100,
     Sparquote: r.rate,
   }));
+  // Ein Monat allein ist kein Verlauf (A3): erst ab zwei Monaten mit
+  // Buchungen gibt es ein Diagramm, davor den Hinweis statt eines Balkens.
+  const activeMonths = rows.filter((r) => r.Einnahmen !== 0 || r.Ausgaben !== 0);
   const open = (state: { activeTooltipIndex?: number | null } | null) => {
     const index = state?.activeTooltipIndex;
     const key = typeof index === 'number' ? rows[index]?.key : undefined;
@@ -46,7 +50,9 @@ export default function TrendCharts() {
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <CardTitle>Einnahmen, Ausgaben, Sparquote</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              Einnahmen, Ausgaben, Sparquote <InfoTip term="sparquote" />
+            </CardTitle>
             <CardDescription>
               {data
                 ? `Ø ${formatCents(data.averageIncome)} Einnahmen und ${formatCents(data.averageExpense)} Ausgaben pro Monat${data.averageRate !== null ? ` · Sparquote ${data.averageRate} %` : ''}`
@@ -69,8 +75,14 @@ export default function TrendCharts() {
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
-        {rows.every((r) => r.Einnahmen === 0 && r.Ausgaben === 0) ? (
-          <p className="text-sm text-muted-foreground">{query.isLoading ? 'Wird berechnet…' : 'Keine Buchungen in diesem Zeitraum.'}</p>
+        {activeMonths.length < 2 ? (
+          <p className="text-sm text-muted-foreground">
+            {query.isLoading
+              ? 'Wird berechnet…'
+              : activeMonths.length === 1
+                ? `Der Verlauf vergleicht Monate — er erscheint ab dem zweiten Monat mit Buchungen. Bisher gibt es nur ${formatMonth(activeMonths[0].key)}.`
+                : 'Keine Buchungen in diesem Zeitraum. Der Verlauf erscheint ab dem zweiten Monat mit Buchungen.'}
+          </p>
         ) : (
           <>
             <div className="h-64">

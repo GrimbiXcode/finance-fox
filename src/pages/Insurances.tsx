@@ -93,6 +93,7 @@ import {
   gapText,
   type GapGroup,
 } from "@/lib/insuranceText";
+import InfoTip from "@/components/InfoTip";
 import KpiCard from "@/components/KpiCard";
 
 type Outputs = inferRouterOutputs<AppRouter>;
@@ -174,18 +175,21 @@ function Kpi({
   label,
   value,
   hint,
+  info,
   icon,
   tone,
 }: {
   label: string;
   value: string;
   hint?: string;
+  info?: React.ReactNode;
   icon: React.ReactNode;
   tone?: "warn";
 }) {
   return (
     <KpiCard
       title={label}
+      info={info}
       icon={icon}
       value={value}
       valueClassName={tone === "warn" ? "text-destructive" : undefined}
@@ -683,14 +687,19 @@ function DetailRow({
   label,
   value,
   tone,
+  info,
 }: {
   label: string;
   value: string;
   tone?: "warn" | "danger";
+  info?: React.ReactNode;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2 text-sm">
-      <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+      <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
+        <span className="truncate">{label}</span>
+        {info}
+      </span>
       <span
         className={cn(
           "shrink-0 font-medium",
@@ -825,6 +834,7 @@ function PolicyCard({
           {notice.cancelBy && (
             <DetailRow
               label={notice.currentPeriodMissed ? "Nächste Frist" : "Kündigen bis"}
+              info={<InfoTip term="kuendigungsfrist" />}
               value={formatDate(notice.cancelBy)}
               tone={
                 notice.currentPeriodMissed
@@ -838,6 +848,11 @@ function PolicyCard({
           {notice.dueDate && (
             <DetailRow
               label={policy.renewal === "fixed" ? "Vertragsende" : "Hauptverfall"}
+              info={
+                policy.renewal === "fixed" ? undefined : (
+                  <InfoTip term="hauptverfall" />
+                )
+              }
               value={formatDate(notice.dueDate)}
             />
           )}
@@ -1173,6 +1188,7 @@ export default function Insurances() {
           />
           <Kpi
             label="Nächste Kündigungsfrist"
+            info={<InfoTip term="kuendigungsfrist" />}
             value={
               summary.nextCancelBy ? formatDate(summary.nextCancelBy) : "—"
             }

@@ -193,6 +193,16 @@ export default function Forecasts() {
                 Gesamtvermögen: 6 Monate zurück + Projektion (Dauerbuchungen + durchschnittliche variable Ausgaben der letzten 3 Monate)
                 {hasNetWorth && ' — „Vermögen" bezieht Liegenschaften und Hypotheken ein (Verkehrswert konstant fortgeschrieben)'}
               </CardDescription>
+              {/* Mindest-Zeitraum nennen (A3): der Ø stammt aus bis zu drei
+                  abgeschlossenen Monaten — vorher ist die Kurve nur so gut
+                  wie die Dauerbuchungen */}
+              {balance.data && balance.data.variableMonths < 3 && (
+                <p className="pt-1 text-xs text-muted-foreground">
+                  {balance.data.variableMonths === 0
+                    ? 'Noch kein abgeschlossener Monat mit Buchungen — die Projektion rechnet vorerst nur mit den Dauerbuchungen. Ab dem ersten vollen Monat fließen die variablen Ausgaben ein, belastbar wird es ab drei Monaten.'
+                    : `Der Durchschnitt der variablen Buchungen stammt erst aus ${balance.data.variableMonths === 1 ? 'einem Monat' : 'zwei Monaten'} — belastbar wird die Projektion ab drei abgeschlossenen Monaten.`}
+                </p>
+              )}
               {(balance.data?.mortgageMissingRecurring ?? 0) > 0 && (
                 <p className="pt-1 text-xs text-warning">
                   {balance.data!.mortgageMissingRecurring} Hypotheken-Posten ohne

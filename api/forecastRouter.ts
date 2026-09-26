@@ -61,7 +61,7 @@ function averageVariable(
   }[],
   recurringIds: Set<number>,
   currentKey: string
-): { income: number; expense: number } {
+): { income: number; expense: number; months: number } {
   // Stornierte Buchungen samt Gegenbuchung zählen nicht (contracts/flows.ts)
   const txs = withoutReversals(allTxs);
   let income = 0;
@@ -89,6 +89,7 @@ function averageVariable(
   return {
     income: countedMonths > 0 ? Math.round(income / countedMonths) : 0,
     expense: countedMonths > 0 ? Math.round(expense / countedMonths) : 0,
+    months: countedMonths,
   };
 }
 
@@ -299,6 +300,9 @@ export const forecastRouter = createRouter({
         mortgageMissingRecurring: mortgage?.missingRecurringCount ?? 0,
         avgVariableIncome: avgVar.income,
         avgVariableExpense: avgVar.expense,
+        // Abgeschlossene Monate mit Buchungen, aus denen der Ø stammt (0–3) —
+        // das UI nennt damit den Mindest-Zeitraum (A3)
+        variableMonths: avgVar.months,
         // Wirksame Szenario-Parameter — das Frontend zeigt damit an,
         // ob ein Szenario aktiv ist
         scenario: {

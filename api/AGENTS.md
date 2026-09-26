@@ -32,7 +32,12 @@ Detail-Doku zum Backend. Übergeordnetes: `../AGENTS.md`.
   `auth.setQuickAccount` konfiguriert das Konto der Schnellerfassung pro
   Benutzer (`users.quick_account_id`, erfordert `edit`-Recht, null =
   automatisch); `auth.me` liefert `quickAccountId`. Tests:
-  `api/quickAccount.test.ts`.
+  `api/quickAccount.test.ts`. `auth.setDashboardLayout({ layout | null })`
+  speichert die Karten-Anordnung des Dashboards pro Benutzer
+  (`users.dashboard_layout`, JSON; null = Standard); `auth.me` liefert sie
+  bereinigt (`normalizeDashboardLayout` aus `contracts/dashboard.ts`:
+  Unbekanntes raus, neue Karten hinten sichtbar dran) plus
+  `dashboardCustomized`. Tests: `api/dashboardLayout.test.ts`.
 - `financeRouter.ts` — Konten (inkl. Besitz/Sichtbarkeit, Kontotypen,
   Banken), Transaktionen (inkl. CSV-Export/-Import), Kategorien, Tags,
   Budgets, Splits, Projekte, Aufteilungsvorlagen, Sparziele.
@@ -366,6 +371,14 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   "active"` (Angebote buchen nichts) und `premium > 0`. `endDate` der Police
   wird auf die Dauerbuchung übernommen — befristete Police, befristete
   Buchung.
+- **Bestehende Dauerbuchung verknüpfen**: `linkPremiumToRecurring({
+  policyId, recurringId })` trägt eine schon vorhandene Dauerbuchung als
+  Prämie ein, statt eine zweite anzulegen (häufig: Dauerauftrag älter als
+  die Police in der App). Nur Ausgaben, nur sichtbare (unsichtbare →
+  NOT_FOUND), nicht schon einer anderen Police zugeordnet (CONFLICT); die
+  Dauerbuchung bleibt unverändert. Das Audit nennt keinen Betrag — sie kann
+  auf einem Privatkonto liegen. Passende Kandidaten (gleicher Betrag und
+  Intervall) sucht das Frontend (`premiumMatches` in `src/lib/insurance.ts`).
 - **Kaskaden im Finanz-Modul**: `deleteAccount` nullt
   `insurance_policies.account_id` (die Police bleibt), `deleteRecurring`
   räumt `premium_recurring_id` ab, `resetFinanceData` löscht alle sechs
@@ -415,6 +428,13 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   `requireAccountAccess`, `visibleAccountIds`) — nicht nur im Frontend
   ausblenden. Abfragen (Konten, Transaktionen, Recurring, Prognosen) sind pro
   anfragendem Nutzer gefiltert.
+- **Fehlercodes**: `requireAccountAccess(…, "edit")` antwortet auf ein Konto,
+  das man nur **lesend** sieht, mit `FORBIDDEN` („Für das Konto „X“ hast du
+  nur Leserecht.“) — die Person weiß ja, dass es existiert. Ein
+  **unsichtbares** Konto bleibt `NOT_FOUND`, genau wie ein nicht
+  existierendes (kein Existenz-Orakel). Dieselbe Regel gilt für Buchungen,
+  Massen-Endpunkte und Ursprungsbuchungen: Unsichtbares verhält sich wie
+  Fehlendes.
 - `finance.listAccounts` liefert pro Konto `owners: number[]`; die
   Besitzerliste ersetzt `finance.setAccountOwners` komplett (mindestens 1
   Besitzer, nur Besitzer oder Admin, Selbstentfernung erlaubt; Freigaben
@@ -461,7 +481,11 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   sagt nur, ob es verborgene Konten gibt (`hasHidden`) und wie viele man nur
   lesend sieht — ohne Anzahl, Namen oder Beträge der verborgenen. Mit `id`
   liefert `searchTransactions` genau eine (sichtbare) Buchung — für das
-  Detail-Blatt eines `fokus`-Links. Tests: `api/transactionSearch.test.ts`.
+  Detail-Blatt eines `fokus`-Links. Mit `accountId` trägt jede Zeile
+  `balanceAfter`: den Kontostand nach dieser Buchung, gerechnet aus
+  Anfangsbestand und **allen** Buchungen des Kontos (unabhängig von weiteren
+  Filtern; gleiche Reihenfolge wie die Datumssortierung: Datum, dann ID).
+  Tests: `api/transactionSearch.test.ts`.
 - **Stornos in Summen** (`contracts/flows.ts`, `withoutReversals`): Eine
   stornierte Buchung und ihre Gegenbuchung zählen in **Einnahmen-/
   Ausgaben-Summen** beide nicht — Dashboard, Budgets, Auswertungen,
@@ -611,7 +635,18 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   (z. B. Urlaub). Endpunkte `finance.listProjects`/`createProject`/
   `deleteProject` — Löschen gesperrt (CONFLICT mit Anzahl), solange Buchungen
   referenzieren. `createTransaction` nimmt optional `projectId` (Existenz
-  wird geprüft). Tests: `api/projectsSplits.test.ts`.
+  wird geprüft). `finance.setProjectClosed({ id, closed })` setzt
+  `projects.closed_at` (erneutes Abschließen behält das erste Datum, Audit
+  `project.closed`/`project.reopened`). Abgeschlossen ist ein reiner
+  Oberflächen-Status: Der Server nimmt weiter Buchungen an — der Ausgleich
+  eines beendeten Urlaubs gehört noch ins Projekt. Tests:
+  `api/projectsSplits.test.ts`.
+- **Verbuchte Ausgleiche** erkennt `isSettlementShape`
+  (`contracts/settlement.ts`) an ihrer Form: Ausgabe, deren Betrag ganz eine
+  andere Person trägt — so legt sie „Verbuchen“ auf der Aufteilung an.
+  `analysis.projectSummary` zählt sie nicht als Projektkosten
+  (`settledTotal`/`settledCount`, je Person `settled`), die Aufteilung zeigt
+  sie als eigene Liste.
 - **Tags/Labels**: Tabellen `tags` (Name unique, Farbe) und
   `transaction_tags` (Unique-Index (transactionId, tagId)) — mehrere Tags pro
   Buchung, haushaltsweit (keine Konto-Bindung, keine Sichtbarkeitslogik; die
@@ -666,6 +701,14 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   ({accountId}, view-Recht). Nachträgliche Saldoänderungen können die Summe
   über den Saldo heben — gewollt, die Kappung in `sourceAmount` greift dann
   in der Fortschrittsanzeige.
+- **Archiv**: `finance.setGoalArchived({ id, archived })` setzt
+  `savings_goals.archived_at` und löst **im selben Schritt** alle Quellen
+  des Ziels (das Geld ist danach für neue Ziele frei; Zurückholen bringt die
+  Quellen nicht zurück). Bewusst **kein** gespeicherter Endbetrag: Er
+  enthielte Anteile fremder Privatkonten, die nicht jede Person sehen darf.
+  Archivierte Ziele fallen aus Prognose (`forecast.*`) und Bericht; die
+  Oberfläche zeigt sie unter „Archiv“. Audit `goal.archived`/
+  `goal.restored`. Tests: `api/dashboardLayout.test.ts`.
 - **Offene Sparziele (ohne Zielbetrag)**: `savings_goals.target_amount` ist
   nullable — NULL = offenes Ziel, der Fortschritt zeigt dann nur den
   angesparten Betrag. `createGoal`/`updateGoal` nehmen `targetAmount` nullish
@@ -728,8 +771,10 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   wiederkehrende Größen: Einnahmen werden skaliert, wiederkehrende Ausgaben
   der gewählten Oberkategorie inkl. Unterkategorien entfallen; Historie,
   Ist-Buchungen und variable Durchschnitte bleiben unverändert. Die Antwort
-  enthält die wirksamen Parameter im Feld `scenario`. Tests:
-  `api/scenario.test.ts`.
+  enthält die wirksamen Parameter im Feld `scenario`. `variableMonths`
+  (0–3) nennt, aus wie vielen abgeschlossenen Monaten mit Buchungen der Ø
+  variabler Buchungen stammt — die Prognosen-Seite sagt damit, ab wann die
+  Kurve belastbar ist. Tests: `api/scenario.test.ts`.
 - **Jahresvergleich**: `finance.yearComparison` liefert pro Ausgaben-
   Oberkategorie (Unterkategorien aufgerollt, Sichtbarkeitsfilter) die Summen
   von Jahr und Vorjahr; Ausgaben ohne Kategorie als Zeile `categoryId: null`.
@@ -877,7 +922,9 @@ die Frontend-Seite steht in `src/AGENTS.md`.
   Monatsende), 6-Monats-Cashflow, Ausgaben je Oberkategorie (`-1` = ohne),
   letzte Buchungen, Aufteilungs-Salden (`contracts/settlement.ts`, geteilt
   mit der Seite „Aufteilung“). `today` kommt vom Gerät, weil der Server oft
-  in UTC läuft.
+  in UTC läuft. Optional `userId` („Meine Sicht“): Einnahmen, Ausgaben,
+  Kategorien, Cashflow und letzte Buchungen nur mit diesem Zahler (`userId`
+  der Buchung); Vermögen und Salden bleiben haushaltsweit.
 - **`dashboard.attention()`**: strukturierte Hinweise (`AttentionItem`) —
   Budgets überschritten/zu schnell (`contracts/planning.ts`), Bargeld im
   Minus, Dauerbuchungen der nächsten 7 Tage (nur solche, die der Cron noch
@@ -898,9 +945,13 @@ die Frontend-Seite steht in `src/AGENTS.md`.
   Dauerbuchungen auf den Monat umgerechnet vs. Ø der letzten sechs
   abgeschlossenen Monate, größte Fixposten, Schwankung der variablen
   Ausgaben je Oberkategorie), `breakdown({ dimension, type, from?, to?,
-  compare })` (Summen nach Kategorie/Person = Zahler/Konto/Tag/Projekt, dazu
-  der Vergleichszeitraum: gleich lang davor oder `yearAgo`; eine Buchung mit
-  mehreren Tags zählt bei jedem). Alles über sichtbare Konten und ohne
+  compare })` (Summen nach Kategorie/Person = Zahler/Konto/Tag/Projekt oder
+  `note` = Empfänger/Notiz — Groß-/Kleinschreibung und Leerzeichen
+  normalisiert, höchstens 50 Zeilen —, dazu der Vergleichszeitraum: gleich
+  lang davor oder `yearAgo`, bei Spannen über 366 Tagen fällt `yearAgo` auf
+  „davor“ zurück; eine Buchung mit mehreren Tags zählt bei jedem).
+  `monthlyTrend`, `categoryMatrix` und `breakdown` nehmen optional `userId`
+  („Meine Sicht“, nach Zahler). Alles über sichtbare Konten und ohne
   Storno-Paare (`flows` aus `visibleData`; `txs` nur für Salden). Tests:
   `api/analysis.test.ts`.
 - **`finance.yearComparison({ year, upTo? })`**: mit `upTo` (`MM-TT`) nur

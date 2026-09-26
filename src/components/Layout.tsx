@@ -38,7 +38,10 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const actions = useActions();
   const scope = useScope();
-  const { accounts, users } = useFinanceData();
+  const { accounts, users: allUsers } = useFinanceData();
+  // Der Briefkopf zeigt, wer heute zum Haushalt gehört — deaktivierte
+  // Personen bleiben nur für ihre alten Buchungen in den Listen
+  const users = allUsers.filter((u) => u.active);
   const { resolvedTheme, setTheme } = useTheme();
   // Salden rechnet listAccounts serverseitig — dieselbe Zahl wie auf der Kontenseite
   const total = accounts.reduce((sum, a) => sum + a.balance, 0);

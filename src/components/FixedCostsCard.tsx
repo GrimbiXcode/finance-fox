@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import InfoTip from '@/components/InfoTip';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFinanceData } from '@/lib/data';
 import { formatCents, formatMonth } from '@/lib/finance';
@@ -29,7 +30,9 @@ export default function FixedCostsCard() {
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <div className="text-xs text-muted-foreground">Fixkosten pro Monat</div>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                Fixkosten pro Monat <InfoTip term="fixkosten" />
+              </div>
               <div className="font-serif text-xl font-semibold tabular-nums">{formatCents(d.fixedExpense)}</div>
               <div className="text-xs text-muted-foreground">
                 {d.shareOfIncome !== null ? `${d.shareOfIncome} % der Ø-Einnahmen` : 'ohne Einnahmen im Zeitraum'}

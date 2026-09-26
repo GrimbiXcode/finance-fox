@@ -1,6 +1,10 @@
 import { Link } from 'react-router';
+import { Archive, ArchiveRestore } from 'lucide-react';
+import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFinanceData } from '@/lib/data';
+import { useFinanceData, useInvalidateFinance } from '@/lib/data';
 import { formatCents, formatDate } from '@/lib/finance';
 import { pencil, pencilSlot } from '@/lib/pencil';
 import { trpc } from '@/providers/trpc';
@@ -12,30 +16,65 @@ import { cn } from '@/lib/utils';
  * ein Projekt gewählt ist.
  */
 export default function ProjectSummaryCard({ projectId }: { projectId: number }) {
-  const { users } = useFinanceData();
+  const { users, projects } = useFinanceData();
+  const invalidate = useInvalidateFinance();
   const query = trpc.analysis.projectSummary.useQuery({ projectId });
+  const setClosed = trpc.finance.setProjectClosed.useMutation({
+    onSuccess: (res) => {
+      toast.success(res.closedAt ? 'Projekt abgeschlossen.' : 'Projekt wieder geöffnet.');
+      invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const s = query.data;
   if (!s) return null;
+  const closedAt = projects.find((p) => p.id === projectId)?.closedAt ?? null;
   const maxCategory = Math.max(...s.categories.map((c) => c.amount), 1);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: pencil(s.project.color) }} />
-          {s.project.name}
-        </CardTitle>
-        <CardDescription>
-          {s.count === 0
-            ? 'Noch keine Ausgaben in diesem Projekt.'
-            : `${s.count} ${s.count === 1 ? 'Ausgabe' : 'Ausgaben'}${s.from ? ` vom ${formatDate(s.from)}` : ''}${s.to && s.to !== s.from ? ` bis ${formatDate(s.to)}` : ''}`}
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: pencil(s.project.color) }} />
+              {s.project.name}
+              {closedAt && <Badge variant="stamp" tone="ink">Abgeschlossen</Badge>}
+            </CardTitle>
+            <CardDescription>
+              {s.count === 0
+                ? 'Noch keine Ausgaben in diesem Projekt.'
+                : `${s.count} ${s.count === 1 ? 'Ausgabe' : 'Ausgaben'}${s.from ? ` vom ${formatDate(s.from)}` : ''}${s.to && s.to !== s.from ? ` bis ${formatDate(s.to)}` : ''}`}
+              {closedAt && ` · abgeschlossen am ${formatDate(closedAt)}`}
+            </CardDescription>
+          </div>
+          {/* Abschließen (H2): danach nicht mehr in den Buchungs-Dialogen
+              angeboten; Salden und Ausgleich bleiben hier erreichbar */}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={setClosed.isPending}
+            title={closedAt
+              ? 'Projekt wieder für neue Buchungen anbieten'
+              : 'Projekt beenden: erscheint nicht mehr bei neuen Buchungen, bleibt in Filtern und Auswertungen'}
+            onClick={() => setClosed.mutate({ id: projectId, closed: !closedAt })}
+          >
+            {closedAt
+              ? <><ArchiveRestore className="mr-1.5 h-4 w-4" /> Wieder öffnen</>
+              : <><Archive className="mr-1.5 h-4 w-4" /> Abschließen</>}
+          </Button>
+        </div>
       </CardHeader>
       {s.count > 0 && (
         <CardContent className="grid gap-6 md:grid-cols-3">
           <div>
             <div className="text-xs text-muted-foreground">Gesamtkosten</div>
             <div className="font-serif text-2xl font-semibold tabular-nums">{formatCents(s.total)}</div>
+            {s.settledCount > 0 && (
+              <div className="text-xs text-muted-foreground">
+                ohne {s.settledCount === 1 ? 'einen Ausgleich' : `${s.settledCount} Ausgleiche`} über {formatCents(s.settledTotal)}
+              </div>
+            )}
             <Link
               to={`/transaktionen?${new URLSearchParams({ zeit: 'alle', typ: 'expense', projekt: String(s.project.id) })}`}
               className="text-xs text-stamp hover:underline"
@@ -49,6 +88,8 @@ export default function ProjectSummaryCard({ projectId }: { projectId: number })
               {s.persons.map((p) => {
                 const u = users.find((x) => x.id === p.userId);
                 const diff = p.paid - p.share;
+                // Nach verbuchten Ausgleichen noch offen
+                const open = diff + p.settled;
                 return (
                   // Name und Zahlen untereinander: nebeneinander blieb vom Namen
                   // in der Drittel-Spalte nur „D…“
@@ -59,10 +100,12 @@ export default function ProjectSummaryCard({ projectId }: { projectId: number })
                     </span>
                     <span className="block pl-3.5 font-mono text-xs tabular-nums text-muted-foreground">
                       {formatCents(p.paid)} · {formatCents(p.share)}
-                      {diff !== 0 && (
-                        <span className={cn('ml-1', diff > 0 ? 'text-positive' : 'text-negative')}>
-                          ({diff > 0 ? '+' : ''}{formatCents(diff)})
+                      {open !== 0 ? (
+                        <span className={cn('ml-1', open > 0 ? 'text-positive' : 'text-negative')} title="nach Ausgleichen noch offen">
+                          ({open > 0 ? '+' : ''}{formatCents(open)})
                         </span>
+                      ) : diff !== 0 && (
+                        <span className="ml-1">(ausgeglichen)</span>
                       )}
                     </span>
                   </li>

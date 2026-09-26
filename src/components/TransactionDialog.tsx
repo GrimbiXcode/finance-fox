@@ -69,6 +69,7 @@ const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application
 export default function TransactionDialog({
   defaultType = 'expense',
   transaction,
+  template,
   trigger,
   open: controlledOpen,
   onOpenChange,
@@ -76,6 +77,11 @@ export default function TransactionDialog({
 }: {
   defaultType?: TxType;
   transaction?: EditableTransaction;
+  /**
+   * Duplizieren (B6): neue Buchung, vorbefüllt aus einer bestehenden —
+   * Datum heute, ohne Belege und ohne Änderungskommentar.
+   */
+  template?: EditableTransaction;
   trigger?: ReactNode;
   /**
    * Gesteuert von außen (Tastaturkürzel „N“, Befehlspalette): dann ohne
@@ -98,19 +104,21 @@ export default function TransactionDialog({
     if (!controlled) setInternalOpen(next);
     onOpenChange?.(next);
   };
-  const [type, setType] = useState<TxType>(transaction?.type ?? defaultType);
-  const [amount, setAmount] = useState(transaction ? shareFormatter.format(transaction.amount / 100) : '');
-  const [accountId, setAccountId] = useState(transaction ? String(transaction.accountId) : '');
-  const [toAccountId, setToAccountId] = useState(transaction?.toAccountId ? String(transaction.toAccountId) : '');
-  const [categoryId, setCategoryId] = useState(transaction?.categoryId ? String(transaction.categoryId) : '');
-  const [userId, setUserId] = useState(transaction ? String(transaction.userId) : '');
-  const [projectId, setProjectId] = useState(transaction?.projectId ? String(transaction.projectId) : ''); // '' = Haushalt
+  // Vorbelegung: beim Bearbeiten die Buchung, beim Duplizieren die Vorlage
+  const source = transaction ?? template;
+  const [type, setType] = useState<TxType>(source?.type ?? defaultType);
+  const [amount, setAmount] = useState(source ? shareFormatter.format(source.amount / 100) : '');
+  const [accountId, setAccountId] = useState(source ? String(source.accountId) : '');
+  const [toAccountId, setToAccountId] = useState(source?.toAccountId ? String(source.toAccountId) : '');
+  const [categoryId, setCategoryId] = useState(source?.categoryId ? String(source.categoryId) : '');
+  const [userId, setUserId] = useState(source ? String(source.userId) : '');
+  const [projectId, setProjectId] = useState(source?.projectId ? String(source.projectId) : ''); // '' = Haushalt
   const [date, setDate] = useState(transaction?.date ?? todayISO());
-  const [note, setNote] = useState(transaction?.note ?? '');
-  const [splitEnabled, setSplitEnabled] = useState((transaction?.splits.length ?? 0) > 0);
+  const [note, setNote] = useState(source?.note ?? '');
+  const [splitEnabled, setSplitEnabled] = useState((source?.splits.length ?? 0) > 0);
   const [shares, setShares] = useState<Record<number, string>>(() => {
     const next: Record<number, string> = {};
-    for (const s of transaction?.splits ?? []) next[s.userId] = shareFormatter.format(s.amount / 100);
+    for (const s of source?.splits ?? []) next[s.userId] = shareFormatter.format(s.amount / 100);
     return next;
   });
   // Optionaler Kommentar für die Änderungshistorie (nur Edit-Modus)
@@ -124,7 +132,7 @@ export default function TransactionDialog({
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   // Gewählte Tags der Buchung + Inline-Bereich für "+ Neuer Tag"
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(transaction?.tags.map((t) => t.id) ?? []);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(source?.tags.map((t) => t.id) ?? []);
   const [newTagOpen, setNewTagOpen] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   // Inline-Anlage als Unterkategorie der aktuell gewählten Oberkategorie
@@ -215,6 +223,11 @@ export default function TransactionDialog({
     ]);
   }, [filteredCategories]);
 
+  const usage = trpc.finance.categoryUsage.useQuery(undefined, { enabled: open && type !== 'transfer', staleTime: 60_000 });
+  const frequentCategories = (type === 'transfer' ? [] : (usage.data?.[type].frequent ?? []))
+    .map((id) => filteredCategories.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => c !== undefined);
+
   // Gewählte Kategorie, falls es eine Oberkategorie ist — dann kann die
   // Inline-Anlage optional eine Unterkategorie davon anlegen
   const selectedRoot = useMemo(() => {
@@ -291,7 +304,7 @@ export default function TransactionDialog({
     if (type === 'transfer' && s.toAccountId !== null && accounts.some((a) => a.id === s.toAccountId)) {
       setToAccountId(String(s.toAccountId));
     }
-    if (s.projectId !== null && projects.some((p) => p.id === s.projectId)) {
+    if (s.projectId !== null && projects.some((p) => p.id === s.projectId && !p.closedAt)) {
       setProjectId(String(s.projectId));
     }
     if (parseEuro(amount) <= 0) setAmount(shareFormatter.format(s.amount / 100));
@@ -304,6 +317,21 @@ export default function TransactionDialog({
     // Neu öffnen beginnt beim heutigen Datum — auch wenn der Dialog seit
     // gestern gemountet ist oder zuletzt ein Stapel rückdatiert wurde
     if (next && !isEdit) setDate(todayISO());
+    // Duplizieren: jedes Öffnen beginnt wieder bei der Vorlage (nach dem
+    // Speichern waren Betrag, Notiz usw. geleert)
+    if (next && template && !isEdit) {
+      setType(template.type);
+      setAmount(shareFormatter.format(template.amount / 100));
+      setAccountId(String(template.accountId));
+      setToAccountId(template.toAccountId ? String(template.toAccountId) : '');
+      setCategoryId(template.categoryId ? String(template.categoryId) : '');
+      setUserId(String(template.userId));
+      setProjectId(template.projectId ? String(template.projectId) : '');
+      setNote(template.note);
+      setSplitEnabled(template.splits.length > 0);
+      setShares(Object.fromEntries(template.splits.map((s) => [s.userId, shareFormatter.format(s.amount / 100)])));
+      setSelectedTagIds(template.tags.map((t) => t.id));
+    }
   };
 
   /**
@@ -480,7 +508,7 @@ export default function TransactionDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Buchung bearbeiten' : 'Neue Buchung'}</DialogTitle>
+          <DialogTitle>{isEdit ? 'Buchung bearbeiten' : template ? 'Buchung duplizieren' : 'Neue Buchung'}</DialogTitle>
           <DialogDescription>
             {isEdit
               ? 'Bestehende Buchung anpassen — jede Änderung wird protokolliert.'
@@ -577,6 +605,8 @@ export default function TransactionDialog({
                   value={categoryId || 'none'}
                   onValueChange={(v) => setCategoryId(v === 'none' ? '' : v)}
                   placeholder="Optional"
+                  // Die meistgenutzten der letzten 90 Tage oben (B3)
+                  pinned={frequentCategories.map((c) => ({ value: String(c.id), label: c.name }))}
                   options={[
                     { value: 'none', label: 'Keine Kategorie' },
                     ...groupedCategories.map((c) => ({
@@ -750,7 +780,10 @@ export default function TransactionDialog({
                       onValueChange={(v) => setProjectId(v === 'household' ? '' : v)}
                       options={[
                         { value: 'household', label: 'Haushalt' },
-                        ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+                        // Abgeschlossene Projekte nur, wenn die Buchung schon dazugehört
+                        ...projects
+                          .filter((p) => !p.closedAt || String(p.id) === projectId)
+                          .map((p) => ({ value: String(p.id), label: p.closedAt ? `${p.name} (abgeschlossen)` : p.name })),
                       ]}
                     />
                   </div>

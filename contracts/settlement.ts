@@ -75,3 +75,25 @@ export function computeSettlements(
   }
   return result;
 }
+
+/**
+ * Erkennt eine verbuchte Ausgleichszahlung an ihrer Form (so legt sie
+ * „Verbuchen“ auf der Aufteilung an): eine Ausgabe, deren Betrag vollständig
+ * eine andere Person trägt. Sie verschiebt Schulden zwischen Personen und
+ * ist keine Ausgabe des Haushalts oder eines Projekts. Heuristik — wer für
+ * jemanden etwas vollständig auslegt, erzeugt dieselbe Form; auf der
+ * Aufteilung ist das gewollt dasselbe (eine Person begleicht für die andere).
+ */
+export function isSettlementShape(t: {
+  type: "income" | "expense" | "transfer";
+  amount: number;
+  userId: number;
+  splits: { userId: number; amount: number }[];
+}): boolean {
+  return (
+    t.type === "expense" &&
+    t.splits.length === 1 &&
+    t.splits[0].userId !== t.userId &&
+    t.splits[0].amount === t.amount
+  );
+}

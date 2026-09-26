@@ -124,6 +124,8 @@ describe("forecast.balance — Szenario-Planung", () => {
     expect(res.projection[0].recurringIncome).toBe(100000);
     expect(res.projection[0].recurringExpense).toBe(35000);
     expect(res.projection[2].balance).toBe(195000);
+    // Ohne abgeschlossenen Monat mit Buchungen gibt es keinen Ø (A3)
+    expect(res.variableMonths).toBe(0);
   });
 
   it("skaliert wiederkehrende Einnahmen mit incomePct", async () => {
@@ -179,5 +181,30 @@ describe("forecast.balance — Szenario-Planung", () => {
     // member: (110000 - 35000) × 3, admin: zusätzlich -20000 × 3
     expect(asMember.projection[2].balance).toBe(225000);
     expect(asAdmin.projection[2].balance).toBe(165000);
+  });
+
+  it("nennt, aus wie vielen abgeschlossenen Monaten der Ø stammt", async () => {
+    // Eine Buchung vor zwei Monaten → genau ein Monat im Ø; der laufende
+    // Monat zählt nie mit
+    const d = new Date(now.getFullYear(), now.getMonth() - 2, 10);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-10`;
+    await callerFor(admin).finance.createTransaction({
+      type: "expense",
+      accountId: sharedAccId,
+      amount: 6000,
+      date: iso,
+      userId: admin.id,
+    });
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    await callerFor(admin).finance.createTransaction({
+      type: "expense",
+      accountId: sharedAccId,
+      amount: 1000,
+      date: todayIso,
+      userId: admin.id,
+    });
+    const res = await callerFor(member).forecast.balance({ months: 3 });
+    expect(res.variableMonths).toBe(1);
+    expect(res.avgVariableExpense).toBe(6000);
   });
 });

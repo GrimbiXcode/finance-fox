@@ -282,8 +282,15 @@ export default function Accounts() {
 
       {accounts.length === 0 && (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Noch keine Konten — lege dein erstes Konto an, um Buchungen zu erfassen.
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="max-w-prose text-muted-foreground">
+              Noch keine Konten. Jede Buchung gehört zu einem Konto — Lohnkonto, Sparkonto,
+              Bargeld. Gemeinsame Konten sieht der ganze Haushalt, private nur du und wem du sie
+              freigibst.
+            </p>
+            <AccountDialog
+              trigger={<Button variant="outline"><Plus className="mr-2 h-4 w-4" /> Erstes Konto anlegen</Button>}
+            />
           </CardContent>
         </Card>
       )}

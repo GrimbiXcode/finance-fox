@@ -21,6 +21,13 @@ Detail-Doku zur Datenbank. Übergeordnetes: `../AGENTS.md`.
   `ALTER TABLE` ergänzte Spalte scheitert dort mit „no such column" und der
   Server startet nicht mehr (siehe `pension_deductions.salary_id`).
   Regressionstest: `api/migrateSchema.test.ts` baut eine Bestands-DB nach.
+- **Nachgerüstete Status-Spalten** (alle Text, NULL = Standard):
+  `users.dashboard_layout` (JSON der Dashboard-Karten, NULL = Standard-
+  Anordnung), `savings_goals.archived_at` und `projects.closed_at`
+  (`YYYY-MM-DD`, NULL = aktiv). `archived_at` steht in `ensureSchema`
+  **hinter** dem Rebuild von `savings_goals` — der kopiert nur die Spalten,
+  die er kennt; weiter vorn ergänzt, fiele die Spalte bei einer alten DB dem
+  Rebuild wieder zum Opfer.
 - `relations.ts` — Drizzle-Relationen; `seed.ts` — Seed-Daten;
   `migrations/` — drizzle-kit-Artefakte (dev: `npm run db:push`);
   `stubs/better-sqlite3-stub.cjs` — ersetzt `better-sqlite3` im Server-Bundle

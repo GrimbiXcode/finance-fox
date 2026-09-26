@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { AlertTriangle, CalendarDays } from 'lucide-react';
+import { Link } from 'react-router';
+import { AlertTriangle, CalendarDays, Repeat } from 'lucide-react';
+import InsuranceTransferDialog from '@/components/InsuranceTransferDialog';
+import { RECURRING_INTERVAL_LABELS } from '@contracts/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useFinanceData } from '@/lib/data';
-import { formatCents, formatDate, getUserLocale } from '@/lib/finance';
+import { formatCents, formatDate, getUserLocale, todayISO } from '@/lib/finance';
+import { premiumMatches } from '@/lib/insurance';
 import { trpc } from '@/providers/trpc';
 import { cn } from '@/lib/utils';
 
@@ -109,6 +113,7 @@ export default function UpcomingCard() {
             })}
           </ul>
         )}
+        <NotBooked />
         {byDay.length > LIMIT && (
           <Button variant="ghost" size="sm" onClick={() => setShowAll((v) => !v)}>
             {showAll ? 'Weniger anzeigen' : `Alle ${byDay.length} Tage anzeigen`}
@@ -116,5 +121,55 @@ export default function UpcomingCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Prämien- und Zinskalender (I4): Policen und Hypotheken, deren Belastung
+ * noch keine Dauerbuchung ist, fehlen oben im Kalender. Statt sie still zu
+ * übergehen, stehen sie hier mit dem Weg zur Übernahme.
+ */
+function NotBooked() {
+  const policies = trpc.insurance.listPolicies.useQuery().data ?? [];
+  const recurring = trpc.finance.listRecurring.useQuery().data ?? [];
+  const mortgage = trpc.mortgage.summary.useQuery().data;
+  const open = policies.filter((p) => p.status === 'active' && p.premium > 0 && p.premiumRecurringId === null);
+  // Steht die Prämie schon als (unverknüpfte) Dauerbuchung da, ist sie
+  // nicht „ungebucht“ — dann heißt der Weg „Verknüpfen“, nicht „Übernehmen“
+  const linkedIds = new Set(policies.flatMap((p) => (p.premiumRecurringId === null ? [] : [p.premiumRecurringId])));
+  const today = todayISO();
+  const mortgageMissing = mortgage?.missingRecurringCount ?? 0;
+  if (open.length === 0 && mortgageMissing === 0) return null;
+  return (
+    <div className="space-y-1.5 rounded-md border border-dashed px-3 py-2">
+      <p className="text-xs font-medium">Noch nicht als Dauerbuchung — fehlt im Kalender:</p>
+      <ul className="space-y-1 text-sm">
+        {open.map((p) => (
+          <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0 truncate" title={p.name}>
+              {p.name}
+              <span className="ml-2 text-xs text-muted-foreground">
+                {formatCents(p.premium)} · {(RECURRING_INTERVAL_LABELS as Record<string, string>)[p.premiumInterval] ?? p.premiumInterval}
+              </span>
+            </span>
+            <InsuranceTransferDialog
+              policy={p}
+              trigger={
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-stamp">
+                  <Repeat className="mr-1 h-3.5 w-3.5" />
+                  {premiumMatches(p, recurring, linkedIds, today).length > 0 ? 'Verknüpfen' : 'Übernehmen'}
+                </Button>
+              }
+            />
+          </li>
+        ))}
+        {mortgageMissing > 0 && (
+          <li className="flex flex-wrap items-center justify-between gap-2">
+            <span>{mortgageMissing === 1 ? '1 Hypotheken-Posten' : `${mortgageMissing} Hypotheken-Posten`} (Zins/Amortisation)</span>
+            <Link to="/hypotheken" className="text-xs text-stamp hover:underline">Zu den Hypotheken</Link>
+          </li>
+        )}
+      </ul>
+    </div>
   );
 }

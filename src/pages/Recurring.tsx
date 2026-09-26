@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import {
   ArrowRight, LayoutGrid, Pause, Pencil, Play, Plus, Table as TableIcon, Zap,
 } from 'lucide-react';
@@ -591,8 +591,21 @@ export default function Recurring() {
 
       {recurring.length === 0 && (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Noch keine Dauerbuchungen angelegt.
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="max-w-prose text-muted-foreground">
+              Noch keine Dauerbuchungen. Lohn, Miete, Abos oder der Dauerauftrag aufs Sparkonto
+              werden damit automatisch verbucht und fließen in Prognosen, Fixkosten und den
+              Geldfluss ein.
+            </p>
+            {accounts.some((a) => a.access === 'edit') ? (
+              <Button variant="outline" onClick={() => setOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Erste Dauerbuchung anlegen
+              </Button>
+            ) : (
+              <Button asChild variant="outline">
+                <Link to="/konten">Konto anlegen</Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -632,6 +645,13 @@ export default function Recurring() {
                           <>{account?.name} · {owner?.name}</>
                         )}
                       </CardDescription>
+                      {/* Kategorie auf der Karte (G3) — ohne Dialog erkennbar */}
+                      {cat && r.type !== 'transfer' && (
+                        <Badge variant="label" className="mt-1 gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pencil(cat.color) }} />
+                          {cat.name}
+                        </Badge>
+                      )}
                     </div>
                     <Badge variant="stamp" tone={archived ? 'neutral' : r.active ? 'good' : 'warn'}>
                       {archived ? 'Archiviert' : r.active ? 'Aktiv' : 'Pausiert'}

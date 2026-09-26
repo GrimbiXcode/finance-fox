@@ -61,7 +61,7 @@ Welle 3 ist umgesetzt:
 | F3         | Einnahmen, Ausgaben und Sparquote im Verlauf (zwei Diagramme, keine zweite Achse)                                          |
 | F5         | Jede Matrix-Zelle, jede Säule (Verlauf, Jahresvergleich) und jede Jahresvergleichs-Zeile führt zu den Buchungen            |
 | G2         | Fälligkeiten der nächsten 7/30/90 Tage mit Warnung bei drohendem Minus                                                     |
-| H2 (teils) | Projekt-Karte in der Aufteilung; „abgeschlossen“-Status folgt mit Welle 5 (braucht Schema)                                 |
+| H2 (teils) | Projekt-Karte in der Aufteilung; „abgeschlossen“-Status in Welle 5                                                        |
 | H4         | Seite „Verlauf“ (Person, Zeitraum, Bereich) und Dashboard-Karte „Zuletzt im Haushalt“                                      |
 
 Welle 4 ist umgesetzt:
@@ -82,6 +82,29 @@ Welle 4 ist umgesetzt:
 | J3, J4       | Weniger Monats-Ticks in der Prognose, gestaffelte Ablauf-Beschriftungen im Schuldenverlauf                                |
 | J6, J7, J8   | „Spalten“ als Beschriftung vor dem Select, gemeinsames Buchungsart-Segment, Datumsfeld mit „Heute“/„Gestern“              |
 | (Befund)     | Stornierte Buchungen zählen in keiner Summe mehr doppelt (siehe E-18)                                                     |
+
+Welle 5 ist umgesetzt:
+
+| Story       | Umsetzung                                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| D7          | „Anpassen“ auf dem Dashboard: Karten ein-/ausblenden und umsortieren, pro Person am Server gespeichert             |
+| H6          | Umschalter „Meine Sicht / Haushalt“ in der Kopfzeile, wirkt auf Dashboard, Transaktionen und Auswertung            |
+| H5          | Buchen auf ein nur lesend sichtbares Konto: „Für das Konto „X“ hast du nur Leserecht.“ statt „nicht gefunden“      |
+| H3          | Karte „Verbuchte Ausgleiche“, „letzter Ausgleich am …“ bei den Salden                                              |
+| H2 (Rest)   | Projekte abschließen und wieder öffnen; Projektkosten ohne Ausgleiche, je Person „noch offen“ bzw. „ausgeglichen“  |
+| H7          | Einladungslink kopieren, teilen (wo das Gerät es kann) oder als QR-Code zeigen                                     |
+| I4          | Unter den Fälligkeiten: Policen und Hypotheken-Posten ohne Dauerbuchung, mit „Übernehmen“ oder „Verknüpfen“        |
+| B3          | Gruppe „Häufig“ (fünf meistgenutzte Kategorien der Art) über der Kategorie-Liste im Buchungsdialog                 |
+| B6          | „Duplizieren“ im Detail-Blatt: vorbefüllter Dialog, Datum heute, ohne Belege                                       |
+| C7          | Spalte „Saldo“ bei genau einem gefilterten Konto, ausgegraut bei weiteren Filtern                                  |
+| F7          | Aufschlüsselung „nach Empfänger / Notiz“ (normalisiert), sortierbar nach Betrag oder Anzahl                        |
+| G3          | Kategorie-Badge auf den Dauerbuchungs-Karten                                                                       |
+| G5          | Balken in der Zielfarbe bei einer Quelle, Ring in der Zielfarbe bei mehreren                                       |
+| G6          | Zettel „Geschafft!“ mit „Abschließen“; Archiv mit „Zurückholen“; archivierte Ziele fehlen in Prognose und Bericht  |
+| A8          | Info-Symbol mit Satz, Formel und Beispiel bei zwölf Fachbegriffen (zentrales Glossar)                              |
+| A3          | Leere Zustände mit Zweck, Voraussetzung und Knopf; Mindest-Zeitraum in Verlauf und Prognose genannt                |
+| C5, K2      | schon in Welle 2 bzw. 1 erledigt                                                                                   |
+| (Befunde)   | Prämie mit bestehender Dauerbuchung verknüpfen; fehlende Log-Beschriftungen; deaktivierte Personen im Briefkopf    |
 
 ## 1. Kurzfassung
 
@@ -1774,3 +1797,153 @@ den Standard.
   Dashboard-Karte zuerst hinter „+ N weitere“; Segment-Schalter ohne
   Pfeiltasten; „Nachtragen“ landete in der Tabellenansicht der Konten, die
   weder Kassen-Zettel noch „Kasse zählen“ zeigt.
+
+### Welle 5
+
+**E-27 · Dashboard-Anordnung am Server, Pfeile statt Ziehen (D7).** Die
+Story verlangt „auf allen Geräten“ — localStorage schied damit aus; die
+Anordnung steht als JSON in `users.dashboard_layout` und wird beim Lesen
+bereinigt (unbekannte Karten raus, neue hinten sichtbar dran), damit ein
+Update nie still eine Karte versteckt. Umsortieren per Pfeil-Knöpfen statt
+Drag & Drop: geht mit Tastatur und auf dem Handy gleich gut und braucht
+keine Bibliothek. Das Raster ist dicht (`grid-flow-row-dense`), sonst
+hinterließe jede ausgeblendete Karte ein Loch. „Fälligkeiten“ ist im
+Standard aus (sie stehen bei Wiederkehrend), „Nettovermögen“ keine eigene
+Karte — die Vermögens-Kennzahl zeigt es bereits („inkl. Immobilie“).
+
+**E-28 · „Meine Sicht“ heißt: ich habe bezahlt (H6).** Geprüft wurden drei
+Lesarten: nach Zahler (`userId` der Buchung), nach getragenem Anteil
+(Splits) und nach Kontobesitz. Anteile scheiden aus, weil Einnahmen und
+Umbuchungen keine haben und die Summen dann nicht mehr zur Liste passten;
+Kontobesitz scheitert am Gemeinschaftskonto, auf dem die meisten Buchungen
+liegen. Der Zahler ist dasselbe Feld wie der bestehende Personenfilter —
+die Sicht ist damit ein Default dieses Filters, kein zweites Modell.
+Vermögen, Salden, Budgets und der Jahresvergleich bleiben haushaltsweit:
+Ein Kontostand gehört nicht einer Person, und ein Budget ist ein
+Haushaltslimit. Gemerkt wird pro Gerät, wie die Story es verlangt.
+
+**E-29 · FORBIDDEN nur für Konten, die man sieht (H5).** Wer ein Konto nur
+lesend sieht, weiß, dass es existiert — „nicht gefunden“ wäre dort falsch.
+Unsichtbare Konten, Buchungen und Ursprungsbuchungen antworten weiter
+NOT_FOUND, genau wie nicht vorhandene, sonst ließe sich die Existenz fremder
+Privatkonten erfragen. Im Buchungsdialog stehen als Quelle ohnehin nur
+Konten mit Bearbeitungsrecht; als Ziel einer Umbuchung sind nur lesbare
+Konten erlaubt und als „(nur lesend)“ markiert (Einzahlung aufs Konto des
+Partners).
+
+**E-30 · Laufender Saldo aus allen Buchungen des Kontos (C7).** Der Saldo
+einer Zeile muss mit dem Kontoauszug übereinstimmen — er zählt deshalb
+alle Buchungen des Kontos, nicht nur die gefilterten. Sind weitere Filter
+aktiv, bleibt die Spalte stehen, aber ausgegraut: Der Wert stimmt, die
+Differenz zur Vorzeile ist aber nicht mehr die Zeile dazwischen. Nur bei
+Sortierung nach Datum und nur am Desktop — mobil fehlt der Platz, und bei
+Sortierung nach Betrag ergibt ein fortlaufender Saldo keinen Sinn.
+
+**E-31 · Top-Empfänger als Dimension der Aufschlüsselung (F7).** Statt einer
+dritten Liste neben Verlauf und Matrix ist „Empfänger / Notiz“ eine weitere
+Dimension der Aufschlüsselung: Zeitraum, Art, Vergleich und Drilldown gibt
+es dort schon. Der Umschalter „nach Betrag / nach Anzahl“ deckt beide
+Top-Listen der Story ab; 50 Zeilen statt 10, weil die Liste scrollt und das
+elfte Café oft genauso interessant ist. Normalisiert werden Groß-/
+Kleinschreibung und Leerraum, angezeigt die häufigste Schreibweise.
+
+**E-32 · Ausgleiche an ihrer Form erkennen, nicht an einem Schema-Feld
+(H3).** „Verbuchen“ legt eine Ausgabe an, die ganz die andere Person trägt.
+Genau diese Form (`isSettlementShape`) weist die Buchung als Ausgleich
+aus. Ein eigenes Feld oder eine eigene Buchungsart wäre eindeutiger, hätte
+aber alle bestehenden Ausgleiche unerkannt gelassen und jede Summe im
+System berührt. Die Grenze der Heuristik: Wer für jemanden etwas ganz
+auslegt, erzeugt dieselbe Form — auf der Aufteilung ist das gewollt
+dasselbe. Beim Testen fiel auf, dass die Projekt-Zusammenfassung (Welle 3)
+den Ausgleich eines Urlaubs als Urlaubskosten zählte (Italien 2'660.15
+statt 2'048.30); sie nutzt jetzt dieselbe Erkennung und zeigt je Person,
+was nach Ausgleichen noch offen ist. In Dashboard und Auswertung zählt ein
+Ausgleich weiter als Ausgabe der zahlenden Person — das ist ein
+Modellierungs-Thema (siehe „Offen“ unten), kein Welle-5-Umfang.
+
+**E-33 · Archivieren löst die Quellen, speichert aber keinen Endbetrag
+(G6).** Die Story will, dass das Geld nach dem Abschluss für neue Ziele frei
+ist — also werden die Quellen im selben Schritt gelöst, nach einem
+AlertDialog, der das sagt. Naheliegend wäre, den erreichten Betrag im
+Archiv festzuhalten. Er enthielte aber Anteile fremder Privatkonten, die
+nicht jede Person sehen darf; eine Zahl, die je nach Betrachter anders
+stimmen müsste, lässt sich nicht einmal speichern. Das Archiv nennt darum
+Zielbetrag und Datum. Archivierte Ziele fehlen in Dashboard, Prognose und
+Bericht; „Zurückholen“ bringt das Ziel zurück, die Quellen nicht.
+
+**E-34 · Zielfarbe am Balken, Segmente nur bei mehreren Quellen (G5).** Bei
+einer Quelle ist die Aufteilung uninteressant, der Balken trägt die
+Zielfarbe. Bei mehreren bleibt die Aufteilung die eigentliche Information;
+die Zielfarbe erscheint dann als Ring, damit das Ziel wiedererkennbar
+bleibt.
+
+**E-35 · Ungebuchte Prämien als Abschnitt, nicht als Kalendertermine (I4).**
+Eine Police ohne Dauerbuchung hat ein Intervall, aber keinen Termin —
+erfundene Daten im Kalender wären falsch. Der Abschnitt „Noch nicht als
+Dauerbuchung“ unter den Fälligkeiten nennt die Lücke und bietet den Weg an.
+
+**E-36 · Verknüpfen statt doppelt anlegen (Befund beim Umsetzen).** Mit den
+Musterdaten schlug der neue Abschnitt „Übernehmen“ für Policen vor, deren
+Prämie längst als Dauerbuchung existierte — ein Klick hätte dieselbe
+Belastung ein zweites Mal angelegt. Das Modul kannte nur „neu anlegen“. Neu
+ist `insurance.linkPremiumToRecurring`: Das Frontend sucht Kandidaten mit
+gleichem Betrag und Intervall, der Knopf heißt dann „Verknüpfen“, der
+Dialog bietet die Kandidaten zuerst an. Die Dauerbuchung bleibt
+unverändert, verknüpfen darf, wer sie sieht; das Log nennt keinen Betrag,
+weil sie auf einem Privatkonto liegen kann.
+
+**E-37 · „Häufig“ als Gruppe im bestehenden Auswahlfeld (B3).** Eine eigene
+Chip-Zeile im Buchungsdialog hätte Platz gekostet und dasselbe wie die
+Schnellerfassung gezeigt. Die Gruppe steht über der vollen Liste, die Suche
+filtert weiter alles; die Einträge der Gruppe tragen intern ein Suffix,
+damit das Auswahlfeld sie von denselben Kategorien weiter unten
+unterscheidet.
+
+**E-38 · Duplizieren im Detail-Blatt (B6).** Seit C6 haben die Zeilen kein
+Menü mehr; das Detail-Blatt ist der Ort für Aktionen auf einer Buchung.
+Der Dialog bekommt die Buchung als Vorlage (nicht als zu bearbeitende),
+setzt das Datum auf heute und lässt Belege weg — ein Beleg gehört zu genau
+einem Kauf.
+
+**E-39 · Popover statt Tooltip, Texte an einer Stelle (A8).** Tooltips gibt
+es auf dem Handy nicht, darum ein Info-Knopf mit Popover. Alle Erklärungen
+stehen in `src/lib/glossary.ts`, damit derselbe Begriff überall gleich
+erklärt wird und ein neuer nicht als loser Text an einer Stelle landet. Die Texte wurden gegen die
+Rechnungen geprüft (Rollover sammelt nur im Kalenderjahr und nie unter 0,
+Tragbarkeit mit Unterhalt statt „Nebenkosten“, Fixkosten mit allen
+Intervallen); Beispielbeträge sind ohne Währung und Tausender-Apostroph
+geschrieben, weil sie nicht der Browser-Region folgen.
+
+**E-40 · „Abgeschlossen“ ist ein Oberflächen-Status (H2).** Ein beendeter
+Urlaub wird oft erst danach ausgeglichen — der Server nimmt deshalb weiter
+Buchungen ins Projekt an. Abgeschlossene Projekte fehlen nur dort, wo man
+neu bucht (Buchungsdialog, Massenbearbeitung; außer die Buchung gehört
+schon dazu), und bleiben in Filtern, Chips (hinten, mit Häkchen) und
+Auswertungen.
+
+**E-41 · Mindest-Zeitraum nennen statt leere Kurven zeigen (A3).** Der
+Verlauf braucht zwei Monate mit Buchungen, sonst ist er ein einzelner
+Balken; die Prognose rechnet mit dem Ø der letzten drei abgeschlossenen
+Monate und sagt jetzt, aus wie vielen sie tatsächlich stammt
+(`variableMonths`). Leere Seiten nennen Zweck, Voraussetzung und haben
+einen Knopf; die Aufteilung erklärt, dass sie eine zweite Person braucht,
+statt Salden von 0 zu zeigen.
+
+**E-42 · QR-Code lokal, Teilen nur, wo es das gibt (H7).** Der QR-Code
+entsteht im Browser (`qrcode` war schon für die Zwei-Faktor-Anmeldung
+vorhanden); der Link verlässt das Gerät nur, wenn man ihn teilt. „Teilen“
+erscheint nur mit `navigator.share` — ein Knopf, der am Desktop nichts tut,
+wäre schlechter als keiner.
+
+**Weitere Befunde beim Durchklicken (behoben):** Das Aktivitäten-Log zeigte
+für Storno, Vorsorgeprofil, AHV-Beitragsjahre und Konto-Besitzer den rohen
+Schlüssel statt eines Satzes, bei Sparziel-Quellen den Modus auf Englisch
+(„absolute“). Der Briefkopf listete deaktivierte Personen als
+Haushaltsmitglieder; der neue Umschalter „Meine Sicht“ und der
+Aufteilungs-Hinweis zählen nur aktive.
+
+**Offen (bewusst nicht in dieser Welle):** Ausgleichszahlungen sind
+Ausgaben der zahlenden Person und zählen so in Monatsausgaben, Sparrate und
+„Meine Sicht“. Sauber wäre eine eigene Buchungsart „Ausgleich“, die Salden
+bewegt, aber keine Ausgabe ist — eine Schemaänderung mit Migration der
+bestehenden Ausgleiche, die eine eigene Story verdient.

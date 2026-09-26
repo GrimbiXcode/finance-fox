@@ -21,7 +21,12 @@ import { AUDIT_ACTION_LABELS, AUDIT_ENTITY_GROUPS } from '@/lib/auditLabels';
 import TransactionDialog from '@/components/TransactionDialog';
 import GettingStarted from '@/components/GettingStarted';
 import BudgetMeter from '@/components/BudgetMeter';
+import InfoTip from '@/components/InfoTip';
 import KpiCard from '@/components/KpiCard';
+import UpcomingCard from '@/components/UpcomingCard';
+import DashboardCustomizeDialog from '@/components/DashboardCustomizeDialog';
+import { useAuth } from '@/providers/auth';
+import { DEFAULT_DASHBOARD_LAYOUT, type DashboardCardId } from '@contracts/dashboard';
 import { useOffline } from '@/providers/offline';
 import { useScope } from '@/providers/scope';
 import { trpc } from '@/providers/trpc';
@@ -78,9 +83,10 @@ function Change({
 
 /** Kennzahl-Karte; `to` macht den Betrag zum Link auf die Buchungen dahinter */
 function Kpi({
-  title, icon, value, tone, to, children,
+  title, info, icon, value, tone, to, children,
 }: {
   title: string;
+  info?: ReactNode;
   icon: ReactNode;
   value: number;
   tone?: 'positive' | 'negative' | 'auto';
@@ -92,7 +98,7 @@ function Kpi({
       : tone === 'auto' ? (value < 0 ? 'text-negative' : 'text-positive')
         : value < 0 ? 'text-destructive' : '';
   return (
-    <KpiCard title={title} icon={icon} value={formatCents(value)} valueClassName={color} to={to}>
+    <KpiCard title={title} info={info} icon={icon} value={formatCents(value)} valueClassName={color} to={to}>
       {children}
     </KpiCard>
   );
@@ -130,7 +136,7 @@ function AttentionCard({ names }: { names: Map<number, string> }) {
   const visible = showAll ? entries : entries.slice(0, LIMIT);
 
   return (
-    <Card className="lg:col-span-3">
+    <Card>
       <CardHeader>
         <CardTitle>Was ansteht</CardTitle>
         <CardDescription>Was heute Aufmerksamkeit braucht — jede Zeile führt zur passenden Stelle</CardDescription>
@@ -191,7 +197,7 @@ function BudgetsCard() {
   const today = todayISO();
   const top = [...statuses].sort((a, b) => b.percent - a.percent).slice(0, 5);
   return (
-    <Card className="lg:col-span-2">
+    <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <div className="min-w-0">
           <CardTitle>Budgets</CardTitle>
@@ -239,6 +245,14 @@ function BudgetsCard() {
 }
 
 const ACCOUNT_ICONS: Record<string, typeof Wallet> = { checking: CreditCard, cash: Banknote, savings: PiggyBank };
+
+/** Breite einer Karte im Fünfer-Raster (Desktop); mobil immer volle Breite */
+type CardSpan = 'full' | 'wide' | 'narrow';
+const SPAN: Record<CardSpan, string> = {
+  full: 'lg:col-span-5',
+  wide: 'lg:col-span-3',
+  narrow: 'lg:col-span-2',
+};
 
 /**
  * Konten auf einen Blick: Saldo je sichtbarem Konto, Minus hervorgehoben,
@@ -413,6 +427,8 @@ function HouseholdActivityCard() {
 
 export default function Dashboard() {
   const { categories, users } = useFinanceData();
+  const { user } = useAuth();
+  const layout = user?.dashboardLayout ?? DEFAULT_DASHBOARD_LAYOUT;
   const navigate = useNavigate();
   // Liegenschaften/Hypotheken für die Zusatzzeile im Gesamtvermögen
   const mortgage = trpc.mortgage.summary.useQuery().data;
@@ -460,37 +476,11 @@ export default function Dashboard() {
   const categoryTotal = categoryData.reduce((s, c) => s + c.value, 0);
   const balances = new Map(summary.memberBalances.map((b) => [b.userId, b.amount]));
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <div className="mt-1 flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" title="Vorheriger Monat" onClick={() => setMonth(prevMonth)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="min-w-32 text-center text-sm text-muted-foreground tabular-nums">
-              {isCurrent ? `Überblick für ${formatMonth(month)}` : formatMonth(month)}
-              {scopeUserId !== undefined && ' · Meine Sicht'}
-            </span>
-            <Button
-              variant="ghost" size="icon" className="h-7 w-7" title="Nächster Monat"
-              disabled={isCurrent} onClick={() => setMonth(shiftMonth(month, 1))}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            {!isCurrent && (
-              <Button variant="link" size="sm" className="h-7 px-1" onClick={() => setMonth(thisMonth)}>
-                Zum aktuellen Monat
-              </Button>
-            )}
-          </div>
-        </div>
-        <TransactionDialog />
-      </div>
-
-      <GettingStarted />
-
+  // Alle Karten des Dashboards; `null` = gerade nicht verfügbar (z. B. nur
+  // im laufenden Monat sinnvoll). Anordnung und Sichtbarkeit wählt jeder
+  // selbst (auth.setDashboardLayout, Dialog „Anpassen“).
+  const cards: Record<DashboardCardId, { span: CardSpan; node: ReactNode } | null> = {
+    kpis: { span: 'full', node: (
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Kpi
           title={visibility?.hasHidden ? 'Sichtbares Vermögen' : 'Gesamtvermögen'}
@@ -541,6 +531,7 @@ export default function Dashboard() {
         </Kpi>
         <Kpi
           title="Sparrate (Monat)"
+          info={<InfoTip term="sparrate" />}
           icon={<Scale className="h-4 w-4 text-muted-foreground" />}
           value={savings}
           tone="auto"
@@ -554,16 +545,11 @@ export default function Dashboard() {
           />
         </Kpi>
       </div>
-
-      {isCurrent && (
-        <div className="grid gap-4 lg:grid-cols-5">
-          <AttentionCard names={names} />
-          <BudgetsCard />
-        </div>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
+    ) },
+    attention: isCurrent ? { span: 'wide', node: <AttentionCard names={names} /> } : null,
+    budgets: isCurrent ? { span: 'narrow', node: <BudgetsCard /> } : null,
+    cashflow: { span: 'wide', node: (
+        <Card>
           <CardHeader>
             <CardTitle>Cashflow</CardTitle>
             <CardDescription>
@@ -612,8 +598,9 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
-
-        <Card className="lg:col-span-2">
+    ) },
+    categories: { span: 'narrow', node: (
+        <Card>
           <CardHeader>
             <CardTitle>Ausgaben nach Kategorie</CardTitle>
             <CardDescription>{formatMonth(month)}</CardDescription>
@@ -681,17 +668,12 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
-      </div>
-
-      {isCurrent && (
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          <AccountsCard />
-          <GoalsCard />
-        </div>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
+    ) },
+    accounts: isCurrent ? { span: 'wide', node: <AccountsCard /> } : null,
+    goals: isCurrent ? { span: 'narrow', node: <GoalsCard /> } : null,
+    upcoming: isCurrent ? { span: 'wide', node: <UpcomingCard /> } : null,
+    recent: { span: 'wide', node: (
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <CardTitle>{isCurrent ? 'Letzte Buchungen' : `Buchungen im ${formatMonth(month)}`}</CardTitle>
             <Link to={isCurrent ? '/transaktionen' : txLink()} className="shrink-0 text-sm text-stamp hover:underline">
@@ -734,8 +716,8 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
-
-        <div className="space-y-4 lg:col-span-2">
+    ) },
+    balances: { span: 'narrow', node: (
         <Card>
           <CardHeader>
             <CardTitle>Offene Salden</CardTitle>
@@ -765,8 +747,58 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
-        {users.length > 1 && <HouseholdActivityCard />}
+    ) },
+    activity: users.length > 1 ? { span: 'narrow', node: <HouseholdActivityCard /> } : null,
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <div className="mt-1 flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Vorheriger Monat" onClick={() => setMonth(prevMonth)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="min-w-32 text-center text-sm text-muted-foreground tabular-nums">
+              {isCurrent ? `Überblick für ${formatMonth(month)}` : formatMonth(month)}
+              {scopeUserId !== undefined && ' · Meine Sicht'}
+            </span>
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7" title="Nächster Monat"
+              disabled={isCurrent} onClick={() => setMonth(shiftMonth(month, 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            {!isCurrent && (
+              <Button variant="link" size="sm" className="h-7 px-1" onClick={() => setMonth(thisMonth)}>
+                Zum aktuellen Monat
+              </Button>
+            )}
+          </div>
         </div>
+        <div className="flex items-center gap-2">
+          <DashboardCustomizeDialog />
+          <TransactionDialog />
+        </div>
+      </div>
+
+      <GettingStarted />
+
+      {/* Karten in der Anordnung des Benutzers (D7); dichte Packung füllt
+          Lücken, wenn eine schmale Karte ausgeblendet ist */}
+      <div className="grid grid-flow-row-dense gap-4 lg:grid-cols-5">
+        {layout
+          .filter((entry) => entry.visible)
+          .map((entry) => {
+            const card = cards[entry.id];
+            if (!card) return null;
+            return (
+              <div key={entry.id} className={cn('min-w-0 [&>[data-slot=card]]:h-full', SPAN[card.span])}>
+                {card.node}
+              </div>
+            );
+          })}
       </div>
     </div>
   );

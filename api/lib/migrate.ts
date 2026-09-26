@@ -85,7 +85,8 @@ export function ensureSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       color TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      closed_at TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS split_templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -804,6 +805,11 @@ export function ensureSchema() {
   const goalColsNow = raw.prepare("PRAGMA table_info(savings_goals)").raw().all();
   if (!goalColsNow.some(col => col[1] === "archived_at")) {
     db.run("ALTER TABLE savings_goals ADD COLUMN archived_at TEXT" as never);
+  }
+  // Projekte abschließen (H2)
+  const projectCols = raw.prepare("PRAGMA table_info(projects)").raw().all();
+  if (!projectCols.some(col => col[1] === "closed_at")) {
+    db.run("ALTER TABLE projects ADD COLUMN closed_at TEXT" as never);
   }
 
 

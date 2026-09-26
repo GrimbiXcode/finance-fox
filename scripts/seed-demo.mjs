@@ -659,6 +659,24 @@ await tx({
     { userId: MEMBER, amount: 178_00 },
   ],
 });
+// Italien ausgeglichen und abgeschlossen: Sam hat 1'636.00 bezahlt, Alex
+// 412.30, getragen hat jede Person 1'024.15 — Alex überweist 611.85 in der
+// Form, die „Verbuchen“ auf der Aufteilung anlegt (Ausgabe, die ganz die
+// andere Person trägt)
+await tx({
+  type: "expense",
+  accountId: ALEX,
+  amount: 611_85,
+  userId: MEMBER,
+  date: daysAgo(58),
+  note: "Ausgleich an Dev Admin",
+  projectId: project("Ferien Italien"),
+  splits: [{ userId: ADMIN, amount: 611_85 }],
+});
+await admin.call("finance.setProjectClosed", {
+  id: project("Ferien Italien"),
+  closed: true,
+});
 await tx({
   type: "expense",
   accountId: HH,

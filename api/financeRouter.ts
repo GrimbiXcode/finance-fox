@@ -252,6 +252,13 @@ async function notifyGoalMilestones(
   }
 }
 
+/** Modus einer Sparziel-Quelle, wie ihn das Aktivitäten-Log zeigt */
+const GOAL_SOURCE_MODE_TEXT = {
+  full: "ganzer Saldo",
+  absolute: "fester Betrag",
+  percent: "Anteil in %",
+} as const;
+
 export const financeRouter = createRouter({
   /* --------------------------------- Konten --------------------------------- */
 
@@ -1340,6 +1347,46 @@ export const financeRouter = createRouter({
         input.name
       );
       return rows[0];
+    }),
+
+  /**
+   * Projekt abschließen bzw. wieder öffnen (H2). Abgeschlossen heißt: für
+   * neue Buchungen nicht mehr angeboten, in Filtern, Auswertung und der
+   * Aufteilung weiter da — der Urlaub ist vorbei, seine Kosten nicht.
+   */
+  setProjectClosed: authedQuery
+    .input(
+      z.object({ id: z.number().int().positive(), closed: z.boolean() })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const row = await db.query.projects.findFirst({
+        where: eq(projects.id, input.id),
+      });
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Projekt nicht gefunden.",
+        });
+      }
+      const closedAt = input.closed
+        ? (row.closedAt ?? localIsoDate(new Date()))
+        : null;
+      await db
+        .update(projects)
+        .set({ closedAt })
+        .where(eq(projects.id, input.id));
+      if ((row.closedAt !== null) !== input.closed) {
+        logAudit(
+          db,
+          ctx.user.id,
+          input.closed ? "project.closed" : "project.reopened",
+          "project",
+          input.id,
+          row.name
+        );
+      }
+      return { closedAt };
     }),
 
   /** Löschen nur, wenn keine Buchung mehr dem Projekt zugeordnet ist */
@@ -3384,7 +3431,7 @@ export const financeRouter = createRouter({
         "goal.sourceAdded",
         "goal",
         input.goalId,
-        `Konto „${account.name}“ (${input.mode})`
+        `Konto „${account.name}“ (${GOAL_SOURCE_MODE_TEXT[input.mode]})`
       );
       return { id: inserted[0].id };
     }),

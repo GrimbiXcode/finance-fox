@@ -82,7 +82,8 @@ export default function BulkActionBar({
           onValueChange={(v) => update.mutate({ ids, projectId: v === 'none' ? null : Number(v) })}
           options={[
             { value: 'none', label: 'Aus Projekt nehmen' },
-            ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+            // Abgeschlossene Projekte nehmen keine Buchungen mehr auf
+            ...projects.filter((p) => !p.closedAt).map((p) => ({ value: String(p.id), label: p.name })),
           ]}
         />
       )}

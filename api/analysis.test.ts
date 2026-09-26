@@ -139,6 +139,21 @@ describe("analysis.projectSummary", () => {
     expect(byUser.get(member.id)).toMatchObject({ paid: 3_000, share: 8_000 });
     expect(s.categories.map(c => c.categoryId)).toEqual([fun, -1]);
   });
+
+  it("zählt verbuchte Ausgleiche nicht als Projektkosten", async () => {
+    const project = (await app(admin).finance.listProjects())[0];
+    // So legt „Verbuchen“ den Ausgleich an: Ausgabe, die ganz die andere Person trägt
+    await app(admin).finance.createTransaction({ type: "expense", accountId: shared, amount: 5_000, userId: member.id, date: today, note: "Ausgleich an Anna", projectId: project.id, splits: [{ userId: admin.id, amount: 5_000 }] });
+    const s = await analysis(admin).projectSummary({ projectId: project.id });
+    expect(s.total).toBe(13_000);
+    expect(s.count).toBe(2);
+    expect(s).toMatchObject({ settledTotal: 5_000, settledCount: 1 });
+    const byUser = new Map(s.persons.map(p => [p.userId, p]));
+    // Kosten unverändert, offen bleibt nach dem Ausgleich nichts
+    expect(byUser.get(admin.id)).toMatchObject({ paid: 10_000, share: 5_000, settled: -5_000 });
+    expect(byUser.get(member.id)).toMatchObject({ paid: 3_000, share: 8_000, settled: 5_000 });
+    expect(s.categories.map(c => c.categoryId)).toEqual([fun, -1]);
+  });
 });
 
 describe("analysis.fixedCosts", () => {

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
-import { ArrowRight, Check, History, Paperclip, Pencil, Repeat, Trash2, Undo2 } from 'lucide-react';
+import { ArrowRight, Check, Copy, History, Paperclip, Pencil, Repeat, Trash2, Undo2 } from 'lucide-react';
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
@@ -189,6 +189,13 @@ export default function TransactionDetailSheet({
                     </Button>
                   }
                 />
+                {/* Duplizieren: „wie letzte Woche“ — vorbefüllt, Datum heute */}
+                {canEdit && t.stornoOfId === null && (
+                  <TransactionDialog
+                    template={t}
+                    trigger={<Button variant="outline"><Copy className="mr-2 h-4 w-4" /> Duplizieren</Button>}
+                  />
+                )}
                 {/* Aus einer Buchung eine Dauerbuchung: vorbefüllter Dialog, erste
                     Fälligkeit ein Monat nach der Buchung, frühestens morgen */}
                 {canEdit && t.stornoOfId === null && t.recurringId === null && (

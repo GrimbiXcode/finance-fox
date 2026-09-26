@@ -22,6 +22,7 @@ import { computeBudgetStatuses } from "./lib/budgets";
 import { localISO, occurrencesInRange } from "./lib/recurringSchedule";
 import { shiftMonth } from "@contracts/planning";
 import { withoutReversals } from "@contracts/flows";
+import { isSettlementShape } from "@contracts/settlement";
 import { MONTHS_PER_INTERVAL, type RecurringInterval } from "@contracts/types";
 import type { SessionUser } from "./context";
 
@@ -500,16 +501,24 @@ export const analysisRouter = createRouter({
         visibleData(db, ctx.user),
         db.select().from(transactionSplits),
       ]);
-      const own = txs.filter(t => t.projectId === project.id && t.type === "expense");
       const splitsByTx = new Map<number, { userId: number; amount: number }[]>();
       for (const s of splitRows) {
         const list = splitsByTx.get(s.transactionId) ?? [];
         list.push({ userId: s.userId, amount: s.amount });
         splitsByTx.set(s.transactionId, list);
       }
-      const persons = new Map<number, { paid: number; share: number }>();
+      const inProject = txs.filter(
+        t => t.projectId === project.id && t.type === "expense"
+      );
+      // Verbuchte Ausgleiche gehören zum Projekt, sind aber keine Kosten —
+      // sonst zählte der Urlaub die Rückzahlung ein zweites Mal
+      const isSettled = (t: (typeof inProject)[number]) =>
+        isSettlementShape({ ...t, splits: splitsByTx.get(t.id) ?? [] });
+      const own = inProject.filter(t => !isSettled(t));
+      const settled = inProject.filter(isSettled);
+      const persons = new Map<number, { paid: number; share: number; settled: number }>();
       const person = (id: number) => {
-        const p = persons.get(id) ?? { paid: 0, share: 0 };
+        const p = persons.get(id) ?? { paid: 0, share: 0, settled: 0 };
         persons.set(id, p);
         return p;
       };
@@ -527,12 +536,20 @@ export const analysisRouter = createRouter({
         const root = t.categoryId === null ? -1 : (rootOf.get(t.categoryId) ?? t.categoryId);
         byCategory.set(root, (byCategory.get(root) ?? 0) + t.amount);
       }
+      // Ausgleich: wer zahlt, hat danach weniger offen; wer empfängt,
+      // bekommt entsprechend weniger (Vorzeichen wie in memberBalances)
+      for (const t of settled) {
+        person(t.userId).settled += t.amount;
+        for (const sp of splitsByTx.get(t.id) ?? []) person(sp.userId).settled -= sp.amount;
+      }
       const dates = own.map(t => t.date).sort();
       const catById = new Map(cats.map(c => [c.id, c]));
       return {
         project: { id: project.id, name: project.name, color: project.color },
         total: own.reduce((s, t) => s + t.amount, 0),
         count: own.length,
+        settledTotal: settled.reduce((s, t) => s + t.amount, 0),
+        settledCount: settled.length,
         from: dates[0] ?? null,
         to: dates[dates.length - 1] ?? null,
         persons: [...persons.entries()].map(([userId, p]) => ({ userId, ...p })),

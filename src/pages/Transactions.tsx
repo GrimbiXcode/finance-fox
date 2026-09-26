@@ -277,6 +277,12 @@ export default function Transactions() {
     () => new Map(accounts.map((a) => [a.id, a.access])),
     [accounts],
   );
+  // Laufender Saldo (C7): nur bei genau einem Konto und Sortierung nach
+  // Datum sinnvoll. Weitere Filter blenden Zeilen aus, der Saldo rechnet
+  // aber über alle Buchungen des Kontos — dann grau, damit man nicht
+  // aufaddiert.
+  const showBalance = idParam(accountFilter) !== undefined && sortKey === 'date';
+  const balanceDimmed = FILTER_KEYS.some((k) => k !== 'konto' && params.has(k)) || scopeUserId !== undefined;
   const selectable = items.filter((t) => accessByAccount.get(t.accountId) === 'edit');
   // Nur markierte Buchungen, die noch in der Liste stehen: Fällt eine nach
   // einer Massenänderung aus dem Filter („Ohne Kategorie“ → kategorisiert),
@@ -373,7 +379,7 @@ export default function Transactions() {
           options={[
             { value: 'all', label: 'Alle Projekte' },
             { value: '0', label: 'Ohne Projekt' },
-            ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+            ...projects.map((p) => ({ value: String(p.id), label: p.closedAt ? `${p.name} (abgeschlossen)` : p.name })),
           ]}
         />
       )}
@@ -492,6 +498,17 @@ export default function Transactions() {
         )}>
           {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{formatCents(t.amount)}
         </TableCell>
+        {showBalance && (
+          <TableCell
+            className={cn(
+              'hidden whitespace-nowrap text-right font-mono text-xs tabular-nums sm:table-cell',
+              balanceDimmed ? 'text-muted-foreground/60' : 'text-muted-foreground',
+              t.balanceAfter !== null && t.balanceAfter < 0 && 'text-negative',
+            )}
+          >
+            {t.balanceAfter !== null ? formatCents(t.balanceAfter) : ''}
+          </TableCell>
+        )}
         {/* Nur die häufigen Aktionen in der Zeile; Klicks hier öffnen nicht das Detail */}
         {/* Klicks aus den Dialogen (Portale) blubbern im React-Baum bis
             hierher — sie dürfen das Detail-Blatt nicht öffnen */}
@@ -675,6 +692,16 @@ export default function Transactions() {
                 <SortHead label="Konto" sortKey="account" active={sortKey} dir={sortDir} onSort={toggleSort} className="hidden lg:table-cell" />
                 <SortHead label="Person" sortKey="person" active={sortKey} dir={sortDir} onSort={toggleSort} className="hidden sm:table-cell" />
                 <SortHead label="Betrag" sortKey="amount" active={sortKey} dir={sortDir} onSort={toggleSort} className="text-right" />
+                {showBalance && (
+                  <TableHead
+                    className="hidden text-right sm:table-cell"
+                    title={balanceDimmed
+                      ? 'Kontostand nach der Buchung — über alle Buchungen des Kontos, auch ausgefilterte'
+                      : 'Kontostand nach der Buchung'}
+                  >
+                    Saldo
+                  </TableHead>
+                )}
                 {/* Mobil ohne Aktionen-Spalte — der Betrag braucht den Platz, Bearbeiten und Belege stehen im Blatt */}
                 <TableHead className="hidden w-10 md:table-cell" />
               </TableRow>
@@ -682,21 +709,21 @@ export default function Transactions() {
             <TableBody>
               {query.isLoading && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                     Buchungen werden geladen…
                   </TableCell>
                 </TableRow>
               )}
               {query.isError && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-destructive">
+                  <TableCell colSpan={9} className="py-8 text-center text-destructive">
                     Die Buchungen konnten nicht geladen werden: {query.error.message}
                   </TableCell>
                 </TableRow>
               )}
               {!query.isLoading && !query.isError && items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="space-y-3 py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="space-y-3 py-8 text-center text-muted-foreground">
                     <p>Keine Buchungen im Zeitraum „{periodLabel(period)}“{hasSearchOrFilter ? ' mit diesen Filtern' : ''}.</p>
                     {period.kind !== 'all' && (
                       <Button variant="outline" size="sm" onClick={() => setPeriod({ kind: 'all' })}>
@@ -710,7 +737,7 @@ export default function Transactions() {
               {groups.flatMap((g) => [
                 effectiveGrouping !== 'none' && (
                   <TableRow key={`gruppe-${g.key}`} className="bg-muted/40 hover:bg-muted/40">
-                    <TableCell colSpan={8} className="py-1.5">
+                    <TableCell colSpan={9} className="py-1.5">
                       {/* Summe direkt neben dem Datum — rechtsbündig verschwände
                           sie bei breiten Tabellen aus dem sichtbaren Bereich */}
                       <div className="flex items-center gap-3 text-xs">

@@ -83,8 +83,14 @@ export default function MoneyFlow() {
 
       {!isLoading && accounts.length === 0 && (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Noch keine Konten — lege zuerst ein Konto an, um Geldflüsse zu sehen.
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-muted-foreground">
+              Noch keine Konten — der Geldfluss verbindet Konten über Dauerbuchungen. Lege zuerst
+              ein Konto an.
+            </p>
+            <Button asChild variant="outline">
+              <Link to="/konten">Zu den Konten</Link>
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -93,8 +99,9 @@ export default function MoneyFlow() {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-muted-foreground">
-              Noch keine wiederkehrenden Buchungen — lege eine Dauerbuchung an, um Geldflüsse zu
-              sehen.
+              Noch keine Dauerbuchungen — Lohn, Miete oder der Dauerauftrag aufs Sparkonto
+              werden hier als Ströme zwischen deinen Konten sichtbar, sobald sie als Dauerbuchung
+              erfasst sind.
             </p>
             <Button asChild variant="outline">
               <Link to="/wiederkehrend">Zu den Dauerbuchungen</Link>

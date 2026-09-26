@@ -445,6 +445,83 @@ describe("Übernahme als Dauerbuchung", () => {
   });
 });
 
+describe("Bestehende Dauerbuchung verknüpfen", () => {
+  async function newRule(accountId: number, type: "expense" | "income" = "expense") {
+    await callerFor(admin).finance.createRecurring({
+      type,
+      accountId,
+      amount: 12_345,
+      userId: admin.id,
+      interval: "yearly",
+      nextDate: "2099-01-01",
+      note: `Regel ${Math.random().toString(36).slice(2, 8)}`,
+    });
+    const rows = await callerFor(admin).finance.listRecurring();
+    return rows[rows.length - 1].id;
+  }
+
+  it("setzt den Rückverweis, ohne eine zweite Dauerbuchung anzulegen", async () => {
+    const ruleId = await newRule(sharedAccountId);
+    const before = (await callerFor(admin).finance.listRecurring()).length;
+    const id = await newPolicy({ premium: 12_345 });
+    await callerFor(member).insurance.linkPremiumToRecurring({
+      policyId: id,
+      recurringId: ruleId,
+    });
+    const list = await callerFor(admin).insurance.listPolicies();
+    expect(list.find(p => p.id === id)!.premiumRecurringId).toBe(ruleId);
+    expect((await callerFor(admin).finance.listRecurring()).length).toBe(before);
+    // Danach ist auch „Übernehmen“ gesperrt
+    await expect(
+      callerFor(admin).insurance.transferPremiumToRecurring({
+        policyId: id,
+        accountId: sharedAccountId,
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("behandelt eine unsichtbare Dauerbuchung wie eine fehlende", async () => {
+    const hidden = await newRule(adminPrivateAccountId);
+    const id = await newPolicy();
+    await expect(
+      callerFor(member).insurance.linkPremiumToRecurring({
+        policyId: id,
+        recurringId: hidden,
+      })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      callerFor(member).insurance.linkPremiumToRecurring({
+        policyId: id,
+        recurringId: 999_999,
+      })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("nimmt nur Ausgaben und keine schon vergebene Dauerbuchung", async () => {
+    const income = await newRule(sharedAccountId, "income");
+    const id = await newPolicy();
+    await expect(
+      callerFor(admin).insurance.linkPremiumToRecurring({
+        policyId: id,
+        recurringId: income,
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    const rule = await newRule(sharedAccountId);
+    const first = await newPolicy();
+    await callerFor(admin).insurance.linkPremiumToRecurring({
+      policyId: first,
+      recurringId: rule,
+    });
+    await expect(
+      callerFor(admin).insurance.linkPremiumToRecurring({
+        policyId: id,
+        recurringId: rule,
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
 describe("Übersicht", () => {
   it("schließt Angebote aus den Prämiensummen aus", async () => {
     const db = getDb();

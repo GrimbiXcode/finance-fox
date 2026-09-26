@@ -107,6 +107,7 @@ import { useAuth } from "@/providers/auth";
 import { toast } from "sonner";
 import { CHART } from "@/lib/chartColors";
 import Note from "@/components/Note";
+import InfoTip from "@/components/InfoTip";
 import { AXIS_MONEY_WIDTH, CURSOR_LINE, GRID_PROPS, HATCH_OPACITY, axisMoney, hatch } from "@/lib/chartTheme";
 import { PaperTooltip } from "@/components/ChartParts";
 import { chartDefs } from "@/lib/chartDefs";
@@ -530,7 +531,8 @@ function OverviewSection({
                   {forecast.replacementRate != null
                     ? `${forecast.replacementRate} %`
                     : "—"}
-                </span>
+                </span>{" "}
+                <InfoTip term="ersatzrate" />
               </div>
               <div>
                 <span className="text-muted-foreground">Aktuelles Netto: </span>
@@ -1821,7 +1823,10 @@ function AhvCalculation() {
             {formatCents(d.monthlyPension)}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="label">Skala {d.duration.scale}/44</Badge>
+            <span className="inline-flex items-center gap-1">
+              <Badge variant="label">Skala {d.duration.scale}/44</Badge>
+              <InfoTip term="rentenskala" />
+            </span>
             {gaps > 0 && (
               <Badge variant="stamp" tone="warn">
                 {gaps} {gaps === 1 ? "Lücke" : "Lücken"}

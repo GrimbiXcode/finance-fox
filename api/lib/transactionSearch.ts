@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { reversalPairIds } from "@contracts/flows";
+import { normalizeNote } from "@contracts/notes";
 
 /**
  * Serverseitige Suche über Buchungen (Transaktionsliste, Drilldowns).
@@ -39,6 +40,8 @@ export const transactionSearchInput = z.object({
   /** Nur Buchungen mit Aufteilung */
   shared: z.boolean().optional(),
   search: z.string().trim().max(200).optional(),
+  /** Genau diese Notiz (normalisiert wie die Aufschlüsselung nach Empfänger) */
+  note: z.string().max(200).optional(),
   sort: z.enum(TX_SORT_KEYS).default("date"),
   dir: z.enum(["asc", "desc"]).default("desc"),
   /** Versatz (tRPC-Infinite-Queries nennen ihn `cursor`) */
@@ -124,6 +127,7 @@ export function searchTransactions<T extends SearchableTx>(
       ? categoryWithChildren(lookups.categories, input.categoryId)
       : null;
   const term = input.search?.toLowerCase() ?? "";
+  const noteKey = input.note !== undefined ? normalizeNote(input.note) : null;
   const amountTerm = term ? parseAmountTerm(term) : null;
 
   const matches = rows.filter(t => {
@@ -148,6 +152,7 @@ export function searchTransactions<T extends SearchableTx>(
       if (t.projectId !== wanted) return false;
     }
     if (input.shared && !lookups.sharedTxIds.has(t.id)) return false;
+    if (noteKey !== null && normalizeNote(t.note) !== noteKey) return false;
     const txTags = lookups.tagsByTx.get(t.id) ?? [];
     if (input.tagId !== undefined && !txTags.some(x => x.id === input.tagId)) {
       return false;
@@ -207,10 +212,15 @@ export function searchTransactions<T extends SearchableTx>(
       typeof va === "number" && typeof vb === "number"
         ? va - vb
         : String(va).localeCompare(String(vb), "de");
-    // Gleichstand: neueste zuerst, dann höhere ID — stabile Seitenbildung
-    return (
-      cmp * factor || b.date.localeCompare(a.date) || b.id - a.id
-    );
+    if (cmp !== 0) return cmp * factor;
+    // Nach Datum: Gleichstand in derselben Richtung nach ID — so folgt der
+    // laufende Saldo (balanceAfter, gerechnet nach Datum und ID) der Liste
+    // auch aufsteigend Zeile für Zeile
+    if (input.sort === "date") {
+      return (a.id - b.id) * factor;
+    }
+    // Sonst: neueste zuerst, dann höhere ID — stabile Seitenbildung
+    return b.date.localeCompare(a.date) || b.id - a.id;
   });
 
   const offset = input.cursor ?? 0;

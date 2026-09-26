@@ -184,7 +184,9 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   oder `zeit=alle` — ohne Angabe gilt der **laufende Monat**
   (`contracts/period.ts`); dazu `typ`, `konto`, `kategorie` (eine
   Oberkategorie schließt ihre Unterkategorien ein, `-1` = ohne), `person`,
-  `tag`, `projekt` (`0` = ohne Projekt), `q` (Suche, verzögert
+  `tag`, `projekt` (`0` = ohne Projekt), `notiz` (genau eine Notiz,
+  normalisiert — Ziel der Aufschlüsselung nach Empfänger), `sicht=haushalt`
+  (hebt „Meine Sicht“ für diesen Link auf), `q` (Suche, verzögert
   geschrieben), `sortierung` (`datum|betrag|kategorie|konto|person`) mit
   `richtung` (`auf|ab`, nur wenn abweichend von der ersten Richtung der
   Spalte) und `fokus` (Buchungs-ID: markieren, hinscrollen, Detail-Blatt
@@ -304,7 +306,11 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   (Aufschlüsselung „nach Person“ ausgenommen) und an die Transaktionsliste,
   solange dort kein Personenfilter gesetzt ist (Chip „Meine Sicht“ mit ×).
   „Meine“ heißt: ich habe bezahlt (`userId` der Buchung). Vermögen,
-  Salden, Budgets und der Jahresvergleich bleiben haushaltsweit.
+  Salden, Budgets und der Jahresvergleich bleiben haushaltsweit — Links von
+  dort in die Buchungen tragen darum `sicht=haushalt` (Budget-Verlauf, „Ohne
+  Budget“, Jahresvergleich, Projekt-Karte; die Liste zeigt dann den Chip
+  „Ganzer Haushalt“), sonst ergäbe die Liste eine kleinere Summe als die
+  Zahl, von der man kam.
 - **Dashboard**: „Sichtbares Vermögen“ statt „Gesamtvermögen“, sobald
   Privatkonten anderer fehlen (`finance.accountVisibility`, auch in der
   Seitenleiste); Karten „Konten“ (Link `/konten?verlauf=<id>` öffnet den
@@ -395,7 +401,8 @@ Hash-Router (`useSearchParams`), nicht in `useState`:
   Aufschlüsselung (`components/BreakdownView.tsx`: Dimension, Art, freier
   Zeitraum, Vergleich „Zeitraum davor“ oder „Vorjahr“; Zeitraum und Filter
   in der URL; Dimension „Empfänger / Notiz“ (F7) mit Umschalter „nach
-  Betrag / nach Anzahl“, Zeilen verlinken per `q=` auf die Buchungen) und Jahresvergleich (Zeilen und Säulen verlinken auf die
+  Betrag / nach Anzahl“ (geordnet am Server, vor dem Kappen auf 50),
+  Zeilen verlinken per `notiz=` auf genau ihre Buchungen) und Jahresvergleich (Zeilen und Säulen verlinken auf die
   Buchungen). Unter dem Verlauf die Fixkosten-Karte
   (`components/FixedCostsCard.tsx`). Jeder Wert führt per Klick zur
   gefilterten Transaktionsliste.

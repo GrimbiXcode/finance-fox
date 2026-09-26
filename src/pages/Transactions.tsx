@@ -41,7 +41,7 @@ type Grouping = 'day' | 'month' | 'none';
 
 const PAGE_SIZE = 50;
 const GROUP_KEY = 'ff-tx-group';
-const FILTER_KEYS = ['typ', 'konto', 'kategorie', 'person', 'tag', 'projekt', 'q'] as const;
+const FILTER_KEYS = ['typ', 'konto', 'kategorie', 'person', 'tag', 'projekt', 'notiz', 'q'] as const;
 const SORT_KEYS = ['date', 'amount', 'category', 'account', 'person'] as const;
 type SortKey = (typeof SORT_KEYS)[number];
 /** Erste Richtung beim Anklicken: Datum/Betrag absteigend, Texte A→Z */
@@ -110,6 +110,12 @@ export default function Transactions() {
   const tagFilter = param('tag');
   const projectFilter = param('projekt');
   const searchParam = params.get('q') ?? '';
+  // Genau eine Notiz (Klick in der Aufschlüsselung nach Empfänger)
+  const noteParam = params.get('notiz') ?? '';
+  // `sicht=haushalt`: Link von einer haushaltsweiten Zahl (Budget,
+  // Jahresvergleich, Projekt) — „Meine Sicht“ darf sie nicht verkleinern
+  const householdView = params.get('sicht') === 'haushalt';
+  const scopedUserId = householdView ? undefined : scopeUserId;
   const focusId = Number(params.get('fokus')) || null;
   const sortKey: SortKey = SORT_KEYS.find((k) => SORT_PARAM[k] === params.get('sortierung')) ?? 'date';
   const dirParam = params.get('richtung');
@@ -182,11 +188,12 @@ export default function Transactions() {
     accountId: idParam(accountFilter),
     categoryId: idParam(categoryFilter, -1),
     // „Meine Sicht“ gilt, solange kein Personenfilter gesetzt ist
-    userId: idParam(userFilter) ?? scopeUserId,
+    userId: idParam(userFilter) ?? scopedUserId,
     tagId: idParam(tagFilter),
     // 0 = laufender Haushalt (ohne Projekt)
     projectId: idParam(projectFilter, 0),
     search: searchParam.slice(0, 200) || undefined,
+    note: noteParam ? noteParam.slice(0, 200) : undefined,
     sort: sortKey,
     dir: sortDir,
     limit: PAGE_SIZE,
@@ -282,7 +289,7 @@ export default function Transactions() {
   // aber über alle Buchungen des Kontos — dann grau, damit man nicht
   // aufaddiert.
   const showBalance = idParam(accountFilter) !== undefined && sortKey === 'date';
-  const balanceDimmed = FILTER_KEYS.some((k) => k !== 'konto' && params.has(k)) || scopeUserId !== undefined;
+  const balanceDimmed = FILTER_KEYS.some((k) => k !== 'konto' && params.has(k)) || scopedUserId !== undefined;
   const selectable = items.filter((t) => accessByAccount.get(t.accountId) === 'edit');
   // Nur markierte Buchungen, die noch in der Liste stehen: Fällt eine nach
   // einer Massenänderung aus dem Filter („Ohne Kategorie“ → kategorisiert),
@@ -312,6 +319,8 @@ export default function Transactions() {
   if (categoryFilter !== 'all') chips.push({ key: 'kategorie', label: Number(categoryFilter) === -1 ? 'Ohne Kategorie' : (categories.find((c) => c.id === Number(categoryFilter))?.name ?? 'Kategorie') });
   if (userFilter !== 'all') chips.push({ key: 'person', label: users.find((u) => u.id === Number(userFilter))?.name ?? 'Person' });
   if (tagFilter !== 'all') chips.push({ key: 'tag', label: `#${tags.find((t) => t.id === Number(tagFilter))?.name ?? 'Tag'}` });
+  if (noteParam) chips.push({ key: 'notiz', label: `„${noteParam}“` });
+  if (householdView && scopeUserId !== undefined) chips.push({ key: 'sicht', label: 'Ganzer Haushalt' });
   if (projectFilter !== 'all') chips.push({ key: 'projekt', label: Number(projectFilter) === 0 ? 'Ohne Projekt' : (projects.find((p) => p.id === Number(projectFilter))?.name ?? 'Projekt') });
 
   const filterFields = (
@@ -624,9 +633,9 @@ export default function Transactions() {
             {groupingSelect}
           </div>
 
-          {(chips.length > 0 || searchParam || (scopeUserId !== undefined && userFilter === 'all')) && (
+          {(chips.length > 0 || searchParam || (scopedUserId !== undefined && userFilter === 'all')) && (
             <div className="flex flex-wrap items-center gap-1.5">
-              {scopeUserId !== undefined && userFilter === 'all' && (
+              {scopedUserId !== undefined && userFilter === 'all' && (
                 <button
                   type="button"
                   onClick={() => setScope('household')}

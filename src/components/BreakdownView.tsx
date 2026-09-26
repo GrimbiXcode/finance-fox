@@ -12,6 +12,7 @@ import { formatCents, formatDate, todayISO } from '@/lib/finance';
 import { periodLabel } from '@/lib/period';
 import { pencil } from '@/lib/pencil';
 import { cn } from '@/lib/utils';
+import { radioKeyDown } from '@/lib/radio';
 import { trpc } from '@/providers/trpc';
 import { useScope } from '@/providers/scope';
 import { percentChange } from '@contracts/planning';
@@ -65,6 +66,9 @@ export default function BreakdownView() {
   // Für den Vergleich nicht über heute hinaus
   const to = range.to && range.to > today ? today : range.to;
   const { userId } = useScope();
+  // Top-Empfänger (F7): wahlweise nach Anzahl statt Betrag — geordnet wird
+  // am Server, bevor er auf 50 Zeilen kappt
+  const [byCount, setByCount] = useState(false);
   const query = trpc.analysis.breakdown.useQuery({
     dimension: DIMENSIONS[dimension].key,
     type,
@@ -73,13 +77,10 @@ export default function BreakdownView() {
     compare,
     // „Meine Sicht“ — nur, wenn nicht ohnehin nach Person aufgeschlüsselt
     userId: dimension === 'person' ? undefined : userId,
+    rank: dimension === 'notiz' && byCount ? 'count' : 'amount',
   });
   const d = query.data;
-  // Top-Empfänger (F7): wahlweise nach Anzahl statt Betrag
-  const [byCount, setByCount] = useState(false);
-  const rows = dimension === 'notiz' && byCount
-    ? [...(d?.rows ?? [])].sort((a, b) => b.count - a.count || b.amount - a.amount)
-    : (d?.rows ?? []);
+  const rows = d?.rows ?? [];
   const max = Math.max(1, ...rows.map((r) => r.amount));
 
   const linkFor = (row: { key: number; name: string }) => {
@@ -88,8 +89,8 @@ export default function BreakdownView() {
       typ: type,
     });
     const param = DIMENSIONS[dimension].param;
-    // Notizen: über die Suche (findet alle Schreibweisen)
-    if (dimension === 'notiz') search.set('q', row.name);
+    // Notizen: genau diese Notiz, gleich normalisiert wie die Gruppierung
+    if (dimension === 'notiz') search.set('notiz', row.name);
     // -1 = „ohne“: Transaktionen kennen das für Kategorie (-1) und Projekt (0)
     else if (row.key !== -1) search.set(param, String(row.key));
     else if (dimension === 'kategorie') search.set(param, '-1');
@@ -150,7 +151,9 @@ export default function BreakdownView() {
                   type="button"
                   role="radio"
                   aria-checked={byCount === c}
+                  tabIndex={byCount === c ? 0 : -1}
                   onClick={() => setByCount(c)}
+                  onKeyDown={(e) => radioKeyDown(e, [false, true] as const, byCount, setByCount)}
                   className={cn('rounded px-2 py-0.5', byCount === c && 'bg-background text-foreground shadow-sm')}
                 >
                   {c ? 'nach Anzahl' : 'nach Betrag'}

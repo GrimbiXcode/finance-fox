@@ -106,13 +106,17 @@ export default function TransactionDialog({
   };
   // Vorbelegung: beim Bearbeiten die Buchung, beim Duplizieren die Vorlage
   const source = transaction ?? template;
+  // Beim Duplizieren kein abgeschlossenes Projekt übernehmen — es nimmt
+  // keine neuen Buchungen mehr auf; beim Bearbeiten bleibt es, wie es ist
+  const seedProjectId = (id: number | null | undefined) =>
+    id && (isEdit || !projects.some((p) => p.id === id && p.closedAt)) ? String(id) : '';
   const [type, setType] = useState<TxType>(source?.type ?? defaultType);
   const [amount, setAmount] = useState(source ? shareFormatter.format(source.amount / 100) : '');
   const [accountId, setAccountId] = useState(source ? String(source.accountId) : '');
   const [toAccountId, setToAccountId] = useState(source?.toAccountId ? String(source.toAccountId) : '');
   const [categoryId, setCategoryId] = useState(source?.categoryId ? String(source.categoryId) : '');
   const [userId, setUserId] = useState(source ? String(source.userId) : '');
-  const [projectId, setProjectId] = useState(source?.projectId ? String(source.projectId) : ''); // '' = Haushalt
+  const [projectId, setProjectId] = useState(seedProjectId(source?.projectId)); // '' = Haushalt
   const [date, setDate] = useState(transaction?.date ?? todayISO());
   const [note, setNote] = useState(source?.note ?? '');
   const [splitEnabled, setSplitEnabled] = useState((source?.splits.length ?? 0) > 0);
@@ -326,7 +330,7 @@ export default function TransactionDialog({
       setToAccountId(template.toAccountId ? String(template.toAccountId) : '');
       setCategoryId(template.categoryId ? String(template.categoryId) : '');
       setUserId(String(template.userId));
-      setProjectId(template.projectId ? String(template.projectId) : '');
+      setProjectId(seedProjectId(template.projectId));
       setNote(template.note);
       setSplitEnabled(template.splits.length > 0);
       setShares(Object.fromEntries(template.splits.map((s) => [s.userId, shareFormatter.format(s.amount / 100)])));

@@ -354,6 +354,46 @@ describe("createTransaction / deleteTransaction (Rechte)", () => {
     expect(await getDb().query.transactions
       .findFirst({ where: eq(transactions.id, txRow.id) })).toBeUndefined();
   });
+
+  it("unsichtbare Buchungen wie fehlende, sichtbare Umbuchung vom fremden Konto nur lesbar", async () => {
+    const privateId = await insertAccount(owner.id);
+    const sharedId = await insertAccount(null);
+    const hidden = await callerFor(owner).finance.createTransaction({
+      type: "expense",
+      accountId: privateId,
+      amount: 100,
+      userId: owner.id,
+      date: "2026-07-06",
+      note: "",
+    });
+    const missing = { code: "NOT_FOUND", message: "Buchung nicht gefunden." };
+    // Löschen, Stornieren, Verlauf: gleiche Antwort wie für eine fehlende ID
+    for (const id of [hidden.id, 999_999]) {
+      await expect(callerFor(stranger).finance.deleteTransaction({ id }))
+        .rejects.toMatchObject(missing);
+      await expect(callerFor(stranger).finance.reverseTransaction({ id }))
+        .rejects.toMatchObject(missing);
+      await expect(
+        callerFor(stranger).finance.listTransactionChanges({ transactionId: id }),
+      ).rejects.toMatchObject(missing);
+    }
+    // Umbuchung vom Privatkonto aufs Gemeinschaftskonto: sieht jeder,
+    // ändern darf sie nur, wer das Quellkonto bearbeiten darf
+    const transfer = await callerFor(owner).finance.createTransaction({
+      type: "transfer",
+      accountId: privateId,
+      toAccountId: sharedId,
+      amount: 100,
+      userId: owner.id,
+      date: "2026-07-06",
+      note: "",
+    });
+    await expect(
+      callerFor(stranger).finance.listTransactionChanges({ transactionId: transfer.id }),
+    ).resolves.toEqual([]);
+    await expect(callerFor(stranger).finance.deleteTransaction({ id: transfer.id }))
+      .rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });
 
 describe("Wiederkehrende Buchungen (Rechte)", () => {

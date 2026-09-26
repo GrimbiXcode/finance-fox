@@ -798,7 +798,9 @@ export default function Dashboard() {
             const card = cards[entry.id];
             if (!card) return null;
             return (
-              <div key={entry.id} className={cn('min-w-0 [&>[data-slot=card]]:h-full', SPAN[card.span])}>
+              // `empty:hidden`: Karten, die selbst entscheiden, dass sie nichts
+              // zu zeigen haben (z. B. Sparziele), hinterlassen kein Loch
+              <div key={entry.id} className={cn('min-w-0 empty:hidden [&>[data-slot=card]]:h-full', SPAN[card.span])}>
                 {card.node}
               </div>
             );

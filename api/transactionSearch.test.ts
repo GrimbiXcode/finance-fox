@@ -116,6 +116,35 @@ describe("finance.searchTransactions", () => {
     expect(noFilter.items[0].balanceAfter).toBeNull();
   });
 
+  it("hält den laufenden Saldo bei Buchungen am selben Tag in beiden Richtungen stimmig", async () => {
+    await asAdmin().finance.createAccount({ name: "Gleichstand", type: "checking", initialBalance: 100_000, private: false });
+    const acc = (await asAdmin().finance.listAccounts()).find(a => a.name === "Gleichstand")!;
+    for (const amount of [1_000, 2_000]) {
+      await asAdmin().finance.createTransaction({ type: "expense", accountId: acc.id, amount, userId: 1, date: "2026-08-15", note: "gleicher Tag" });
+    }
+    for (const dir of ["asc", "desc"] as const) {
+      const res = await asAdmin().finance.searchTransactions({ accountId: acc.id, sort: "date", dir, limit: 50 });
+      const rows = dir === "asc" ? res.items : [...res.items].reverse();
+      // Zeile für Zeile: Saldo davor + Buchung = Saldo danach
+      let before = acc.initialBalance;
+      for (const t of rows) {
+        expect(t.balanceAfter).toBe(before - t.amount);
+        before = t.balanceAfter!;
+      }
+      expect(before).toBe(97_000);
+    }
+  });
+
+  it("filtert nach genau einer Notiz, Schreibweise egal", async () => {
+    await asAdmin().finance.createAccount({ name: "Notizen", type: "checking", initialBalance: 0, private: false });
+    const acc = (await asAdmin().finance.listAccounts()).find(a => a.name === "Notizen")!;
+    for (const note of ["  Café   Zähringer ", "café zähringer", "Café Zähringer Bar"]) {
+      await asAdmin().finance.createTransaction({ type: "expense", accountId: acc.id, amount: 500, userId: 1, date: "2026-08-20", note });
+    }
+    const res = await asAdmin().finance.searchTransactions({ accountId: acc.id, note: "Café Zähringer", limit: 50 });
+    expect(res.total).toBe(2);
+  });
+
   it("schließt Unterkategorien beim Kategoriefilter ein", async () => {
     const res = await asAdmin().finance.searchTransactions({ categoryId: food });
     expect(res.items.map(t => t.note).sort()).toEqual(["Bäckerei Steiner", "Coop Wocheneinkauf", "Migros"]);

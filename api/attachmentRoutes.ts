@@ -9,11 +9,13 @@ import {
   pensionFunds,
   pensionPillar3,
   transactionAttachments,
-  transactions,
 } from "@db/schema";
 import { getDb } from "./queries/connection";
 import type { SessionUser } from "./context";
-import { requireAccountAccess, type AccessLevel } from "./lib/accountAccess";
+import {
+  requireTransactionAccess,
+  type AccessLevel,
+} from "./lib/accountAccess";
 import {
   ALLOWED_MIME_TYPES,
   MAX_ATTACHMENT_BYTES,
@@ -92,19 +94,25 @@ export function registerAttachmentRoutes(
     c: Context,
     user: SessionUser,
     transactionId: number,
-    minLevel: AccessLevel
+    minLevel: AccessLevel,
+    notFound = "Buchung nicht gefunden."
   ) {
     const db = getDb();
-    const txRow = await db.query.transactions.findFirst({
-      where: eq(transactions.id, transactionId),
-    });
-    if (!txRow) return null;
+    // Unsichtbare Buchungen antworten wie fehlende (requireTransactionAccess);
+    // bei Beleg-IDs mit derselben Meldung wie ein fehlender Beleg
     try {
-      await requireAccountAccess(db, user, txRow.accountId, minLevel);
+      return await requireTransactionAccess(
+        db,
+        user,
+        transactionId,
+        minLevel === "edit" ? "edit" : "view"
+      );
     } catch (err) {
+      if (err instanceof TRPCError && err.code === "NOT_FOUND") {
+        return c.json({ error: notFound }, 404);
+      }
       return accessErrorResponse(c, err);
     }
-    return txRow;
   }
 
   // Upload: rohe Dateibytes; Originalname URL-kodiert im X-Filename-Header,
@@ -171,7 +179,13 @@ export function registerAttachmentRoutes(
       where: eq(transactionAttachments.id, id),
     });
     if (!row) return c.json({ error: "Beleg nicht gefunden." }, 404);
-    const txRow = await loadAttachmentTx(c, user, row.transactionId, "view");
+    const txRow = await loadAttachmentTx(
+      c,
+      user,
+      row.transactionId,
+      "view",
+      "Beleg nicht gefunden."
+    );
     if (!txRow) return c.json({ error: "Beleg nicht gefunden." }, 404);
     if (txRow instanceof Response) return txRow;
 
@@ -202,7 +216,13 @@ export function registerAttachmentRoutes(
       where: eq(transactionAttachments.id, id),
     });
     if (!row) return c.json({ error: "Beleg nicht gefunden." }, 404);
-    const txRow = await loadAttachmentTx(c, user, row.transactionId, "edit");
+    const txRow = await loadAttachmentTx(
+      c,
+      user,
+      row.transactionId,
+      "edit",
+      "Beleg nicht gefunden."
+    );
     if (!txRow) return c.json({ error: "Beleg nicht gefunden." }, 404);
     if (txRow instanceof Response) return txRow;
 

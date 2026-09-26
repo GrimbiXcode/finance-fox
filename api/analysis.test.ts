@@ -201,6 +201,17 @@ describe("analysis.breakdown", () => {
     expect(coop).toMatchObject({ amount: 31_000, count: 2, name: "Coop" });
   });
 
+  it("kappt Top-Empfänger erst nach der gewählten Rangfolge", async () => {
+    const byCount = await analysis(admin).breakdown({ dimension: "note", rank: "count", ...range });
+    const counts = byCount.rows.map(r => r.count);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  });
+
+  it("fällt bei genau einem Jahr Spanne vom Vorjahr auf „davor“ zurück (kein doppelter Tag)", async () => {
+    const r = await analysis(admin).breakdown({ dimension: "category", compare: "yearAgo", from: "2025-03-01", to: "2026-03-01" });
+    expect(r.previousRange!.to < "2025-03-01").toBe(true);
+  });
+
   it("zählt fremde Privatkonten nicht mit", async () => {
     const month = { from: `${thisMonth}-01`, to: monthLastDay(thisMonth) };
     const a = await analysis(admin).breakdown({ dimension: "account", ...month });

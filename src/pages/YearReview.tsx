@@ -128,7 +128,7 @@ function YearComparison() {
   // Klick auf eine Zeile: die Ausgaben dieser Kategorie im selben Zeitraum
   const linkFor = (categoryId: number | null) => {
     const range: Record<string, string> = ytd ? { von: `${year}-01-01`, bis: today } : { jahr: String(year) };
-    return `/transaktionen?${new URLSearchParams({ ...range, typ: 'expense', kategorie: String(categoryId ?? -1) })}`;
+    return `/transaktionen?${new URLSearchParams({ ...range, typ: 'expense', kategorie: String(categoryId ?? -1), sicht: 'haushalt' })}`;
   };
 
   return (

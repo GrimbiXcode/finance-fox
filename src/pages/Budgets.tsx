@@ -370,7 +370,7 @@ function CoverageCard({ usedCategoryIds }: { usedCategoryIds: Set<number> }) {
           <ul className="divide-y text-sm">
             {d.top.map((row) => {
               const cat = categories.find((c) => c.id === row.categoryId);
-              const link = `/transaktionen?${new URLSearchParams({ monat: d.month, typ: 'expense', kategorie: String(row.categoryId) })}`;
+              const link = `/transaktionen?${new URLSearchParams({ monat: d.month, typ: 'expense', kategorie: String(row.categoryId), sicht: 'haushalt' })}`;
               return (
                 <li key={row.categoryId} className="flex items-center gap-2 py-1.5">
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: pencil(cat?.color) ?? CHART.muted }} />

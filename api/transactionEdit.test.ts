@@ -345,7 +345,7 @@ describe("updateTransaction: Rechte", () => {
       callerFor(member).finance.updateTransaction({ id, amount: 1000 })
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
-      message: "Konto nicht gefunden.",
+      message: "Buchung nicht gefunden.",
     });
     // Mit view-Freigabe: Lesen der Historie ok, Bearbeiten nicht
     await callerFor(admin).finance.setAccountPermission({
@@ -507,7 +507,7 @@ describe("Änderungshistorie (listTransactionChanges)", () => {
       callerFor(member).finance.listTransactionChanges({ transactionId: id })
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
-      message: "Konto nicht gefunden.",
+      message: "Buchung nicht gefunden.",
     });
   });
 });

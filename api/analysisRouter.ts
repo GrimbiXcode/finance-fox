@@ -23,6 +23,7 @@ import { localISO, occurrencesInRange } from "./lib/recurringSchedule";
 import { shiftMonth } from "@contracts/planning";
 import { withoutReversals } from "@contracts/flows";
 import { isSettlementShape } from "@contracts/settlement";
+import { normalizeNote } from "@contracts/notes";
 import { MONTHS_PER_INTERVAL, type RecurringInterval } from "@contracts/types";
 import type { SessionUser } from "./context";
 
@@ -100,8 +101,6 @@ const shiftDays = (iso: string, days: number) => {
 };
 
 const BREAKDOWN_DIMENSIONS = ["category", "person", "account", "tag", "project", "note"] as const;
-/** Notizen gruppieren: Groß-/Kleinschreibung und Leerzeichen egal (F7) */
-const normalizeNote = (note: string) => note.trim().replace(/\s+/g, " ").toLowerCase();
 /** Top-Empfänger: mehr Zeilen ergäben nur einen langen Schwanz von Einzelbuchungen */
 const NOTE_ROW_LIMIT = 50;
 
@@ -675,6 +674,8 @@ export const analysisRouter = createRouter({
         /** Vergleich: gleich langer Zeitraum direkt davor oder dieselben Tage ein Jahr früher */
         compare: z.enum(["previous", "yearAgo"]).default("previous"),
         userId: personInput,
+        /** Rangfolge der Zeilen — zählt beim Kappen der Top-Empfänger (F7) */
+        rank: z.enum(["amount", "count"]).default("amount"),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -698,10 +699,11 @@ export const analysisRouter = createRouter({
         if (end && md === "02-28" && isLeap(y)) return `${y}-02-29`;
         return `${y}-${md}`;
       };
-      // Länger als ein Jahr: der Vorjahreszeitraum überlappte den eigenen —
-      // dann gleich lang davor
+      // Reicht der Vorjahreszeitraum in den eigenen hinein (Spanne ab einem
+      // Jahr, auch genau 366 Tage), zählte ein Tag doppelt — dann gleich
+      // lang davor
       const compare =
-        range && input.compare === "yearAgo" && daySpan(range.from, range.to) > 366
+        range && input.compare === "yearAgo" && yearAgo(range.to, true) >= range.from
           ? "previous"
           : input.compare;
       const previous = range
@@ -815,7 +817,13 @@ export const analysisRouter = createRouter({
         rows: [...sums.entries()]
           .map(([key, e]) => ({ key, ...labelOf(key), ...e }))
           .filter(r => r.amount > 0 || r.previous > 0)
-          .sort((a, b) => b.amount - a.amount || b.previous - a.previous)
+          .sort((a, b) =>
+            input.rank === "count"
+              ? b.count - a.count || b.amount - a.amount
+              : b.amount - a.amount || b.previous - a.previous
+          )
+          // Erst ordnen, dann kappen — sonst fehlte „nach Anzahl“ der
+          // häufige kleine Betrag, der es nicht unter die 50 teuersten schafft
           .slice(0, input.dimension === "note" ? NOTE_ROW_LIMIT : undefined),
       };
     }),

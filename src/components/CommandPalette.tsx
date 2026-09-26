@@ -23,7 +23,9 @@ export default function CommandPalette() {
   const { open, show, close, restoreFocus } = useActions();
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
-  const { accounts, categories, goals } = useFinanceData();
+  const { accounts, categories, goals: allGoals } = useFinanceData();
+  // Abgeschlossene Ziele liegen im Archiv, nicht in der Schnellsuche
+  const goals = allGoals.filter((g) => g.archivedAt === null);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const isOpen = open === 'palette';

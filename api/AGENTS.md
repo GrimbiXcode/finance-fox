@@ -434,7 +434,12 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   **unsichtbares** Konto bleibt `NOT_FOUND`, genau wie ein nicht
   existierendes (kein Existenz-Orakel). Dieselbe Regel gilt für Buchungen,
   Massen-Endpunkte und Ursprungsbuchungen: Unsichtbares verhält sich wie
-  Fehlendes.
+  Fehlendes. Endpunkte auf **eine** Buchung (Tags, Bearbeiten, Verlauf,
+  Löschen, Stornieren, Beleg-Routen) laden sie über
+  `requireTransactionAccess(db, user, id, "view" | "edit")`: unsichtbar →
+  „Buchung nicht gefunden.“ wie eine fehlende ID; `view` genügt, wenn Quell-
+  oder Zielkonto sichtbar ist; `edit` braucht das Recht aufs Buchungskonto,
+  sonst FORBIDDEN.
 - `finance.listAccounts` liefert pro Konto `owners: number[]`; die
   Besitzerliste ersetzt `finance.setAccountOwners` komplett (mindestens 1
   Besitzer, nur Besitzer oder Admin, Selbstentfernung erlaubt; Freigaben
@@ -484,7 +489,11 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   Detail-Blatt eines `fokus`-Links. Mit `accountId` trägt jede Zeile
   `balanceAfter`: den Kontostand nach dieser Buchung, gerechnet aus
   Anfangsbestand und **allen** Buchungen des Kontos (unabhängig von weiteren
-  Filtern; gleiche Reihenfolge wie die Datumssortierung: Datum, dann ID).
+  Filtern; gleiche Reihenfolge wie die Datumssortierung: Datum, dann ID —
+  bei Datumssortierung folgt auch der Gleichstand der gewählten Richtung,
+  damit der Saldo aufsteigend wie absteigend Zeile für Zeile stimmt).
+  `note` filtert auf genau eine Notiz, normalisiert wie die Aufschlüsselung
+  nach Empfänger (`normalizeNote` aus `contracts/notes.ts`).
   Tests: `api/transactionSearch.test.ts`.
 - **Stornos in Summen** (`contracts/flows.ts`, `withoutReversals`): Eine
   stornierte Buchung und ihre Gegenbuchung zählen in **Einnahmen-/
@@ -708,7 +717,15 @@ Dauerbuchung). Tabellen: `insurance_policies`, `insurance_policy_persons`
   enthielte Anteile fremder Privatkonten, die nicht jede Person sehen darf.
   Archivierte Ziele fallen aus Prognose (`forecast.*`) und Bericht; die
   Oberfläche zeigt sie unter „Archiv“. Audit `goal.archived`/
-  `goal.restored`. Tests: `api/dashboardLayout.test.ts`.
+  `goal.restored` (nur bei echtem Wechsel; erneutes Abschließen behält das
+  Datum). Die Prozedur steht in `ONLINE_ONLY_PROCEDURES`: Die Replik kennt
+  nur Quellen auf sichtbaren Konten und könnte die auf fremden Privatkonten
+  nicht lösen. Landet trotzdem eine Quelle an einem archivierten Ziel (ein
+  offline hinzugefügter Abgleich), zählt sie nirgends — `availableForAccount`
+  und `pillar3AccountSync` lesen über `liveSourcesOfAccount`,
+  `computeGoalProgress` ignoriert Quellen archivierter Ziele, Meilensteine
+  entfallen; `addGoalSource` lehnt archivierte Ziele ab, und Zurückholen
+  löst verbliebene Quellen. Tests: `api/dashboardLayout.test.ts`.
 - **Offene Sparziele (ohne Zielbetrag)**: `savings_goals.target_amount` ist
   nullable — NULL = offenes Ziel, der Fortschritt zeigt dann nur den
   angesparten Betrag. `createGoal`/`updateGoal` nehmen `targetAmount` nullish
@@ -948,8 +965,10 @@ die Frontend-Seite steht in `src/AGENTS.md`.
   compare })` (Summen nach Kategorie/Person = Zahler/Konto/Tag/Projekt oder
   `note` = Empfänger/Notiz — Groß-/Kleinschreibung und Leerzeichen
   normalisiert, höchstens 50 Zeilen —, dazu der Vergleichszeitraum: gleich
-  lang davor oder `yearAgo`, bei Spannen über 366 Tagen fällt `yearAgo` auf
-  „davor“ zurück; eine Buchung mit mehreren Tags zählt bei jedem).
+  lang davor oder `yearAgo`; `yearAgo` fällt auf „davor“ zurück, sobald
+  der Vorjahreszeitraum in den eigenen reichte (Spanne ab einem Jahr);
+  `rank: "count"` ordnet nach Anzahl — **vor** dem Kappen auf 50 Zeilen;
+  eine Buchung mit mehreren Tags zählt bei jedem).
   `monthlyTrend`, `categoryMatrix` und `breakdown` nehmen optional `userId`
   („Meine Sicht“, nach Zahler). Alles über sichtbare Konten und ohne
   Storno-Paare (`flows` aus `visibleData`; `txs` nur für Salden). Tests:

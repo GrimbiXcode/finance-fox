@@ -1,9 +1,13 @@
-import { eq, inArray } from "drizzle-orm";
-import { goalSources, savingsGoals } from "@db/schema";
+import { inArray } from "drizzle-orm";
+import { savingsGoals } from "@db/schema";
 import type { Db } from "../../queries/connection";
 import type { SessionUser } from "../../context";
 import { requireAccountAccess } from "../accountAccess";
-import { availableForAccount, commitmentOf } from "../goalProgress";
+import {
+  availableForAccount,
+  commitmentOf,
+  liveSourcesOfAccount,
+} from "../goalProgress";
 
 /**
  * Sync-Infos eines 3a-Kontos: Saldo (Logik wie listAccounts, via
@@ -28,10 +32,7 @@ export async function pillar3AccountSync(
   await requireAccountAccess(db, user, accountId, "view");
   const availability = await availableForAccount(db, accountId);
   // Zielnamen der Quellen mit wirksamer Verpflichtung auflösen
-  const sources = await db
-    .select()
-    .from(goalSources)
-    .where(eq(goalSources.accountId, accountId));
+  const sources = await liveSourcesOfAccount(db, accountId);
   const committedGoalIds = sources
     .filter(s => commitmentOf(s, availability.balance) > 0)
     .map(s => s.goalId);

@@ -76,7 +76,7 @@ export default function ProjectSummaryCard({ projectId }: { projectId: number })
               </div>
             )}
             <Link
-              to={`/transaktionen?${new URLSearchParams({ zeit: 'alle', typ: 'expense', projekt: String(s.project.id) })}`}
+              to={`/transaktionen?${new URLSearchParams({ zeit: 'alle', typ: 'expense', projekt: String(s.project.id), sicht: 'haushalt' })}`}
               className="text-xs text-stamp hover:underline"
             >
               Alle Buchungen

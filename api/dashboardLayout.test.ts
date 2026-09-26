@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { appRouter } from "./router";
 import { ensureSchema } from "./lib/migrate";
 import { getDb, initDb } from "./queries/connection";
-import { accounts, users } from "@db/schema";
+import { accounts, goalSources, users } from "@db/schema";
 import {
   DEFAULT_DASHBOARD_LAYOUT,
   normalizeDashboardLayout,
@@ -133,5 +133,81 @@ describe("finance.setGoalArchived", () => {
     await expect(
       as(anna).finance.setGoalArchived({ id: 9999, archived: true })
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("schützt laufende Ziele und das Archiv vor Nebenwirkungen", async () => {
+    const account = (await as(anna).finance.listAccounts())[0];
+    await as(anna).finance.createGoal({
+      name: "Laufend",
+      targetAmount: 50_000,
+      color: "#2F7D4A",
+    });
+    const running = (await as(anna).finance.listGoals()).find(
+      g => g.name === "Laufend"
+    )!;
+    await as(anna).finance.addGoalSource({
+      goalId: running.id,
+      accountId: account.id,
+      mode: "percent",
+      value: 10,
+    });
+    // „Zurückholen“ eines laufenden Ziels lässt seine Quellen stehen
+    await as(anna).finance.setGoalArchived({ id: running.id, archived: false });
+    const after = (await as(anna).finance.listGoals()).find(
+      g => g.id === running.id
+    )!;
+    expect(after.sources.filter(s => s.kind === "account")).toHaveLength(1);
+
+    // Zweimal abschließen: erstes Datum bleibt, ein Log-Eintrag
+    const first = await as(anna).finance.setGoalArchived({
+      id: running.id,
+      archived: true,
+    });
+    const second = await as(anna).finance.setGoalArchived({
+      id: running.id,
+      archived: true,
+    });
+    expect(second.archivedAt).toBe(first.archivedAt);
+    const log = await as(anna).finance.listAuditLog({ entity: "goal" });
+    expect(
+      log.filter(e => e.entityId === running.id && e.action === "goal.archived")
+    ).toHaveLength(1);
+
+    // Neue Quellen nur für laufende Ziele
+    await expect(
+      as(anna).finance.addGoalSource({
+        goalId: running.id,
+        accountId: account.id,
+        mode: "full",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    // Kommt über den Abgleich doch eine Quelle an ein archiviertes Ziel,
+    // verplant sie das Konto nicht
+    await getDb()
+      .insert(goalSources)
+      .values({
+        goalId: running.id,
+        accountId: account.id,
+        mode: "full",
+        value: null,
+        createdAt: new Date(),
+      });
+    const availability = await as(anna).finance.goalSourceAvailability({
+      accountId: account.id,
+    });
+    expect(availability.hasFullSource).toBe(false);
+    expect(availability.committedTotal).toBe(0);
+    const archivedGoal = (await as(anna).finance.listGoals()).find(
+      g => g.id === running.id
+    )!;
+    expect(archivedGoal.sources.filter(s => s.kind === "account")).toHaveLength(0);
+
+    // … und Zurückholen startet ohne sie
+    await as(anna).finance.setGoalArchived({ id: running.id, archived: false });
+    const restored = (await as(anna).finance.listGoals()).find(
+      g => g.id === running.id
+    )!;
+    expect(restored.sources.filter(s => s.kind === "account")).toHaveLength(0);
   });
 });

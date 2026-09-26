@@ -22,6 +22,8 @@ export default function BudgetDetail({ budgetId, categoryId }: { budgetId: numbe
       ...(yearly ? { jahr: h.key } : { monat: h.key }),
       typ: 'expense',
       kategorie: String(categoryId),
+      // Budgets gelten für den Haushalt — „Meine Sicht“ darf die Liste nicht verkleinern
+      sicht: 'haushalt',
     })}`;
   const breakdownTotal = d.breakdown.reduce((s, b) => s + b.amount, 0);
 

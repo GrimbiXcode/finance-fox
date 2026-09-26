@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, isNotNull } from "drizzle-orm";
 import {
   accounts,
   goalContributions,
@@ -92,7 +92,7 @@ export async function availableForAccount(
   excludeSourceId?: number
 ): Promise<AccountAvailability> {
   const [sources, balances] = await Promise.all([
-    db.select().from(goalSources).where(eq(goalSources.accountId, accountId)),
+    liveSourcesOfAccount(db, accountId),
     accountBalances(db, [accountId]),
   ]);
   const balance = balances.get(accountId) ?? 0;
@@ -107,6 +107,30 @@ export async function availableForAccount(
     available: Math.max(0, Math.max(0, balance) - committedTotal),
     hasFullSource: relevant.some(s => s.mode === "full"),
   };
+}
+
+/** IDs der abgeschlossenen (archivierten) Sparziele */
+export async function archivedGoalIds(db: Db): Promise<Set<number>> {
+  const rows = await db
+    .select({ id: savingsGoals.id })
+    .from(savingsGoals)
+    .where(isNotNull(savingsGoals.archivedAt));
+  return new Set(rows.map(r => r.id));
+}
+
+/**
+ * Quellen eines Kontos ohne die abgeschlossener Ziele. Normalerweise löst
+ * das Archivieren alle Quellen; über den Abgleich kann aber eine Quelle an
+ * einem archivierten Ziel landen (offline zu einem Ziel hinzugefügt, das
+ * inzwischen abgeschlossen wurde). Sie darf das Konto dann nicht mehr als
+ * verplant blockieren.
+ */
+export async function liveSourcesOfAccount(db: Db, accountId: number) {
+  const [sources, archived] = await Promise.all([
+    db.select().from(goalSources).where(eq(goalSources.accountId, accountId)),
+    archivedGoalIds(db),
+  ]);
+  return sources.filter(s => !archived.has(s.goalId));
 }
 
 /**
@@ -188,7 +212,11 @@ export async function computeGoalProgress(
   ]);
   const visible = user ? await visibleAccountIds(db, user) : null;
   const accountName = new Map(accs.map(a => [a.id, a.name]));
-  const relevant = sources.filter(s => !visible || visible.has(s.accountId));
+  // Ein abgeschlossenes Ziel hat keine wirksamen Quellen mehr (siehe
+  // liveSourcesOfAccount)
+  const relevant = goal.archivedAt
+    ? []
+    : sources.filter(s => !visible || visible.has(s.accountId));
   const balances = await accountBalances(
     db,
     relevant.map(s => s.accountId)
@@ -223,6 +251,8 @@ export async function computeGoalProgress(
     total,
     sources: out,
     hasHiddenSources:
-      visible !== null && sources.some(s => !visible.has(s.accountId)),
+      !goal.archivedAt &&
+      visible !== null &&
+      sources.some(s => !visible.has(s.accountId)),
   };
 }

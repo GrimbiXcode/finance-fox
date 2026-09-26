@@ -1870,6 +1870,8 @@ nicht jede Person sehen darf; eine Zahl, die je nach Betrachter anders
 stimmen müsste, lässt sich nicht einmal speichern. Das Archiv nennt darum
 Zielbetrag und Datum. Archivierte Ziele fehlen in Dashboard, Prognose und
 Bericht; „Zurückholen“ bringt das Ziel zurück, die Quellen nicht.
+Abschließen braucht die Verbindung zum Heimserver — nur er kennt alle
+Quellen (siehe Review unten).
 
 **E-34 · Zielfarbe am Balken, Segmente nur bei mehreren Quellen (G5).** Bei
 einer Quelle ist die Aufteilung uninteressant, der Balken trägt die
@@ -1941,6 +1943,42 @@ Schlüssel statt eines Satzes, bei Sparziel-Quellen den Modus auf Englisch
 („absolute“). Der Briefkopf listete deaktivierte Personen als
 Haushaltsmitglieder; der neue Umschalter „Meine Sicht“ und der
 Aufteilungs-Hinweis zählen nur aktive.
+
+**Review von Welle 5 — gefunden und behoben:**
+
+- **Sparziel offline abgeschlossen:** Die Replik auf dem Gerät kennt nur
+  Quellen auf Konten, die man sieht. Offline abgeschlossen, blieb eine
+  Quelle auf dem Privatkonto des Partners am Server hängen und hielt dessen
+  Geld „verplant“ — ohne dass es jemand lösen konnte. Abschließen geht jetzt
+  nur mit Verbindung (`ONLINE_ONLY_PROCEDURES`); eine über den Abgleich
+  nachgereichte Quelle an einem archivierten Ziel zählt nirgends mehr
+  (Verfügbarkeit, Fortschritt, 3a-Hinweis, Meilensteine), neue Quellen an
+  archivierten Zielen werden abgelehnt, Zurückholen löst Reste.
+- **Existenz-Orakel bei Buchungen:** Löschen, Stornieren, Bearbeiten, Tags,
+  Verlauf und Belege antworteten auf eine fremde Privatbuchung „Konto nicht
+  gefunden“, auf eine fehlende ID „Buchung nicht gefunden“ — durch
+  Durchprobieren ließen sich fremde Buchungen zählen. Ein gemeinsamer
+  Lader (`requireTransactionAccess`) antwortet jetzt gleich; eine sichtbare
+  Umbuchung vom fremden Konto ist lesbar, Ändern gibt FORBIDDEN.
+- **Laufender Saldo aufsteigend:** Zwei Buchungen am selben Tag standen in
+  der aufsteigenden Liste in umgekehrter ID-Reihenfolge, der Saldo lief
+  rückwärts. Der Gleichstand folgt bei Datumssortierung jetzt der Richtung.
+- **„Nach Anzahl“ unvollständig:** Der Server kappte auf die 50 teuersten
+  Empfänger, der Client sortierte danach um — der tägliche Kaffee fehlte.
+  Geordnet wird jetzt am Server vor dem Kappen.
+- **„Meine Sicht“ verkleinerte haushaltsweite Zahlen:** Wer vom Budget
+  „Lebensmittel 620 / 600“ in die Buchungen sprang, sah nur die eigenen
+  310. Links von haushaltsweiten Zahlen tragen `sicht=haushalt`.
+- **Drilldown der Empfänger ungenau:** Der Link suchte per Volltext
+  („Coop“ fand auch „Coop Pronto“ und Kategorienamen). Neu filtert
+  `notiz=` auf genau die normalisierte Notiz.
+- Kleinere Punkte: „Duplizieren“ übernahm ein abgeschlossenes Projekt; ein
+  Vorjahresvergleich über genau 366 Tage zählte einen Tag doppelt; eine
+  leere Sparziel-Karte hinterließ ein Loch im Dashboard-Raster; der Bericht
+  bot den Sparziel-Abschnitt an, wenn alle Ziele archiviert waren, die
+  Befehlspalette listete archivierte Ziele; der Schalter „nach Betrag /
+  nach Anzahl“ ohne Pfeiltasten; der Sicht-Umschalter hatte mobil nur den
+  wechselnden Tooltip als Namen; zweimal Abschließen überschrieb das Datum.
 
 **Offen (bewusst nicht in dieser Welle):** Ausgleichszahlungen sind
 Ausgaben der zahlenden Person und zählen so in Monatsausgaben, Sparrate und

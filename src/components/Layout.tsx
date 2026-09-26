@@ -165,7 +165,8 @@ export default function Layout() {
                 onClick={() => scope.setScope(scope.scope === 'mine' ? 'household' : 'mine')}
               >
                 {scope.scope === 'mine' ? <User className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-                <span className="hidden lg:inline">{scope.scope === 'mine' ? 'Meine Sicht' : 'Haushalt'}</span>
+                {/* Unter lg nur das Symbol — der Text bleibt für Screenreader */}
+                <span className="sr-only lg:not-sr-only">{scope.scope === 'mine' ? 'Meine Sicht' : 'Haushalt'}</span>
               </Button>
             )}
             <SyncStatus />

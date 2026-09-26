@@ -65,6 +65,7 @@ import {
   listVisibleAccounts,
   ownerIdsOf,
   requireAccountAccess,
+  requireTransactionAccess,
   touchesVisibleAccount,
   visibleAccountIds,
 } from "./lib/accountAccess";
@@ -1597,16 +1598,12 @@ export const financeRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.transactionId),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.transactionId,
+        "edit"
+      );
       const wanted = [...new Set(input.tagIds)];
       const allTags = await db.select().from(tags);
       const known = new Map(allTags.map(t => [t.id, t]));
@@ -1960,8 +1957,8 @@ export const financeRouter = createRouter({
         const goal = await db.query.savingsGoals.findFirst({
           where: eq(savingsGoals.id, goalId),
         });
-        // Offene Ziele (ohne Zielbetrag) haben keine Meilensteine
-        if (goal && goal.targetAmount !== null) {
+        // Offene und abgeschlossene Ziele haben keine Meilensteine
+        if (goal && goal.targetAmount !== null && !goal.archivedAt) {
           goalTotalsBefore.set(goalId, {
             goal,
             total: (await computeGoalProgress(db, null, goal)).total,
@@ -2079,16 +2076,12 @@ export const financeRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.id),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      const txRow = await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.id,
+        "edit"
+      );
       // Verschieben auf ein anderes Konto: „edit" auch dort erforderlich
       if (input.accountId !== undefined && input.accountId !== txRow.accountId) {
         await requireAccountAccess(db, ctx.user, input.accountId, "edit");
@@ -2391,16 +2384,12 @@ export const financeRouter = createRouter({
     .input(z.object({ transactionId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.transactionId),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "view");
+      await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.transactionId,
+        "view"
+      );
       const rows = await db
         .select({
           id: transactionChanges.id,
@@ -2426,16 +2415,12 @@ export const financeRouter = createRouter({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.id),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      const txRow = await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.id,
+        "edit"
+      );
       // Beleg-Zeilen + Dateien entfernen, bevor die Buchung gelöscht wird
       await deleteAttachmentsForTransactions(db, [input.id]);
       db.transaction(tx => {
@@ -2778,16 +2763,12 @@ export const financeRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const txRow = await db.query.transactions.findFirst({
-        where: eq(transactions.id, input.id),
-      });
-      if (!txRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Buchung nicht gefunden.",
-        });
-      }
-      await requireAccountAccess(db, ctx.user, txRow.accountId, "edit");
+      const txRow = await requireTransactionAccess(
+        db,
+        ctx.user,
+        input.id,
+        "edit"
+      );
       if (txRow.stornoOfId !== null) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -3334,6 +3315,13 @@ export const financeRouter = createRouter({
           message: "Sparziel nicht gefunden.",
         });
       }
+      if (goal.archivedAt) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Das Sparziel ist abgeschlossen — erst aus dem Archiv zurückholen.",
+        });
+      }
       const account = await requireAccountAccess(
         db,
         ctx.user,
@@ -3505,24 +3493,36 @@ export const financeRouter = createRouter({
       if (!goal) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Sparziel nicht gefunden." });
       }
-      const archivedAt = input.archived ? localIsoDate(new Date()) : null;
+      // „Zurückholen“ eines laufenden Ziels ist ein No-op — es darf seine
+      // Quellen nicht verlieren
+      if (!input.archived && goal.archivedAt === null) {
+        return { ok: true, archivedAt: null };
+      }
+      // Erneutes Abschließen behält das erste Datum (wie bei Projekten)
+      const archivedAt = input.archived
+        ? (goal.archivedAt ?? localIsoDate(new Date()))
+        : null;
       db.transaction(tx => {
-        if (input.archived) {
-          tx.delete(goalSources).where(eq(goalSources.goalId, input.id)).run();
-        }
+        // In beide Richtungen alle Quellen lösen: beim Archivieren, damit
+        // das Geld frei wird; beim Zurückholen, damit eine über den Abgleich
+        // nachgereichte Quelle nicht unbemerkt wieder wirkt — das Ziel
+        // startet dann wie angekündigt ohne Verknüpfungen
+        tx.delete(goalSources).where(eq(goalSources.goalId, input.id)).run();
         tx.update(savingsGoals)
           .set({ archivedAt })
           .where(eq(savingsGoals.id, input.id))
           .run();
       });
-      logAudit(
-        db,
-        ctx.user.id,
-        input.archived ? "goal.archived" : "goal.restored",
-        "goal",
-        input.id,
-        goal.name
-      );
+      if ((goal.archivedAt !== null) !== input.archived) {
+        logAudit(
+          db,
+          ctx.user.id,
+          input.archived ? "goal.archived" : "goal.restored",
+          "goal",
+          input.id,
+          goal.name
+        );
+      }
       return { ok: true, archivedAt };
     }),
 
